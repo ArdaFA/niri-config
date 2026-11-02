@@ -1,0 +1,9 @@
+[Desktop Entry]
+# Sistemdeki /etc/xdg/autostart/blueman.desktop girdisini geçersiz kılar.
+# Orijinali her masaüstünde başlıyordu; bu sürüm yalnızca niri'de başlar,
+# böylece KDE'de bluedevil'in yanında ikinci bir Bluetooth applet'i açılmaz.
+Type=Application
+Name=Blueman Applet (niri)
+Exec=blueman-applet
+Icon=blueman
+OnlyShowIn=niri;

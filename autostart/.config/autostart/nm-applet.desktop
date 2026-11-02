@@ -1,0 +1,9 @@
+[Desktop Entry]
+# Sistemdeki /etc/xdg/autostart/nm-applet.desktop girdisini geçersiz kılar.
+# Yalnızca niri oturumunda, Waybar tepsisinde görünmesi için --indicator ile başlar.
+# KDE ve GNOME'u etkilemez (orijinali de onlarda çalışmıyordu).
+Type=Application
+Name=NetworkManager Applet (niri)
+Exec=nm-applet --indicator
+Icon=nm-device-wireless
+OnlyShowIn=niri;
