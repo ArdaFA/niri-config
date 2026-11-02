@@ -1,0 +1,564 @@
+#!/usr/bin/env python3
+"""layout-mode — niri için otomatik düzen (AUTO) ve serbest mod (FREE).
+
+AUTO: her workspace'teki döşeli sütunlar ekranı tam doldurur.
+  - tek sütun ekranın tamamını kaplar, sütun sayısı değişince eşit bölünür;
+  - bir sütun boyutlandırılınca diğerleri kalan alana orantılı sığar;
+  - büyütülen (Super+F) ya da tam ekran sütuna dokunulmaz.
+FREE: bütün pencereler yüzen olur, fareyle istenen yere ve boyuta getirilir.
+  AUTO'ya dönünce soldan sağa sırayla yeniden döşenir.
+
+niri'nin IPC olaylarını dinleyen bir servis olarak çalışır (layout-mode.service).
+Mod, Waybar'daki etikete SIGRTMIN+8 ile bildirilir.
+
+Ekrana yazılan her şey İngilizce (arayüz kuralı); açıklamalar Türkçe.
+"""
+
+import argparse
+import json
+import os
+import re
+import selectors
+import signal
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+STATE_FILE = RUNTIME / "layout-mode.json"
+CMD_SOCKET = RUNTIME / "layout-mode.sock"
+LAYOUT_KDL = Path.home() / ".config/niri/layout.kdl"
+WAYBAR_SIGNAL = 8          # config.jsonc → "custom/layout": { "signal": 8 }
+
+SETTLE = 0.15              # son olaydan bu kadar sonra düzenle (saniye)
+REALIGN_AFTER_RESIZE = 1.0 # elle boyutlandırmadan sonra görünümü hizalamadan önce bekle (saniye)
+RECHECK = 0.6              # hizalamayı bu kadar sonra bir kez daha yap (saniye)
+GRACE = 1.0                # istenen genişliğe geçmesi için uygulamaya tanınan süre (saniye)
+TOLERANCE_PX = 3           # hedef genişlikten bu kadar sapma "uyuyor" sayılır
+MIN_COLUMN_PX = 200        # boyutlandırırken diğer sütunlar bundan dar olmasın
+FULL_SHARE = 0.97          # bundan geniş sütun = büyütülmüş / tam ekran, karışma
+MAX_ROUNDS = 4             # yapı değişmeden üst üste en fazla bu kadar düzeltme
+
+
+DEBUG = bool(os.environ.get("LAYOUT_MODE_DEBUG"))
+
+
+def debug(*parts):
+    if DEBUG:
+        print(f"{time.monotonic():.3f}", *parts, file=sys.stderr, flush=True)
+
+
+def die(msg):
+    print(f"layout-mode: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+# ── niri IPC ──────────────────────────────────────────────────────────────
+
+def niri_socket():
+    path = os.environ.get("NIRI_SOCKET")
+    if not path:
+        die("NIRI_SOCKET is not set (is niri running?)")
+    return path
+
+
+def request(req):
+    """Tek istek gönderir, cevabın "Ok" kısmını döndürür."""
+    with socket.socket(socket.AF_UNIX) as s:
+        s.connect(niri_socket())
+        s.sendall((json.dumps(req) + "\n").encode())
+        reply = json.loads(s.makefile().readline())
+    if "Err" in reply:
+        raise RuntimeError(f"niri: {reply['Err']}")
+    return reply["Ok"]
+
+
+def action(name, **args):
+    request({"Action": {name: args}})
+
+
+def query(name):
+    return request(name)[name]
+
+
+# ── Durum dosyası (Waybar etiketi ve komutlar okur) ────────────────────────
+
+def read_state():
+    try:
+        return json.loads(STATE_FILE.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def daemon_alive(state):
+    pid = state.get("pid")
+    if not pid:
+        return False
+    try:
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return False
+    return b"layout-mode" in cmdline
+
+
+def notify_waybar():
+    subprocess.run(["pkill", f"-RTMIN+{WAYBAR_SIGNAL}", "-x", "waybar"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+# ── Servis ────────────────────────────────────────────────────────────────
+
+class Workspace:
+    """Bir workspace için AUTO modunun hatırladıkları."""
+
+    def __init__(self):
+        self.shares = {}        # sütun anahtarı → hedef pay (toplam 1)
+        self.widths = None      # son görülen genişlikler (değişim tespiti için)
+        self.rounds = 0
+        self.realign_at = None  # görünüm bu andan sonra hizalanacak (time.monotonic)
+        self.recheck = False    # ilk hizalama yapıldı, kontrol için bir kez daha yapılacak
+        self.pending = set()    # genişliği az önce değiştirilen sütunlar
+        self.pending_until = 0  # bu ana kadar onların sapması "henüz geçmedi" sayılır
+
+
+class Daemon:
+    def __init__(self):
+        self.mode = "auto"
+        self.floated = set()    # FREE modunun yüzen yaptığı pencereler
+        self.known = set()      # görülmüş pencere kimlikleri (yeni pencereyi ayırt etmek için)
+        self.new_tiled = set()  # FREE'de açılan, yüzen yapılacak pencereler
+        self.ws = {}            # workspace id → Workspace
+        self.dirty = set()      # düzenlenecek workspace'ler
+        self.deadline = None    # bir sonraki düzenleme zamanı
+        self.timers = {}        # workspace id → ertelenmiş hizalama zamanı
+        self.overview = False
+        self.buffer = b""
+
+        old = read_state()
+        if old.get("niri") == niri_socket() and old.get("mode") in ("auto", "free"):
+            # Aynı niri oturumunda yeniden başlatıldı: modu ve listeyi koru.
+            self.mode = old["mode"]
+            self.floated = set(old.get("floated", []))
+
+    # ── yardımcılar ──
+
+    def save(self):
+        state = {"mode": self.mode, "pid": os.getpid(), "niri": niri_socket(),
+                 "floated": sorted(self.floated)}
+        tmp = STATE_FILE.with_name(".layout-mode.json.tmp")
+        tmp.write_text(json.dumps(state) + "\n")
+        tmp.replace(STATE_FILE)
+        notify_waybar()
+
+    def schedule(self, *ws_ids):
+        self.dirty.update(i for i in ws_ids if i is not None)
+        self.deadline = time.monotonic() + SETTLE
+
+    @staticmethod
+    def gaps():
+        try:
+            m = re.search(r"^\s*gaps\s+([\d.]+)", LAYOUT_KDL.read_text(), re.M)
+            if m:
+                return float(m.group(1))
+        except OSError:
+            pass
+        return 12.0
+
+    @staticmethod
+    def columns(windows, ws_id):
+        """Workspace'in döşeli sütunları, soldan sağa: [(anahtar, [pencere id'leri], genişlik)]."""
+        cols = {}
+        for w in windows:
+            pos = w["layout"]["pos_in_scrolling_layout"]
+            if w["workspace_id"] != ws_id or w["is_floating"] or not pos:
+                continue
+            cols.setdefault(pos[0], []).append((pos[1], w["id"], w["layout"]["tile_size"][0]))
+        result = []
+        for idx in sorted(cols):
+            tiles = sorted(cols[idx])
+            ids = [t[1] for t in tiles]
+            result.append((frozenset(ids), ids, tiles[0][2]))
+        return result
+
+    # ── olaylar ──
+
+    def on_event(self, event):
+        kind, data = next(iter(event.items()))
+        if kind == "WindowsChanged":
+            self.known = {w["id"] for w in data["windows"]}
+            self.schedule(*(w["workspace_id"] for w in data["windows"]))
+        elif kind == "WindowOpenedOrChanged":
+            w = data["window"]
+            if w["id"] not in self.known:
+                self.known.add(w["id"])
+                if self.mode == "free" and not w["is_floating"]:
+                    self.new_tiled.add(w["id"])
+            # Pencere başka workspace'e geçmiş olabilir; eskisini bilmediğimiz için hepsine
+            # bakılır (ucuz: değişmeyen workspace'te yalnızca genişlikler karşılaştırılır).
+            self.schedule(w["workspace_id"], *self.ws)
+        elif kind == "WindowClosed":
+            self.known.discard(data["id"])
+            self.floated.discard(data["id"])
+            self.schedule(*self.ws)
+        elif kind == "WindowLayoutsChanged":
+            self.schedule(*self.ws)
+        elif kind == "WorkspacesChanged":
+            alive = {w["id"] for w in data["workspaces"]}
+            self.ws = {i: s for i, s in self.ws.items() if i in alive}
+            self.schedule(*alive)
+        elif kind == "WorkspaceActivated":
+            self.schedule(data["id"])
+        elif kind == "OverviewOpenedOrClosed":
+            self.overview = data["is_open"]
+            if not self.overview:
+                self.schedule(*self.ws)
+
+    def on_command(self, cmd):
+        target = {"toggle": "free" if self.mode == "auto" else "auto",
+                  "auto": "auto", "free": "free"}.get(cmd)
+        if target and target != self.mode:
+            self.set_mode(target)
+
+    # ── düzenleme ──
+
+    def settle(self):
+        self.deadline = None
+        dirty, self.dirty = self.dirty, set()
+        windows = query("Windows")
+        workspaces = {w["id"]: w for w in query("Workspaces")}
+        if self.mode == "free":
+            self.float_new(windows)
+            return
+        if any(w["workspace_id"] is None and not w["is_floating"] for w in windows):
+            # Bir pencere fareyle taşınıyor (Super+sol tık): bırakılınca yeniden bakılır.
+            # Bu arada dokunulmaz; böylece yalnızca yeri değişen sütunların genişliği korunur.
+            self.dirty |= dirty
+            return
+        outputs = query("Outputs")
+        focused = (query("FocusedWindow") or {}).get("id")
+        for ws_id in sorted(dirty):
+            ws = workspaces.get(ws_id)
+            if ws is None or ws["output"] not in outputs or not outputs[ws["output"]].get("logical"):
+                continue
+            self.balance(ws, windows, outputs[ws["output"]]["logical"]["width"], focused)
+
+    def balance(self, ws, windows, width, focused):
+        st = self.ws.setdefault(ws["id"], Workspace())
+        cols = self.columns(windows, ws["id"])
+        if not cols:
+            st.shares, st.widths = {}, None
+            return
+        g = self.gaps()
+        span = width - g                     # niri: genişlik = span * pay - g
+        keys = [c[0] for c in cols]
+        widths = [c[2] for c in cols]
+        changed = widths != st.widths
+        st.widths = widths
+
+        now = time.monotonic()
+        if set(keys) != set(st.shares):
+            # Pencere açıldı, kapandı, taşındı ya da sütun birleşti: eşit böl.
+            st.shares = {k: 1 / len(keys) for k in keys}
+            debug("ws", ws["id"], "structure changed, equal split", len(keys))
+            st.rounds = 0
+            st.pending = self.apply(cols, st.shares)
+            st.pending_until = now + GRACE
+            st.realign_at, st.recheck = now, False
+            # Genişlikler zaten eşitse niri olay göndermez; hizalama için yine de bakılır.
+            self.timers[ws["id"]] = now + 2 * SETTLE
+            return
+
+        actual = {c[0]: (c[2] + g) / span for c in cols}
+        tol = TOLERANCE_PX / span
+        off = [k for k in keys if abs(actual[k] - st.shares[k]) > tol]
+        debug("ws", ws["id"], "widths", widths, "off", [sorted(k) for k in off])
+
+        if off and now < st.pending_until and set(off) <= st.pending:
+            # Az önce genişliğini değiştirdiğimiz pencere henüz yeni boyuta geçmedi: bekle.
+            self.timers[ws["id"]] = min(st.pending_until, now + 2 * SETTLE)
+            return
+
+        if not off:
+            st.rounds = 0
+            st.pending = set()
+            if changed and st.realign_at is None:
+                st.realign_at = now       # ör. büyütülen sütun eski haline döndü
+            if st.realign_at is not None and len(cols) > 1:
+                if now < st.realign_at:
+                    self.timers[ws["id"]] = st.realign_at
+                elif self.realign(ws, cols, focused):
+                    # Pencereler yeni boyutlarına geç geçebiliyor; bir kez daha hizala.
+                    # Zaten hizalıysa ikinci deneme görünmez.
+                    if st.recheck:
+                        st.realign_at, st.recheck = None, False
+                    else:
+                        st.realign_at, st.recheck = now + RECHECK, True
+                        self.timers[ws["id"]] = st.realign_at
+            elif len(cols) == 1:
+                st.realign_at = None
+            return
+
+        if any(actual[k] > FULL_SHARE for k in off):
+            # Büyütülmüş ya da tam ekran: bilerek taşıyor. Geri dönünce hizalanır.
+            st.realign_at = now
+            return
+        if len(keys) == 1:
+            # Tek sütunu elle küçülttün: kalan yeri dolduracak başka sütun yok, olduğu gibi kalır.
+            st.shares = {keys[0]: actual[keys[0]]}
+            return
+
+        st.rounds += 1
+        if st.rounds > MAX_ROUNDS:
+            return  # uyuşmuyor (ör. uygulamanın en küçük genişliği); yapı değişene kadar dur
+
+        # Hedefinden sapan sütun(lar) ya elle boyutlandırıldı ya da istenen genişliğe
+        # inemedi: o genişlikte sabitlenir, diğerleri kalan alanı orantılı paylaşır.
+        fixed = {k: actual[k] for k in off}
+        others = [k for k in keys if k not in fixed]
+        if not others:
+            st.shares = dict(actual)
+            return
+        min_share = (MIN_COLUMN_PX + g) / span
+        free = 1 - sum(fixed.values())
+        if free < min_share * len(others):
+            # Çok büyütüldü: diğerleri en dar hallerine iner, büyütülen sütun geri çekilir.
+            user = next((k for k in off if focused in k), off[0])
+            fixed[user] = max(min_share, fixed[user] - (min_share * len(others) - free))
+            free = 1 - sum(fixed.values())
+        base = sum(st.shares[k] for k in others) or 1
+        shares = {k: st.shares[k] * free / base for k in others}
+        shares.update(fixed)
+        # Sabitlenen sütunlara yalnızca geri çekildiyse dokunulur: niri, boyutlandırılan
+        # sütunun genişliği dışarıdan değişirse fareyle sürüklemeyi bırakır.
+        st.pending = self.apply(cols, shares,
+                                skip={k for k in fixed if abs(fixed[k] - actual[k]) <= tol})
+        st.pending_until = now + GRACE
+        st.shares = shares
+        # Hizalama başka sütuna odaklanmayı gerektirir; bu da süren bir sürüklemeyi keser.
+        # Bu yüzden fare bir süre durduktan sonra yapılır.
+        st.realign_at, st.recheck = now + REALIGN_AFTER_RESIZE, False
+        self.timers[ws["id"]] = st.realign_at
+
+    @staticmethod
+    def apply(cols, shares, skip=()):
+        """Sütun genişliklerini ayarlar; değiştirilen sütunların anahtarlarını döndürür."""
+        applied = set()
+        for key, ids, _ in cols:
+            if key not in skip:
+                action("SetWindowWidth", id=ids[0],
+                       change={"SetProportion": round(shares[key] * 100, 4)})
+                applied.add(key)
+        return applied
+
+    def realign(self, ws, cols, focused):
+        """Görünümü şeridin başına hizalar. niri'de görünümü doğrudan ayarlayan bir komut yok;
+        son ve ilk sütuna odaklanıp eski pencereye dönmek görünümü yerine oturtuyor.
+        Alt+Tab listesi bu ara odakları görmez (recent-windows debounce 750 ms)."""
+        if self.overview or not ws["is_active"]:
+            return False
+        if focused is None and not ws["is_focused"]:
+            return False  # odak başka monitörde ama pencere yok: geri dönülemez
+        debug("ws", ws["id"], "realign", [c[1][0] for c in cols], "focus", focused)
+        for wid in (cols[-1][1][0], cols[0][1][0], focused):
+            if wid is not None:
+                action("FocusWindow", id=wid)
+        return True
+
+    # ── modlar ──
+
+    def set_mode(self, mode):
+        windows = query("Windows")
+        focused = (query("FocusedWindow") or {}).get("id")
+        if mode == "free":
+            self.to_free(windows, focused)
+        else:
+            self.to_auto(windows, focused)
+        self.mode = mode
+        self.ws = {}
+        self.timers = {}
+        self.new_tiled = set()
+        self.save()
+        self.schedule(*{w["workspace_id"] for w in windows})
+
+    def to_free(self, windows, focused):
+        """Döşeli pencereleri bulundukları yerde ve boyutta yüzen yapar."""
+        g = self.gaps()
+        width = {name: o["logical"]["width"] for name, o in query("Outputs").items() if o.get("logical")}
+        workspaces = {w["id"]: w for w in query("Workspaces")}
+        moves = []
+        for ws_id, ws in workspaces.items():
+            out_w = width.get(ws["output"], 0)
+            x = g
+            for _, ids, col_w in self.columns(windows, ws_id):
+                y = g
+                for wid in ids:
+                    w = next(w for w in windows if w["id"] == wid)
+                    tw, th = w["layout"]["tile_size"]
+                    moves.append((wid, min(x, max(g, out_w - tw - g)), y, tw, th))
+                    y += th + g
+                x += col_w + g
+        # Odaktaki pencere en son yüzer, böylece en üstte kalır.
+        moves.sort(key=lambda m: m[0] == focused)
+        for wid, x, y, tw, th in moves:
+            action("MoveWindowToFloating", id=wid)
+            # niri, daha önce yüzmüş bir pencereye eski yüzen boyutunu verir; döşeli
+            # haldeki boyut ve yer korunsun diye ikisi de açıkça verilir.
+            action("SetWindowWidth", id=wid, change={"SetFixed": round(tw)})
+            action("SetWindowHeight", id=wid, change={"SetFixed": round(th)})
+            action("MoveFloatingWindow", id=wid, x={"SetFixed": x}, y={"SetFixed": y})
+            self.floated.add(wid)
+        if focused is not None:
+            action("FocusWindow", id=focused)
+
+    def to_auto(self, windows, focused):
+        """FREE'de yüzen yapılan pencereleri soldan sağa sırayla yeniden döşer."""
+        by_ws = {}
+        for w in windows:
+            if w["id"] in self.floated and w["is_floating"]:
+                by_ws.setdefault(w["workspace_id"], []).append(w)
+        for ws_id, group in by_ws.items():
+            group.sort(key=lambda w: tuple(w["layout"]["tile_pos_in_workspace_view"] or (0, 0)))
+            ids = [w["id"] for w in group]
+            has_tiled = bool(self.columns(windows, ws_id))
+            if focused in ids:
+                # Odaktaki pencere döşenince etkin sütun o olur; önce en soldakine odaklan.
+                action("FocusWindow", id=ids[0])
+                order = [ids[0]] + ids[:0:-1]
+            elif has_tiled:
+                order = ids[::-1]            # hepsi etkin sütunun hemen sağına girer
+            else:
+                order = [ids[0]] + ids[:0:-1]  # ilk giren etkin sütun olur, diğerleri sağına
+            for wid in order:
+                action("MoveWindowToTiling", id=wid)
+        self.floated = set()
+        if focused is not None:
+            action("FocusWindow", id=focused)
+
+    def float_new(self, windows):
+        """FREE modunda döşeli açılan yeni pencereleri yüzen yapar."""
+        current = {w["id"]: w for w in windows}
+        changed = False
+        for wid in sorted(self.new_tiled):
+            w = current.get(wid)
+            if w and not w["is_floating"]:
+                action("MoveWindowToFloating", id=wid)
+                self.floated.add(wid)
+                changed = True
+        self.new_tiled = set()
+        if changed:
+            self.save()
+
+    # ── ana döngü ──
+
+    def run(self):
+        events = socket.socket(socket.AF_UNIX)
+        events.connect(niri_socket())
+        events.sendall(b'"EventStream"\n')
+
+        CMD_SOCKET.unlink(missing_ok=True)
+        commands = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        commands.bind(str(CMD_SOCKET))
+
+        sel = selectors.DefaultSelector()
+        sel.register(events, selectors.EVENT_READ, "events")
+        sel.register(commands, selectors.EVENT_READ, "commands")
+        self.save()
+        try:
+            first = True
+            while True:
+                now = time.monotonic()
+                for ws_id in [i for i, t in self.timers.items() if t <= now]:
+                    del self.timers[ws_id]
+                    self.dirty.add(ws_id)
+                    self.deadline = self.deadline or now
+                wake = [t for t in (self.deadline, *self.timers.values()) if t is not None]
+                timeout = max(0.0, min(wake) - now) if wake else None
+                for key, _ in sel.select(timeout):
+                    if key.data == "commands":
+                        cmd = commands.recv(64).decode(errors="replace").strip()
+                        try:
+                            self.on_command(cmd)
+                        except (OSError, RuntimeError, KeyError) as e:
+                            print(f"layout-mode: {e}", file=sys.stderr, flush=True)
+                        continue
+                    chunk = events.recv(65536)
+                    if not chunk:
+                        return  # niri kapandı
+                    self.buffer += chunk
+                    *lines, self.buffer = self.buffer.split(b"\n")
+                    for line in lines:
+                        if first:            # ilk satır isteğin cevabı: {"Ok":"Handled"}
+                            first = False
+                            continue
+                        if line.strip():
+                            self.on_event(json.loads(line))
+                if self.deadline is not None and time.monotonic() >= self.deadline:
+                    try:
+                        self.settle()
+                    except (OSError, RuntimeError, KeyError) as e:
+                        print(f"layout-mode: {e}", file=sys.stderr, flush=True)
+        finally:
+            CMD_SOCKET.unlink(missing_ok=True)
+
+
+# ── Komutlar ──────────────────────────────────────────────────────────────
+
+def cmd_daemon(_args):
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    Daemon().run()
+
+
+def send(cmd):
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as s:
+        try:
+            s.sendto(cmd.encode(), str(CMD_SOCKET))
+        except OSError:
+            die("the layout service is not running (systemctl --user status layout-mode)")
+
+
+def cmd_send(args):
+    send(args.command)
+
+
+def cmd_status(_args):
+    state = read_state()
+    print(state.get("mode", "auto") if daemon_alive(state) else "off")
+
+
+def cmd_label(_args):
+    """Waybar "custom/layout" modülü için JSON."""
+    state = read_state()
+    if not daemon_alive(state):
+        out = {"text": "----", "class": "off", "tooltip": "Layout service is not running"}
+    elif state.get("mode") == "free":
+        out = {"text": "FREE", "class": "free",
+               "tooltip": "Free mode: windows float, move and resize them anywhere.\nSuper+T or click: auto layout"}
+    else:
+        out = {"text": "AUTO", "class": "auto",
+               "tooltip": "Auto layout: windows share the screen evenly.\nSuper+T or click: free mode"}
+    print(json.dumps(out))
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="layout-mode",
+        description="Automatic layout (AUTO) and free floating mode (FREE) for niri.")
+    sub = parser.add_subparsers(dest="cmd", metavar="<command>")
+    for name, text in (("toggle", "switch between AUTO and FREE"),
+                       ("auto", "switch to automatic layout"),
+                       ("free", "switch to free (floating) mode")):
+        sub.add_parser(name, help=text).set_defaults(func=cmd_send, command=name)
+    sub.add_parser("status", help="print the current mode").set_defaults(func=cmd_status)
+    sub.add_parser("label").set_defaults(func=cmd_label)     # Waybar için, listede görünmez
+    sub.add_parser("daemon").set_defaults(func=cmd_daemon)   # systemd servisi çalıştırır
+    args = parser.parse_args()
+    if not getattr(args, "func", None):
+        parser.print_help()
+        sys.exit(1)
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

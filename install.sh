@@ -20,6 +20,7 @@ NIRI_SERVICES=(
     mako.service
     swayidle.service
     swaybg.service
+    layout-mode.service
 )
 
 WANTS_DIR="$HOME/.config/systemd/user/niri.service.wants"

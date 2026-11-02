@@ -1,0 +1,15 @@
+# Otomatik düzen (AUTO) ve serbest mod (FREE) — yalnızca niri oturumu.
+# niri'nin olaylarını dinler, pencere genişliklerini ayarlar. Modu değiştirmek: Super+T
+# ya da paneldeki AUTO/FREE etiketine tıkla. Ayrıntı: layout-mode --help
+# Ayrıntılı günlük için: systemctl --user edit layout-mode → Environment=LAYOUT_MODE_DEBUG=1
+
+[Unit]
+Description=Automatic window layout for the niri session (AUTO / FREE)
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/layout-mode daemon
+Restart=on-failure
+RestartSec=1

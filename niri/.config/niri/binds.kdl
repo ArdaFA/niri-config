@@ -131,6 +131,10 @@ binds {
     Mod+Shift+V { switch-focus-between-floating-and-tiling; }
     Mod+W       hotkey-overlay-title="Toggle tabbed column" { toggle-column-tabbed-display; }
 
+    // Düzen modu: AUTO (pencereler ekranı eşit paylaşır) ↔ FREE (hepsi yüzen, serbest).
+    // layout-mode servisi yapar; paneldeki AUTO/FREE etiketine tıklamak da aynı.
+    Mod+T       hotkey-overlay-title="Layout mode: AUTO / FREE" { spawn-sh "~/.local/bin/layout-mode toggle"; }
+
     // ── Ekran görüntüsü (~/Pictures/Screenshots + panoya kopyalanır) ─────
     Print       hotkey-overlay-title="Screenshot (select area)" { screenshot; }
     Mod+Shift+S { screenshot; }

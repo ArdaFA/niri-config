@@ -80,6 +80,27 @@ tooltip label {
     background: @urgent;
 }
 
+/* ── Düzen modu (AUTO / FREE) ───────────────────────────────────────── */
+#custom-layout {
+    padding: 0 6px;
+    margin: 4px 2px;
+    color: @muted;
+    border-radius: 4px;
+}
+
+#custom-layout:hover {
+    color: @fg;
+    background: @overlay;
+}
+
+#custom-layout.free {
+    color: @accent;
+}
+
+#custom-layout.off {
+    color: @urgent;
+}
+
 /* ── Pencere başlığı ve saat ────────────────────────────────────────── */
 #window {
     color: @subtle;
@@ -121,8 +142,13 @@ window#waybar.empty #window {
 }
 
 /* ── Sistem tepsisi ─────────────────────────────────────────────────── */
+/* Simge temaları tepsi simgelerini çoğunlukla açık renkte çiziyor (ör. KDE'nin Colloid'i).
+ * @tray açık temalarda koyu bir zemin verir, koyu temalarda saydamdır (theme üretir). */
 #tray {
-    padding: 0 10px 0 6px;
+    padding: 0 6px;
+    margin: 4px 6px 4px 2px;
+    background: @tray;
+    border-radius: 4px;
 }
 
 #tray > .passive {

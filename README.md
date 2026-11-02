@@ -22,14 +22,15 @@ sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü.
 5. [Renkler: `theme` komutu](#renkler-theme-komutu)
 6. [Yeni preset eklemek](#yeni-preset-eklemek)
 7. [Duvar kağıdı](#duvar-kağıdı)
-8. [Kısayollar](#kısayollar)
-9. [Waybar modülleri](#waybar-modülleri)
-10. [Font](#font)
-11. [Ekranlar](#ekranlar)
-12. [Kilit ve boşta kalma](#kilit-ve-boşta-kalma)
-13. [Bir şey bozulursa](#bir-şey-bozulursa)
-14. [Her şeyi tamamen kaldırmak](#her-şeyi-tamamen-kaldırmak)
-15. [Notlar](#notlar)
+8. [Otomatik düzen: AUTO / FREE](#otomatik-düzen-auto--free)
+9. [Kısayollar](#kısayollar)
+10. [Waybar modülleri](#waybar-modülleri)
+11. [Font](#font)
+12. [Ekranlar](#ekranlar)
+13. [Kilit ve boşta kalma](#kilit-ve-boşta-kalma)
+14. [Bir şey bozulursa](#bir-şey-bozulursa)
+15. [Her şeyi tamamen kaldırmak](#her-şeyi-tamamen-kaldırmak)
+16. [Notlar](#notlar)
 
 ---
 
@@ -141,6 +142,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `autostart/.config/autostart/blueman.desktop` | Bluetooth tepsi simgesi, yalnızca niri'de |
 | `bin/.local/bin/osd` | Ses/mikrofon/parlaklık tuşları: değeri değiştirir, üst ortada gösterge açar |
 | `bin/.local/bin/lock-screen` | Ekranı kilitler (zaten kilitliyse bir şey yapmaz) |
+| `bin/.local/bin/layout-mode` | Otomatik düzen (AUTO) ve serbest mod (FREE), bkz. [Otomatik düzen](#otomatik-düzen-auto--free) |
+| `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
 | `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)) |
 | `wallpapers/` | Duvar kağıtların. İçindekiler git'e girmez (bkz. [Duvar kağıdı](#duvar-kağıdı)). |
 | `install.sh` | Bağlar, servisleri kaydeder, temayı üretir. `uninstall` ile geri alır. |
@@ -163,7 +166,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 ```
 GDM → niri-session → niri.service
         ├─ niri.service.wants/ (install.sh kaydeder)
-        │    niri-polkit · theme-apply → waybar · mako · swaybg · swayidle
+        │    niri-polkit · theme-apply → waybar · mako · swaybg · swayidle · layout-mode
         └─ XDG autostart (OnlyShowIn=niri olanlar + KDE'de de açılanlar)
              nm-applet · blueman · KDE Connect · …
              (Cisco Secure Client, Xwayland Video Bridge, imsettings/IBus niri'de başlamaz)
@@ -172,7 +175,7 @@ GDM → niri-session → niri.service
 Bu servislerin hiçbiri KDE oturumunda başlamaz. Durumlarını görmek için:
 
 ```bash
-systemctl --user status niri-polkit theme-apply waybar mako swaybg swayidle
+systemctl --user status niri-polkit theme-apply waybar mako swaybg swayidle layout-mode
 ```
 
 ---
@@ -302,6 +305,79 @@ döner; ondan üretilmiş renkler kalır.
 
 ---
 
+## Otomatik düzen: AUTO / FREE
+
+niri pencereleri sağa doğru uzayan bir şeride dizer; sığmayanlar ekranın dışında bekler. Bunu
+istemediğin için `layout-mode` adlı küçük bir servis var: niri'nin olaylarını dinler ve pencere
+genişliklerini niri'nin IPC'siyle ayarlar. niri bunu kendisi yapmıyor, yani bu bizim eklentimiz.
+
+İki mod var. Paneldeki küçük etiket hangisinde olduğunu gösterir. **`Super+T`** ya da etikete
+tıklamak modu değiştirir. Her girişte AUTO ile başlar.
+
+**AUTO (varsayılan):** her workspace'te döşeli pencereler ekranı tam doldurur.
+
+- Tek pencere ekranın tamamını kaplar; ikinci açılınca ikiye, üçüncüde üçe eşit bölünür.
+- Bir pencere kapanınca, başka workspace'e gidince ya da yüzen olunca (`Super+V`) kalanlar
+  yeniden eşit bölünür.
+- Bir sütunu boyutlandırınca (`Super` + sağ tık, `Super+R`, `Super+-` / `Super++`) o sütun
+  bıraktığın genişlikte kalır, diğerleri kalan alana **orantılı** sığar. Diğerleri en az 200 px
+  kalır; daha fazla büyütürsen sütun geri çekilir.
+- Aynı sütunda üst üste duran pencereler tek pay sayılır; dikey bölmeyi niri zaten yapıyor.
+- `Super+F` (sütunu büyüt) ve `Super+Shift+F` (tam ekran) bilerek taşırır; servis bunlara
+  karışmaz. Geri aldığında düzen eski haline döner.
+- Fareyle taşınan (`Super` + sol tık) pencere bırakılana kadar beklenir. Sadece sırası değiştiyse
+  genişlikler korunur.
+
+**FREE:** pencereleri fareyle istediğin yere taşıyıp istediğin boyuta getirebilirsin.
+
+- FREE'ye geçince bütün döşeli pencereler **olduğu yerde ve boyutta** yüzen olur.
+- FREE'deyken açılan pencereler de yüzen olur. Önce döşeli açılıp bir an sonra yüzen olurlar.
+- Taşımak: `Super` + sol tık sürükle (GTK uygulamalarında başlık çubuğundan da). Boyutlandırmak:
+  `Super` + sağ tık sürükle.
+- AUTO'ya dönünce bu pencereler **soldan sağa konumlarına göre** sırayla yeniden döşenir ve ekran
+  eşit bölünür. Zaten yüzen açılan pencereler (diyaloglar, pavucontrol, şifre penceresi) yüzen kalır.
+
+**Bilinen sınırlar:**
+
+- **Kısa geçişler:** Yeni pencere önce niri'nin varsayılan genişliğinde açılıp hemen eşit paya
+  iner. Fareyle boyutlandırırken diğer pencereler bir an ekran dışına itilir; durduğunda
+  (~0,15 sn) sığdırılır.
+- **Görünüm hizalaması:** niri'de görünümü doğrudan ayarlayan bir komut yok. Genişlikler
+  değişince görünüm kaymış kalabiliyor (solda boşluk, sağda kesik pencere). Servis bunu,
+  bir anlığına ilk ve son pencereye odaklanıp sana geri dönerek düzeltir.
+  - Alt+Tab listesi bundan etkilenmez, çünkü 750 ms bekleyerek ekliyor.
+  - Bu birkaç milisaniyede bastığın bir tuş başka pencereye gidebilir.
+  - Fareyle boyutlandırdıktan sonra hizalama, fare 1 sn durunca yapılır. Sürüklerken 1 sn'den
+    uzun beklersen sürükleme biter; tekrar tutman gerekir.
+- **En küçük boyut:** Bazı uygulamalar (ör. Brave) belli bir genişliğin altına inmez. Çok
+  pencereli bir workspace'te bu uygulama payına sığmazsa o kadar geniş kalır, diğerleri kalan
+  alanı paylaşır. Hiçbiri sığmıyorsa taşma önlenemez.
+- **Gizli workspace'ler:** Görünmeyen bir workspace'te genişlikler hemen ayarlanır, görünüm
+  hizalaması o workspace'e geçince yapılır.
+- Sağdaki/soldaki ekran kenarında Waybar gibi bir panel yoksa doğru çalışır. Panel üstte olduğu
+  için sorun yok.
+
+**Komutlar:**
+
+```bash
+layout-mode toggle            # AUTO ↔ FREE (Super+T ile aynı)
+layout-mode auto | free       # belirli moda geç
+layout-mode status            # auto / free / off (servis çalışmıyorsa)
+systemctl --user status layout-mode     # servis durumu ve hataları
+systemctl --user stop layout-mode       # bu oturum için kapat (pencereler olduğu gibi kalır)
+```
+
+- **Tamamen kapatmak:** `install.sh` içindeki `NIRI_SERVICES` listesinden `layout-mode.service`'i
+  sil, `systemctl --user remove-wants niri.service layout-mode.service` çalıştır. Waybar'dan
+  etiketi kaldırmak için `config.jsonc`'deki `"custom/layout"` girdisini sil.
+- **Ayrıntılı günlük:** `systemctl --user edit layout-mode` → `[Service]` altına
+  `Environment=LAYOUT_MODE_DEBUG=1`, sonra `systemctl --user restart layout-mode` ve
+  `journalctl --user -u layout-mode -f`.
+- **Ayarlar** scriptin başındaki sabitlerde: bekleme süreleri, en küçük sütun genişliği (200 px).
+  niri'deki `gaps` değerini `layout.kdl`'den kendisi okur.
+
+---
+
 ## Kısayollar
 
 Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olur.
@@ -325,6 +401,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 | `Super+Shift+P` | Ekranları kapat (fare/klavye ile açılır) |
 | `Super+Shift+E` | Oturumu kapat (onay ister) |
 | `Super+Escape` | Bir uygulama (ör. sanal makine) kısayolları yakaladıysa geri al |
+| `Super+T` | Düzen modu: AUTO ↔ FREE (bkz. [Otomatik düzen](#otomatik-düzen-auto--free)) |
 
 ### Odak ve taşıma
 
@@ -346,7 +423,7 @@ Ayarı: `niri/.config/niri/input.kdl`.
 | Fareyi bir pencerenin üstüne getir | O pencere odaklanır, ama yalnızca tamamen görünüyorsa. Kısmen görünen bir pencere odak almaz ve görünüm kaymaz. |
 | Pencereye tıkla | Odaklanır; kısmen görünüyorsa görünüm ona kayar |
 | `Super` + sol tıkla sürükle | Pencereyi taşı. Sürüklerken sağ tık: yüzen ↔ döşeli. Ekran kenarı duvar gibidir, görünüm kaymaz. |
-| `Super` + sağ tıkla sürükle | Pencereyi boyutlandır (aşağıya bak) |
+| `Super` + sağ tıkla sürükle | Pencereyi boyutlandır (aşağıya bak). AUTO modunda diğerleri kalan alana sığar. |
 | `Super` + sağ çift tık, pencerenin sol/sağ kısmında | Sütun tam genişliğe yayılır |
 | `Super` + sağ çift tık, pencerenin üst/alt kısmında | Pencere yüksekliği otomatiğe döner |
 | `Super` + orta tuşla (tekerleğe basılı) sürükle | Yatay: görünümü kaydır · dikey: workspace değiştir |
@@ -438,10 +515,17 @@ Görüntü `~/Pictures/Screenshots/` içine kaydedilir ve panoya kopyalanır.
 | Yer | Eylem |
 |---|---|
 | Workspace numarası | Tıkla: o workspace'e git |
+| `AUTO` / `FREE` | Tıkla: düzen modunu değiştir (`Super+T` ile aynı). `----` = servis çalışmıyor |
 | Saat | Üstüne gel: takvim · sağ tık: ay/yıl görünümü · tekerlek: aylar arasında gez |
 | `VOL` | Tıkla: pavucontrol · sağ tık: sessiz · tekerlek: ses ±%5 |
 | `NET` | Tıkla: ağ bağlantıları penceresi |
 | Tepsi | Wi-Fi (nm-applet), Bluetooth (blueman) ve diğer uygulamalar |
+
+**Tepsi simgeleri ve açık temalar:** Tepsi simgeleri, KDE'de seçili simge temasından gelir
+(şu an Colloid). Colloid bu simgeleri sabit açık gri çiziyor; açık bir temada (rose-pine-dawn,
+catppuccin-latte, açık duvar kağıdı) zeminde kayboluyorlardı. Bu yüzden açık temalarda tepsi
+koyu küçük bir zeminin üstünde durur; koyu temalarda zemin yoktur. Zemin rengi temadan gelir
+(`@tray`, `theme` üretir). KDE'de koyu simgeli bir tema seçersen koyu temalarda da görünür kalır.
 
 ---
 
@@ -450,7 +534,7 @@ Görüntü `~/Pictures/Screenshots/` içine kaydedilir ve panoya kopyalanır.
 Hangi modülün nerede durduğu `waybar/.config/waybar/config.jsonc` içindeki üç listede tanımlı:
 
 ```jsonc
-"modules-left":   ["niri/workspaces", "niri/window"],
+"modules-left":   ["niri/workspaces", "custom/layout", "niri/window"],
 "modules-center": ["clock"],
 "modules-right":  ["wireplumber", "network", "battery", "tray"],
 ```
@@ -518,8 +602,9 @@ Dosya: `niri/.config/niri/outputs.kdl`. Bağlı ekranları görmek için: `niri 
   `journalctl --user -b -u niri | grep lid`.
 - **Ekranın dışına taşan pencereler laptop ekranında değildir.** niri'de her workspace sağa ve sola
   sonsuz uzanan bir şerit; sığmayan sütunlar ekranın kenarının ötesinde bekler. Bu, kapak açık
-  ya da kapalı fark etmeden böyledir. Gezinmek için `Super+H/L`, `Super+Home/End` ya da
-  `Super+O` (genel bakış). Pencere sürüklerken ekran kenarında görünümün kayması kapalı
+  ya da kapalı fark etmeden böyledir. AUTO modunda ([Otomatik düzen](#otomatik-düzen-auto--free))
+  servis sütunları ekrana sığdırır; FREE modunda ya da servis kapalıyken şerit niri'nin
+  bildiği gibi çalışır. Gezinmek için `Super+H/L`, `Super+Home/End` ya da `Super+O` (genel bakış). Pencere sürüklerken ekran kenarında görünümün kayması kapalı
   (`input.kdl` → `dnd-edge-view-scroll`, `trigger-width 0`). niri varsayılanına dönmek için o bloğu sil.
 - **Belirli bir monitöre özel ayar** (ör. 120 Hz modu, farklı konum): `niri msg outputs` çıktısındaki marka-model-seri adıyla ekle:
 
@@ -571,9 +656,14 @@ bildirimi gösterir. Ayrıntı için: `niri validate`.
 ```bash
 journalctl --user -b -u niri          # niri
 journalctl --user -b -u waybar        # panel
-systemctl --user status waybar mako swaybg swayidle theme-apply niri-polkit
+journalctl --user -b -u layout-mode   # otomatik düzen
+systemctl --user status waybar mako swaybg swayidle theme-apply niri-polkit layout-mode
 systemctl --user restart waybar       # panel kaybolduysa
 ```
+
+**Pencereler garip davranıyorsa:** `Super+T` ile FREE'ye geç ya da
+`systemctl --user stop layout-mode` ile servisi bu oturum için kapat. niri o zaman kendi
+bildiği gibi çalışır.
 
 **4. Renkler karıştı:** `theme preset sakura`.
 

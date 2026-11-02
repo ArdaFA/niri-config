@@ -17,7 +17,7 @@
     "margin-right": 12,
     "spacing": 0,
 
-    "modules-left": ["niri/workspaces", "niri/window"],
+    "modules-left": ["niri/workspaces", "custom/layout", "niri/window"],
     "modules-center": ["clock"],
     "modules-right": ["wireplumber", "network", "battery", "tray"],
 
@@ -25,6 +25,16 @@
     "niri/workspaces": {
         // Sadece bu monitörün workspace'leri, sıra numarasıyla.
         "format": "{index}"
+    },
+
+    // Düzen modu: AUTO (pencereler ekranı eşit paylaşır) ya da FREE (serbest, yüzen).
+    // layout-mode servisi mod değişince SIGRTMIN+8 gönderir, etiket yeniden okunur.
+    "custom/layout": {
+        "exec": "~/.local/bin/layout-mode label",
+        "return-type": "json",
+        "interval": "once",
+        "signal": 8,
+        "on-click": "~/.local/bin/layout-mode toggle"
     },
 
     "niri/window": {

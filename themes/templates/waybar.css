@@ -12,3 +12,6 @@
 @define-color urgent  {{urgent}};
 @define-color warn    {{warn}};
 @define-color ok      {{ok}};
+
+/* Tepsi zemini: açık temalarda koyu (simgeler açık renkli), koyu temalarda saydam. */
+@define-color tray    {{tray}};

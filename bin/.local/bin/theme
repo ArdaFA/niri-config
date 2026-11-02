@@ -229,9 +229,21 @@ def render(text, palette, source):
     return TOKEN_RE.sub(substitute, text)
 
 
+def derived_colors(palette):
+    """Şablonlar için paletten türetilen ek değerler (palette.json'a yazılmaz).
+
+    tray: Waybar tepsisinin zemini. Simge temaları (ör. Colloid) tepsi simgelerini
+    çoğunlukla sabit açık renkte çizer; açık temalarda zeminde kaybolmasınlar diye
+    tepsi koyu bir zemine (temanın yazı rengi) oturur. Koyu temalarda zemin yok.
+    Hex değil, CSS değeri: yalnızca {{tray}} olarak kullanılır."""
+    light = palette.get("variant") == "light"
+    return {"tray": palette["fg"] if light else "transparent"}
+
+
 def write_outputs(palette, outdir):
     """themes/templates/ içindeki her şablonu aynı adla outdir'e yazar."""
     outdir.mkdir(parents=True, exist_ok=True)
+    palette = {**palette, **derived_colors(palette)}
     for template in sorted(TEMPLATES.iterdir()):
         if template.is_file() and not template.name.startswith("."):
             write_atomic(outdir / template.name,
