@@ -99,7 +99,7 @@ Repo'daki her üst klasör bir **stow paketidir**: içindeki yol `~` altına ayn
 | Dosya | Ne yapar |
 |---|---|
 | `niri/.config/niri/config.kdl` | Ana dosya: diğerlerini sırayla dahil eder, imleç, ekran görüntüsü yolu, ortam değişkenleri |
-| `niri/.config/niri/input.kdl` | Klavye düzeni (`de`), touchpad (dokunarak tıklama, yazarken kapanma) |
+| `niri/.config/niri/input.kdl` | Klavye düzeni (`de`), touchpad (dokunarak tıklama, yazarken kapanma), odağın fareyi takip etmesi, sürüklerken kenarda kaymama, sol üst köşe |
 | `niri/.config/niri/outputs.kdl` | Ekranlar: ölçek, konum, harici monitör |
 | `niri/.config/niri/layout.kdl` | Boşluklar, sütun genişlikleri, odak halkası kalınlığı, gölge, yedek renkler |
 | `niri/.config/niri/binds.kdl` | Bütün kısayollar |
@@ -142,7 +142,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `bin/.local/bin/osd` | Ses/mikrofon/parlaklık tuşları: değeri değiştirir, üst ortada gösterge açar |
 | `bin/.local/bin/lock-screen` | Ekranı kilitler (zaten kilitliyse bir şey yapmaz) |
 | `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)) |
-| `wallpapers/` | Duvar kağıtların |
+| `wallpapers/` | Duvar kağıtların. İçindekiler git'e girmez (bkz. [Duvar kağıdı](#duvar-kağıdı)). |
 | `install.sh` | Bağlar, servisleri kaydeder, temayı üretir. `uninstall` ile geri alır. |
 | `check.sh` | Bütün config'leri programları çalıştırmadan doğrular |
 
@@ -284,7 +284,7 @@ aynı adla `~/.local/state/theme/` altına üretir. Programın config'inden o do
 
 ## Duvar kağıdı
 
-1. Görselleri `~/dotfiles/wallpapers/` içine koy.
+1. Görselleri `~/dotfiles/wallpapers/` içine koy. Klasör yoksa: `mkdir -p ~/dotfiles/wallpapers`
 2. `theme wallpaper <dosya-adı>` komutunu çalıştır. Sadece dosya adı yazarsan bu klasörde aranır; tam yol da verebilirsin.
 
 | İstek | Komut |
@@ -294,8 +294,11 @@ aynı adla `~/.local/state/theme/` altına üretir. Programın config'inden o do
 | Görseli kaldır (temanın düz arka plan rengi) | `theme wallpaper none` |
 | Preset'e geç (görsel kalır) | `theme preset rose-pine` |
 
-Görseller git'e de girer. İstemezsen `.gitignore`'a `wallpapers/*` ve `!wallpapers/.gitkeep`
-satırlarını ekle.
+**Görseller git'e girmez.** `.gitignore` bu klasörde yalnızca boş `.gitkeep` dosyasını izler;
+klasör yeni bir klonda da hazır olur ama içi boş gelir. Bu yüzden görsellerin dotfiles'la birlikte
+yedeklenmez: başka bir bilgisayara geçerken `wallpapers/` klasörünü ayrıca kopyala. Kayıtlı tema
+görselin tam yolunu tutar. Görsel silinir ya da taşınırsa bir sonraki girişte arka plan düz renge
+döner; ondan üretilmiş renkler kalır.
 
 ---
 
@@ -333,6 +336,35 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 | `Super+Ctrl+←/→` veya `Super+Ctrl+H/L` | Sütunu sola/sağa taşı. Kenardaysa yandaki monitöre. |
 | `Super+Ctrl+↑/↓` veya `Super+Ctrl+K/J` | Pencereyi sütun içinde yukarı/aşağı taşı |
 | `Super+Ctrl+Home` / `Super+Ctrl+End` | Sütunu en başa / sona taşı |
+
+### Fare
+
+Ayarı: `niri/.config/niri/input.kdl`.
+
+| Hareket | İş |
+|---|---|
+| Fareyi bir pencerenin üstüne getir | O pencere odaklanır, ama yalnızca tamamen görünüyorsa. Kısmen görünen bir pencere odak almaz ve görünüm kaymaz. |
+| Pencereye tıkla | Odaklanır; kısmen görünüyorsa görünüm ona kayar |
+| `Super` + sol tıkla sürükle | Pencereyi taşı. Sürüklerken sağ tık: yüzen ↔ döşeli. Ekran kenarı duvar gibidir, görünüm kaymaz. |
+| `Super` + sağ tıkla sürükle | Pencereyi boyutlandır (aşağıya bak) |
+| `Super` + sağ çift tık, pencerenin sol/sağ kısmında | Sütun tam genişliğe yayılır |
+| `Super` + sağ çift tık, pencerenin üst/alt kısmında | Pencere yüksekliği otomatiğe döner |
+| `Super` + orta tuşla (tekerleğe basılı) sürükle | Yatay: görünümü kaydır · dikey: workspace değiştir |
+| İmleci sol üst köşeye götür | Genel bakış (overview) |
+
+**Boyutlandırma (`Super` + sağ tık sürükle):** niri pencereyi 3×3'lük bir ızgaraya böler ve
+imlecin olduğu yere göre hangi kenarın taşınacağını seçer: sol/sağ üçte bir sütun genişliğini,
+üst/alt üçte bir pencere yüksekliğini değiştirir, köşeler ikisini birden. Tam ortadan tutarsan
+hiçbir şey olmaz. Sütunun en üstteki penceresinde **üst** kenar hareket etmez; yüksekliği alt
+kenardan değiştirirsin. Yüksekliği eski haline getirmek için `Super+Ctrl+R`.
+
+**Kenarından tutarak boyutlandırma neden yok:** niri pencerelerin etrafına kendisi tutulacak bir
+kenar koymuyor; kenardan boyutlandırma, uygulamanın kendi çizdiği çerçeveyle (CSD) çalışır.
+`config.kdl`'deki `prefer-no-csd` uygulamalardan bu çerçeveyi çizmemelerini istediği için kenar
+tutamakları da kayboluyor (niri belgelerinde de böyle yazıyor). `prefer-no-csd`'yi kaldırmak
+da tam çözüm değil: GTK uygulamalarına tutamaklar geri gelir ama foot, Qt uygulamaları ve Brave
+kendi başlık çubuklarını çizer, görünüm uygulamadan uygulamaya değişir ve bazılarında yine
+tutamak olmaz. Bu yüzden `Super` + sağ tık her pencerede aynı çalışan yol.
 
 ### Monitörler
 
@@ -485,18 +517,10 @@ Dosya: `niri/.config/niri/outputs.kdl`. Bağlı ekranları görmek için: `niri 
   kapak kapalıyken: `niri msg outputs` (eDP-1 "Disabled" görünmeli) ya da
   `journalctl --user -b -u niri | grep lid`.
 - **Ekranın dışına taşan pencereler laptop ekranında değildir.** niri'de her workspace sağa ve sola
-  sonsuz uzanan bir şerit; sığmayan sütunlar ekranın kenarının ötesinde bekler. Bir pencereyi
-  fareyle kenara sürükleyince görünüm o yöne kayar. Bu, kapak açık ya da kapalı fark etmeden
-  böyledir. Gezinmek için `Super+H/L`, `Super+Home/End` ya da `Super+O` (genel bakış).
-  Sürüklerken görünümün kaymasını istemezsen `config.kdl`'ye şunu ekle:
-
-  ```kdl
-  gestures {
-      dnd-edge-view-scroll {
-          trigger-width 0
-      }
-  }
-  ```
+  sonsuz uzanan bir şerit; sığmayan sütunlar ekranın kenarının ötesinde bekler. Bu, kapak açık
+  ya da kapalı fark etmeden böyledir. Gezinmek için `Super+H/L`, `Super+Home/End` ya da
+  `Super+O` (genel bakış). Pencere sürüklerken ekran kenarında görünümün kayması kapalı
+  (`input.kdl` → `dnd-edge-view-scroll`, `trigger-width 0`). niri varsayılanına dönmek için o bloğu sil.
 - **Belirli bir monitöre özel ayar** (ör. 120 Hz modu, farklı konum): `niri msg outputs` çıktısındaki marka-model-seri adıyla ekle:
 
   ```kdl
@@ -627,14 +651,8 @@ baştan beri değiştirilmediği için geri alınacak başka bir şey yok.
   3. `./install.sh` çalıştır.
 - **Chrome, Vivaldi, Chromium** da KWallet kullanıyor. niri'de bunları kullanacaksan aynı
   `--password-store=kwallet6` bayrağı gerekir; şu an yalnızca Brave ayarlı.
-- **Sol üst köşe** niri'de genel bakışı açar. Kapatmak için `config.kdl`'ye şunu ekle:
-
-  ```kdl
-  gestures {
-      hot-corners {
-          off
-      }
-  }
-  ```
+- **Sol üst köşe** niri'de genel bakışı açar. Kapatmak için `input.kdl`'deki `gestures`
+  bloğunda hazır duran `hot-corners { off }` satırlarının başındaki `//` işaretlerini sil.
+  İkinci bir `gestures` bloğu açma, aynı dosyada mevcut olanı kullan.
 - **Güç tuşu** niri'de bilgisayarı kapatmaz, uyutur (niri varsayılanı).
 - niri belgeleri: <https://github.com/niri-wm/niri/wiki>.

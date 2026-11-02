@@ -14,5 +14,22 @@ input {
         // natural-scroll   // doğal (ters) kaydırma istersen baştaki // işaretini sil
     }
 
-    // Odak tıklamayla değişir (KDE'deki gibi); fare üstüne gelince değişmez.
+    // Odak fareyi takip eder: fare bir pencerenin üstüne gelince o pencere odaklanır.
+    // "0%": odaklamak görünümü kaydıracaksa (pencere kısmen görünüyorsa) odak değişmez,
+    // görünüm de yerinde kalır. O pencereye geçmek için tıkla ya da Super+H/L.
+    focus-follows-mouse max-scroll-amount="0%"
+}
+
+gestures {
+    // Pencere (Super+sol tık) ya da dosya sürüklerken imleç ekran kenarına gelince
+    // görünüm kaymasın: kenar sabit bir duvar gibi davranır. 0 = kapalı.
+    // Açmak için satırı sil (niri varsayılanı 30 piksel).
+    dnd-edge-view-scroll {
+        trigger-width 0
+    }
+
+    // Sol üst köşe genel bakışı (overview) açar. Kapatmak için:
+    // hot-corners {
+    //     off
+    // }
 }
