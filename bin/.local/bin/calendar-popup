@@ -1,0 +1,205 @@
+#!/usr/bin/env python3
+"""calendar-popup — Waybar'da saate tıklayınca açılan takvim.
+
+Tekrar çalıştırınca, Esc'e basınca ya da pencerenin dışına tıklayınca kapanır.
+Dışarı tıklamayı yakalamak için ekranı kaplayan saydam bir katman açılır (Wayland'de
+katman pencereleri dışarıya yapılan tıklamayı başka türlü öğrenemez).
+
+GTK3 + gtk-layer-shell (Waybar'ın da kullandığı kütüphane) ile çalışır; ek paket gerekmez.
+Renkler `theme` komutunun ürettiği ~/.local/state/theme/panel.css dosyasından gelir.
+Ekrana yazılan her şey İngilizce (arayüz kuralı); açıklamalar Türkçe.
+"""
+
+import os
+import signal
+import sys
+from datetime import date
+from pathlib import Path
+
+RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+PID_FILE = RUNTIME / "calendar-popup.pid"
+
+
+def already_open():
+    """Açık bir takvim varsa kapatır ve True döndürür (aç/kapa davranışı)."""
+    try:
+        pid = int(PID_FILE.read_text())
+        if b"calendar-popup" in Path(f"/proc/{pid}/cmdline").read_bytes():
+            os.kill(pid, signal.SIGTERM)
+            return True
+    except (OSError, ValueError):
+        pass
+    return False
+
+
+if __name__ == "__main__" and already_open():
+    sys.exit(0)   # açık takvim kapatıldı; GTK'yı hiç yüklemeden çık
+
+# Arayüz İngilizce: ay ve gün adları sistem dilinden bağımsız olsun.
+os.environ["LC_ALL"] = "en_US.UTF-8"
+# Katman penceresi yalnızca Wayland'de anlamlı; X11'e düşüp normal pencere açmasın.
+os.environ["GDK_BACKEND"] = "wayland"
+
+import gi  # noqa: E402
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GtkLayerShell", "0.1")
+from gi.repository import Gdk, GLib, Gtk, GtkLayerShell  # noqa: E402
+
+THEME_CSS = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "theme/panel.css"
+
+CSS = b"""
+* { font-family: "Departure Mono", monospace; font-size: 11px; }
+.backdrop { background: transparent; }
+.popup {
+    background: @panel_bg;
+    color: @panel_fg;
+    border: 1px solid @panel_border;
+    border-radius: 6px;
+    padding: 14px 16px 12px 16px;
+}
+.weekday { color: @panel_muted; }
+.date { font-size: 15px; margin-bottom: 8px; }
+calendar {
+    background: transparent;
+    color: @panel_fg;
+    border: none;
+    padding: 2px;
+}
+calendar.header { background: transparent; border: none; }
+calendar.button { color: @panel_muted; background: transparent; border: none; }
+calendar.button:hover { color: @panel_fg; }
+calendar:selected { background: @panel_accent; color: @panel_bg; border-radius: 4px; }
+calendar.highlight { color: @panel_muted; }
+calendar:indeterminate { color: alpha(@panel_muted, 0.5); }
+.today-button {
+    margin-top: 8px;
+    padding: 2px 10px;
+    color: @panel_fg;
+    background: @panel_surface;
+    border: none;
+    border-radius: 4px;
+    box-shadow: none;
+}
+.today-button:hover { background: @panel_overlay; }
+"""
+
+# panel.css yoksa (ör. theme hiç çalışmadıysa) kullanılacak renkler.
+FALLBACK_COLORS = b"""
+@define-color panel_bg #1d1a21;
+@define-color panel_surface #26222b;
+@define-color panel_overlay #332d39;
+@define-color panel_fg #ede4ea;
+@define-color panel_muted #6f6577;
+@define-color panel_accent #f4a7b9;
+@define-color panel_border #f4a7b9;
+"""
+
+
+def load_css():
+    provider = Gtk.CssProvider()
+    try:
+        colors = THEME_CSS.read_bytes()
+    except OSError:
+        colors = FALLBACK_COLORS
+    provider.load_from_data(colors + CSS)
+    Gtk.StyleContext.add_provider_for_screen(
+        Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+
+def layer_window(layer, keyboard):
+    win = Gtk.Window()
+    GtkLayerShell.init_for_window(win)
+    GtkLayerShell.set_namespace(win, "calendar-popup")
+    GtkLayerShell.set_layer(win, layer)
+    GtkLayerShell.set_keyboard_mode(win, keyboard)
+    visual = win.get_screen().get_rgba_visual()
+    if visual:
+        win.set_visual(visual)
+    win.set_app_paintable(True)
+    return win
+
+
+class Popup:
+    def __init__(self):
+        # Ekranı kaplayan saydam katman: dışarıya yapılan her tıklama takvimi kapatır.
+        # Pencerelerin üstünde (top), takvimin altında (overlay) durur.
+        self.backdrop = layer_window(GtkLayerShell.Layer.TOP, GtkLayerShell.KeyboardMode.NONE)
+        for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM,
+                     GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
+            GtkLayerShell.set_anchor(self.backdrop, edge, True)
+        GtkLayerShell.set_exclusive_zone(self.backdrop, -1)   # paneli de kapla
+        self.backdrop.get_style_context().add_class("backdrop")
+        self.backdrop.connect("button-press-event", lambda *_: self.quit())
+
+        # Takvim: üstte ortada, panelin hemen altında (panelin ayırdığı alana göre yerleşir).
+        self.win = layer_window(GtkLayerShell.Layer.OVERLAY, GtkLayerShell.KeyboardMode.EXCLUSIVE)
+        GtkLayerShell.set_anchor(self.win, GtkLayerShell.Edge.TOP, True)
+        GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.TOP, 6)
+        self.win.connect("key-press-event", self.on_key)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        box.get_style_context().add_class("popup")
+        today = date.today()
+        weekday = Gtk.Label(label=today.strftime("%A"), xalign=0)
+        weekday.get_style_context().add_class("weekday")
+        day = Gtk.Label(label=today.strftime("%-d %B %Y"), xalign=0)
+        day.get_style_context().add_class("date")
+        self.calendar = Gtk.Calendar()
+        self.calendar.connect("month-changed", lambda *_: self.mark_today())
+        self.mark_today()
+        back = Gtk.Button(label="Today")
+        back.get_style_context().add_class("today-button")
+        back.set_halign(Gtk.Align.END)
+        back.connect("clicked", lambda *_: self.go_today())
+        for widget in (weekday, day, self.calendar, back):
+            box.add(widget)
+        self.win.add(box)
+
+    def mark_today(self):
+        self.calendar.clear_marks()
+        year, month, _ = self.calendar.get_date()     # GTK'da ay 0'dan başlar
+        today = date.today()
+        if (year, month + 1) == (today.year, today.month):
+            self.calendar.mark_day(today.day)
+
+    def go_today(self):
+        today = date.today()
+        self.calendar.select_month(today.month - 1, today.year)
+        self.calendar.select_day(today.day)
+
+    def on_key(self, _widget, event):
+        if event.keyval == Gdk.KEY_Escape:
+            self.quit()
+            return True
+        return False
+
+    def show(self):
+        self.backdrop.show_all()
+        self.win.show_all()
+
+    @staticmethod
+    def quit():
+        Gtk.main_quit()
+
+
+def main():
+    PID_FILE.write_text(str(os.getpid()))
+    try:
+        load_css()
+        popup = Popup()
+        popup.show()
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, Popup.quit)
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, Popup.quit)
+        Gtk.main()
+    finally:
+        try:
+            if PID_FILE.read_text() == str(os.getpid()):
+                PID_FILE.unlink()
+        except OSError:
+            pass
+
+
+if __name__ == "__main__":
+    sys.exit(main())

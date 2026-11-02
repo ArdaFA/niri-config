@@ -16,11 +16,11 @@
     text-shadow: none;
 }
 
+/* Ekranın üstüne yapışık, tam genişlik: köşe yok, yalnızca altta ince bir çizgi. */
 window#waybar {
-    background: alpha(@bg, 0.92);
+    background: alpha(@bg, 0.94);
     color: @fg;
-    border: 1px solid @overlay;
-    border-radius: 6px;
+    border-bottom: 1px solid @overlay;
 }
 
 tooltip {
@@ -42,6 +42,7 @@ tooltip label {
 #battery {
     padding: 0 10px;
 }
+
 
 /* ── Workspace'ler ──────────────────────────────────────────────────── */
 #workspaces {
@@ -112,6 +113,12 @@ window#waybar.empty #window {
 
 #clock {
     color: @fg;
+    margin: 4px 0;
+    border-radius: 4px;
+}
+
+#clock:hover {
+    background: @overlay;
 }
 
 /* ── Durum modülleri ────────────────────────────────────────────────── */
@@ -139,6 +146,40 @@ window#waybar.empty #window {
 #battery.critical:not(.charging) {
     color: @urgent;
     animation: blink 1s linear infinite alternate;
+}
+
+/* ── Medya (yalnızca bir çalar açıkken görünür) ─────────────────────── */
+#custom-media-prev,
+#custom-media-play,
+#custom-media-next {
+    padding: 0 5px;
+    margin: 4px 0;
+    color: @subtle;
+    border-radius: 4px;
+}
+
+#custom-media-prev {
+    margin-left: 6px;
+}
+
+#custom-media-prev:hover,
+#custom-media-play:hover,
+#custom-media-next:hover {
+    color: @fg;
+    background: @overlay;
+}
+
+#custom-media-play.playing {
+    color: @accent;
+}
+
+#mpris {
+    padding: 0 10px 0 6px;
+    color: @subtle;
+}
+
+#mpris.paused {
+    color: @muted;
 }
 
 /* ── Sistem tepsisi ─────────────────────────────────────────────────── */

@@ -116,6 +116,7 @@ presets() {
             || { echo "$preset: fuzzel.ini invalid"; rc=1; }
         mako_conf "$out/mako" || { echo "$preset: mako invalid"; rc=1; }
         gtk_css "$out/waybar.css" || { echo "$preset: waybar.css invalid"; rc=1; }
+        gtk_css "$out/panel.css" || { echo "$preset: panel.css invalid"; rc=1; }
         swaylock_conf "$out/swaylock.conf" || { echo "$preset: swaylock.conf invalid"; rc=1; }
     done
     return $rc
@@ -144,6 +145,7 @@ check "fuzzel"            fuzzel --check-config --config "$DOTFILES/fuzzel/.conf
 check "mako"              mako_conf "$DOTFILES/mako/.config/mako/config"
 check "swaylock (theme)"  swaylock_conf "${XDG_STATE_HOME:-$HOME/.local/state}/theme/swaylock.conf"
 check "scripts"           scripts
+check "layout planner"    python3 -I "$DOTFILES/bin/.local/bin/layout-mode" selftest
 check "presets"           presets
 check "systemd units"     units
 

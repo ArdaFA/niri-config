@@ -114,7 +114,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | Dosya | Ne yapar |
 |---|---|
 | `waybar/.config/waybar/config.jsonc` | Panel: hangi modüller nerede, biçimleri, tıklama eylemleri |
-| `waybar/.config/waybar/style.css` | Panel görünümü (font, boşluk, köşe, durum renkleri) |
+| `waybar/.config/waybar/style.css` | Panel görünümü (font, boşluk, durum renkleri) |
 | `fuzzel/.config/fuzzel/fuzzel.ini` | Uygulama başlatıcı |
 | `mako/.config/mako/config` | Bildirimler ve ses/parlaklık göstergesinin yeri ve boyutu |
 | `foot/.config/foot/foot.ini` | Terminal: font, iç boşluk, imleç, geçmiş |
@@ -142,7 +142,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `autostart/.config/autostart/blueman.desktop` | Bluetooth tepsi simgesi, yalnızca niri'de |
 | `bin/.local/bin/osd` | Ses/mikrofon/parlaklık tuşları: değeri değiştirir, üst ortada gösterge açar |
 | `bin/.local/bin/lock-screen` | Ekranı kilitler (zaten kilitliyse bir şey yapmaz) |
-| `bin/.local/bin/layout-mode` | Otomatik düzen (AUTO) ve serbest mod (FREE), bkz. [Otomatik düzen](#otomatik-düzen-auto--free) |
+| `bin/.local/bin/layout-mode` | Otomatik ızgara düzeni (AUTO) ve elle düzen (FREE), bkz. [Otomatik düzen](#otomatik-düzen-auto--free) |
+| `bin/.local/bin/calendar-popup` | Saate tıklayınca açılan takvim (GTK3 + gtk-layer-shell) |
 | `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
 | `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)) |
 | `wallpapers/` | Duvar kağıtların. İçindekiler git'e girmez (bkz. [Duvar kağıdı](#duvar-kağıdı)). |
@@ -307,41 +308,71 @@ döner; ondan üretilmiş renkler kalır.
 
 ## Otomatik düzen: AUTO / FREE
 
-niri pencereleri sağa doğru uzayan bir şeride dizer; sığmayanlar ekranın dışında bekler. Bunu
-istemediğin için `layout-mode` adlı küçük bir servis var: niri'nin olaylarını dinler ve pencere
-genişliklerini niri'nin IPC'siyle ayarlar. niri bunu kendisi yapmıyor, yani bu bizim eklentimiz.
+niri pencereleri sağa doğru uzayan bir şeride dizer; sığmayanlar ekranın dışında bekler. Bunun
+yerine ekranı dolduran sabit bir ızgara istediğin için `layout-mode` adlı küçük bir servis var:
+niri'nin olaylarını dinler, pencereleri niri'nin IPC komutlarıyla doğru sütuna taşır ve
+genişliklerini ayarlar. niri bunu kendisi yapmıyor, yani bu bizim eklentimiz.
 
 İki mod var. Paneldeki küçük etiket hangisinde olduğunu gösterir. **`Super+T`** ya da etikete
 tıklamak modu değiştirir. Her girişte AUTO ile başlar.
 
-**AUTO (varsayılan):** her workspace'te döşeli pencereler ekranı tam doldurur.
+**AUTO (varsayılan):** her workspace'teki döşeli pencereler en fazla iki sütuna dizilir.
 
-- Tek pencere ekranın tamamını kaplar; ikinci açılınca ikiye, üçüncüde üçe eşit bölünür.
-- Bir pencere kapanınca, başka workspace'e gidince ya da yüzen olunca (`Super+V`) kalanlar
-  yeniden eşit bölünür.
-- Bir sütunu boyutlandırınca (`Super` + sağ tık, `Super+R`, `Super+-` / `Super++`) o sütun
-  bıraktığın genişlikte kalır, diğerleri kalan alana **orantılı** sığar. Diğerleri en az 200 px
-  kalır; daha fazla büyütürsen sütun geri çekilir.
-- Aynı sütunda üst üste duran pencereler tek pay sayılır; dikey bölmeyi niri zaten yapıyor.
+| Pencere sayısı | Düzen |
+|---|---|
+| 1 | Tam ekran |
+| 2 | Yan yana, %50 / %50 |
+| 3 | Solda bir pencere tam yükseklikte, sağda iki pencere alt alta |
+| 4 | 2×2: ekran bir dikey ve bir yatay çizgiyle dört eşit parçaya bölünür |
+| 5 ve fazlası | İki sütuna dengeli: 5'te solda 3 sağda 2, 6'da 3/3, 7'de 4/3… |
+
+- Sütunlar eşit genişlikte, bir sütundaki pencereler eşit yükseklikte.
+- **Sıra** okuma sırasıdır: önce sol sütun yukarıdan aşağı, sonra sağ sütun. Yeni açılan pencere
+  sona, yani sağ alta eklenir. Başka workspace'ten gelen ya da `Super+V` ile döşeliye dönen
+  pencere de öyle.
+- Bir pencere kapanınca, başka workspace'e gidince ya da yüzen olunca düzen kalanlarla yeniden
+  kurulur.
+- **Yer değiştirmek:**
+  - `Super+Ctrl+←/→` (ya da `H`/`L`): odaktaki pencere, yandaki sütunda aynı satırdaki pencereyle
+    yer değiştirir. O yönde sütun yoksa pencere yandaki monitöre gider.
+  - `Super+Ctrl+↑/↓` (ya da `K`/`J`): sütun içinde üstteki ya da alttakiyle yer değiştirir.
+  - Fareyle: `Super` + sol tıkla pencereyi başka bir yere bırak. Düzen, bıraktığın yere göre
+    yeniden kurulur.
+- **Boyutlandırmak:**
+  - Sütun genişliğini değiştirince (`Super` + sağ tık, `Super+R`, `Super+-` / `Super++`) diğer
+    sütun kalan alana sığar. Diğer sütun en az 200 px kalır; daha fazla büyütürsen sütun geri
+    çekilir.
+  - Pencere yüksekliğini değiştirince (`Super+Shift+-` / `Super+Shift++`, sağ tıkla dikey sürükle)
+    aynı sütundakileri niri kendisi sığdırır.
+  - Elle verdiğin boyutlar, düzen yeniden kurulana kadar kalır: pencere açılıp kapanınca ya da
+    yer değiştirince her şey yine eşitlenir.
 - `Super+F` (sütunu büyüt) ve `Super+Shift+F` (tam ekran) bilerek taşırır; servis bunlara
-  karışmaz. Geri aldığında düzen eski haline döner.
-- Fareyle taşınan (`Super` + sol tık) pencere bırakılana kadar beklenir. Sadece sırası değiştiyse
-  genişlikler korunur.
+  karışmaz.
+- Sütuna katma/çıkarma (`Super+,` / `Super+.`) ve sütunu başa/sona taşıma
+  (`Super+Ctrl+Home/End`) ızgarayı bozar; servis hemen okuma sırasına göre yeniden kurar. Bunlar
+  FREE'de işe yarar.
 
-**FREE:** pencereleri fareyle istediğin yere taşıyıp istediğin boyuta getirebilirsin.
+**FREE:** servis düzenlemeyi bırakır; pencereler döşeli kalır, hiçbiri yüzen olmaz.
 
-- FREE'ye geçince bütün döşeli pencereler **olduğu yerde ve boyutta** yüzen olur.
-- FREE'deyken açılan pencereler de yüzen olur. Önce döşeli açılıp bir an sonra yüzen olurlar.
-- Taşımak: `Super` + sol tık sürükle (GTK uygulamalarında başlık çubuğundan da). Boyutlandırmak:
-  `Super` + sağ tık sürükle.
-- AUTO'ya dönünce bu pencereler **soldan sağa konumlarına göre** sırayla yeniden döşenir ve ekran
-  eşit bölünür. Zaten yüzen açılan pencereler (diyaloglar, pavucontrol, şifre penceresi) yüzen kalır.
+- Hiçbir şey yerinden oynamaz. Boyutu ve sırayı klavyeyle ya da `Super` + sağ tık / sol tık ile
+  elle ayarlarsın.
+- niri'nin olağan davranışı geçerlidir: yeni pencere odaktakinin sağına açılır, sığmayanlar
+  ekranın dışında bekler.
+- `Super+Ctrl+←/→` FREE'de sütunu taşır (niri'nin varsayılanı).
+- Tek bir pencereyi yüzdürmek için `Super+V` (iki modda da).
+- AUTO'ya dönünce ızgara mevcut okuma sırasıyla yeniden kurulur; elle verdiğin boyutlar sıfırlanır.
 
 **Bilinen sınırlar:**
 
-- **Kısa geçişler:** Yeni pencere önce niri'nin varsayılan genişliğinde açılıp hemen eşit paya
-  iner. Fareyle boyutlandırırken diğer pencereler bir an ekran dışına itilir; durduğunda
-  (~0,15 sn) sığdırılır.
+- **Yeniden kurma:** niri'de "şu pencereyi şu sütunun şu satırına koy" diye bir komut yok.
+  - Servis pencereleri "sütuna kat / sütundan çıkar" komutlarıyla adım adım taşır. En kısa adım
+    sırasını kendisi hesaplar ve hepsini tek seferde gönderir.
+  - Yeni pencere bir an niri'nin koyduğu yerde görünür, ~0,15 sn sonra kısa bir animasyonla
+    yerine kayar.
+- **Çok pencere:** 7–8 pencerede satırlar epey alçalır. Belli bir yüksekliğin altına inmeyen
+  uygulamalar sütuna sığmayabilir.
+- **En küçük genişlik:** Bazı uygulamalar (ör. Brave) belli bir genişliğin altına inmez. O sütun
+  o kadar geniş kalır, diğeri kalan alanı alır. İkisi de sığmıyorsa taşma önlenemez.
 - **Görünüm hizalaması:** niri'de görünümü doğrudan ayarlayan bir komut yok. Genişlikler
   değişince görünüm kaymış kalabiliyor (solda boşluk, sağda kesik pencere). Servis bunu,
   bir anlığına ilk ve son pencereye odaklanıp sana geri dönerek düzeltir.
@@ -349,13 +380,8 @@ tıklamak modu değiştirir. Her girişte AUTO ile başlar.
   - Bu birkaç milisaniyede bastığın bir tuş başka pencereye gidebilir.
   - Fareyle boyutlandırdıktan sonra hizalama, fare 1 sn durunca yapılır. Sürüklerken 1 sn'den
     uzun beklersen sürükleme biter; tekrar tutman gerekir.
-- **En küçük boyut:** Bazı uygulamalar (ör. Brave) belli bir genişliğin altına inmez. Çok
-  pencereli bir workspace'te bu uygulama payına sığmazsa o kadar geniş kalır, diğerleri kalan
-  alanı paylaşır. Hiçbiri sığmıyorsa taşma önlenemez.
-- **Gizli workspace'ler:** Görünmeyen bir workspace'te genişlikler hemen ayarlanır, görünüm
-  hizalaması o workspace'e geçince yapılır.
-- Sağdaki/soldaki ekran kenarında Waybar gibi bir panel yoksa doğru çalışır. Panel üstte olduğu
-  için sorun yok.
+- **Gizli workspace'ler:** Görünmeyen bir workspace'te düzen hemen kurulur ve odak değişmez.
+  Görünüm hizalaması o workspace'e geçince yapılır.
 
 **Komutlar:**
 
@@ -363,18 +389,24 @@ tıklamak modu değiştirir. Her girişte AUTO ile başlar.
 layout-mode toggle            # AUTO ↔ FREE (Super+T ile aynı)
 layout-mode auto | free       # belirli moda geç
 layout-mode status            # auto / free / off (servis çalışmıyorsa)
+layout-mode move left|right   # AUTO: yandakiyle yer değiştir, FREE: sütunu taşı (Super+Ctrl+←/→)
 systemctl --user status layout-mode     # servis durumu ve hataları
 systemctl --user stop layout-mode       # bu oturum için kapat (pencereler olduğu gibi kalır)
 ```
 
-- **Tamamen kapatmak:** `install.sh` içindeki `NIRI_SERVICES` listesinden `layout-mode.service`'i
-  sil, `systemctl --user remove-wants niri.service layout-mode.service` çalıştır. Waybar'dan
-  etiketi kaldırmak için `config.jsonc`'deki `"custom/layout"` girdisini sil.
+- **Tamamen kapatmak:**
+  - `install.sh` içindeki `NIRI_SERVICES` listesinden `layout-mode.service`'i sil.
+  - `systemctl --user remove-wants niri.service layout-mode.service` çalıştır.
+  - Waybar'dan etiketi kaldırmak için `config.jsonc`'deki `"custom/layout"` girdisini sil.
+  - Servis kapalıyken `Super+Ctrl+←/→` niri'nin olağan sütun taşımasını yapar.
 - **Ayrıntılı günlük:** `systemctl --user edit layout-mode` → `[Service]` altına
   `Environment=LAYOUT_MODE_DEBUG=1`, sonra `systemctl --user restart layout-mode` ve
   `journalctl --user -u layout-mode -f`.
-- **Ayarlar** scriptin başındaki sabitlerde: bekleme süreleri, en küçük sütun genişliği (200 px).
-  niri'deki `gaps` değerini `layout.kdl`'den kendisi okur.
+- **Ayarlar:**
+  - Bekleme süreleri ve en küçük sütun genişliği (200 px) scriptin başındaki sabitlerde.
+  - Pencerelerin sütunlara dağılımı `grid()` fonksiyonunda (ör. 3 pencerede soldaki tek pencere).
+  - niri'deki `gaps` değerini `layout.kdl`'den kendisi okur.
+  - `./check.sh` planlayıcıyı rastgele düzenlerle dener (`layout planner`).
 
 ---
 
@@ -401,7 +433,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 | `Super+Shift+P` | Ekranları kapat (fare/klavye ile açılır) |
 | `Super+Shift+E` | Oturumu kapat (onay ister) |
 | `Super+Escape` | Bir uygulama (ör. sanal makine) kısayolları yakaladıysa geri al |
-| `Super+T` | Düzen modu: AUTO ↔ FREE (bkz. [Otomatik düzen](#otomatik-düzen-auto--free)) |
+| `Super+T` | Düzen modu: AUTO (ızgara) ↔ FREE (elle), bkz. [Otomatik düzen](#otomatik-düzen-auto--free) |
 
 ### Odak ve taşıma
 
@@ -410,8 +442,8 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 | `Super+←/→` veya `Super+H/L` | Sol/sağ sütuna odaklan. Kenardaysa yandaki monitöre geçer. |
 | `Super+↑/↓` veya `Super+K/J` | Sütun içinde üst/alt pencere |
 | `Super+Home` / `Super+End` | İlk / son sütun |
-| `Super+Ctrl+←/→` veya `Super+Ctrl+H/L` | Sütunu sola/sağa taşı. Kenardaysa yandaki monitöre. |
-| `Super+Ctrl+↑/↓` veya `Super+Ctrl+K/J` | Pencereyi sütun içinde yukarı/aşağı taşı |
+| `Super+Ctrl+←/→` veya `Super+Ctrl+H/L` | AUTO: odaktaki pencereyi yandaki sütundaki komşusuyla yer değiştir. FREE: sütunu sola/sağa taşı. Kenardaysa yandaki monitöre. |
+| `Super+Ctrl+↑/↓` veya `Super+Ctrl+K/J` | Pencereyi sütun içinde üstteki/alttaki ile yer değiştir |
 | `Super+Ctrl+Home` / `Super+Ctrl+End` | Sütunu en başa / sona taşı |
 
 ### Fare
@@ -516,7 +548,8 @@ Görüntü `~/Pictures/Screenshots/` içine kaydedilir ve panoya kopyalanır.
 |---|---|
 | Workspace numarası | Tıkla: o workspace'e git |
 | `AUTO` / `FREE` | Tıkla: düzen modunu değiştir (`Super+T` ile aynı). `----` = servis çalışmıyor |
-| Saat | Üstüne gel: takvim · sağ tık: ay/yıl görünümü · tekerlek: aylar arasında gez |
+| Saat | Tıkla: takvim. Tekrar tıkla, `Esc`'e bas ya da dışarı tıkla: kapanır. Üstüne gel: tam tarih. |
+| `\|<` `>` / `\|\|` `>\|` ♪ başlık | Yalnızca bir çalar açıkken görünür. Önceki · oynat/duraklat · sonraki. Başlığa tıkla: oynat/duraklat, orta tık: önceki, sağ tık: sonraki. |
 | `VOL` | Tıkla: pavucontrol · sağ tık: sessiz · tekerlek: ses ±%5 |
 | `NET` | Tıkla: ağ bağlantıları penceresi |
 | Tepsi | Wi-Fi (nm-applet), Bluetooth (blueman) ve diğer uygulamalar |
@@ -536,8 +569,22 @@ Hangi modülün nerede durduğu `waybar/.config/waybar/config.jsonc` içindeki �
 ```jsonc
 "modules-left":   ["niri/workspaces", "custom/layout", "niri/window"],
 "modules-center": ["clock"],
-"modules-right":  ["wireplumber", "network", "battery", "tray"],
+"modules-right":  ["group/media", "tray", "wireplumber", "network", "battery"],
 ```
+
+Panel ekranın üstüne yapışık ve tam genişlikte; kenar boşluğu ve yuvarlak köşe yok, altta ince
+bir çizgi var (`style.css` → `window#waybar`).
+
+- **Takvim** (`clock` → `on-click`): `calendar-popup` küçük bir GTK penceresi açar. Ay ve gün
+  adları her zaman İngilizce. Dışarı tıklamayı yakalamak için ekranı kaplayan saydam bir katman
+  açar; boş masaüstüne tıklamak da kapatır. Renkleri temadan gelir (`themes/templates/panel.css`).
+  Açılması ~0,3 sn sürer (Python + GTK her seferinde yeniden başlar).
+- **Medya** (`group/media`): üç düğme (`custom/media-prev`, `-play`, `-next`) ve başlık (`mpris`).
+  - Düğmeler `playerctl --follow` ile durumu izler. Çalar kapanınca playerctl boş satır yazar ve
+    Waybar düğmeleri gizler.
+  - Hepsi en son kullanılan çaları hedefler: Waybar'ın `mpris` modülü playerctld'yi izler,
+    playerctl da playerctld çalışırken aynı çaları seçer.
+  - Panelin fontunda medya simgeleri olmadığı için düz metin kullanılıyor (`|<`, `>`, `||`, `>|`).
 
 - **Kaldırmak:** Listeden sil.
 - **Yer değiştirmek:** Listeler arasında taşı.

@@ -34,12 +34,15 @@ binds {
     Mod+End   { focus-column-last; }
 
     // ── Taşı: pencere / sütun ────────────────────────────────────────────
-    Mod+Ctrl+Left  { move-column-left-or-to-monitor-left; }
-    Mod+Ctrl+Right { move-column-right-or-to-monitor-right; }
+    // Sol/sağ: AUTO modunda odaktaki pencereyi yandaki sütundaki komşusuyla yer
+    // değiştirir; FREE'de (ya da servis kapalıyken) sütunu taşır. layout-mode karar verir.
+    // Yukarı/aşağı: pencereyi sütun içinde komşusuyla yer değiştirir (iki modda da).
+    Mod+Ctrl+Left  hotkey-overlay-title="Swap / move window left" { spawn-sh "~/.local/bin/layout-mode move left"; }
+    Mod+Ctrl+Right hotkey-overlay-title="Swap / move window right" { spawn-sh "~/.local/bin/layout-mode move right"; }
     Mod+Ctrl+Up    { move-window-up; }
     Mod+Ctrl+Down  { move-window-down; }
-    Mod+Ctrl+H     { move-column-left-or-to-monitor-left; }
-    Mod+Ctrl+L     { move-column-right-or-to-monitor-right; }
+    Mod+Ctrl+H     { spawn-sh "~/.local/bin/layout-mode move left"; }
+    Mod+Ctrl+L     { spawn-sh "~/.local/bin/layout-mode move right"; }
     Mod+Ctrl+K     { move-window-up; }
     Mod+Ctrl+J     { move-window-down; }
     Mod+Ctrl+Home  { move-column-to-first; }
@@ -131,7 +134,7 @@ binds {
     Mod+Shift+V { switch-focus-between-floating-and-tiling; }
     Mod+W       hotkey-overlay-title="Toggle tabbed column" { toggle-column-tabbed-display; }
 
-    // Düzen modu: AUTO (pencereler ekranı eşit paylaşır) ↔ FREE (hepsi yüzen, serbest).
+    // Düzen modu: AUTO (iki sütunlu otomatik ızgara) ↔ FREE (dizme durur, elle ayarla).
     // layout-mode servisi yapar; paneldeki AUTO/FREE etiketine tıklamak da aynı.
     Mod+T       hotkey-overlay-title="Layout mode: AUTO / FREE" { spawn-sh "~/.local/bin/layout-mode toggle"; }
 
