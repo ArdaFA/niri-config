@@ -33,7 +33,7 @@ BRAVE_FLAGS_DST="$HOME/.var/app/com.brave.Browser/config/brave-flags.conf"
 install_brave_flags() {
     [[ -d "$HOME/.var/app/com.brave.Browser" ]] || return 0
     if [[ -e "$BRAVE_FLAGS_DST" ]] && ! cmp -s "$BRAVE_FLAGS_SRC" "$BRAVE_FLAGS_DST"; then
-        echo "UYARI: $BRAVE_FLAGS_DST zaten var ve farklı; dokunulmadı." >&2
+        echo "WARNING: $BRAVE_FLAGS_DST already exists and differs; left untouched." >&2
         return 0
     fi
     command install -D -m 644 "$BRAVE_FLAGS_SRC" "$BRAVE_FLAGS_DST"
@@ -54,8 +54,8 @@ do_install() {
     install_brave_flags
     # Tema dosyalarını üret (kayıtlı seçim yoksa varsayılan: sakura).
     "$HOME/.local/bin/theme" apply
-    echo "Bağlandı: ${PACKAGES[*]}"
-    echo "niri servisleri: ${NIRI_SERVICES[*]}"
+    echo "Linked: ${PACKAGES[*]}"
+    echo "niri services: ${NIRI_SERVICES[*]}"
 }
 
 do_uninstall() {
@@ -71,11 +71,11 @@ do_uninstall() {
     if cmp -s "$BRAVE_FLAGS_SRC" "$BRAVE_FLAGS_DST" 2>/dev/null; then
         rm -f "$BRAVE_FLAGS_DST"
     fi
-    echo "Bağlantılar ve üretilmiş tema dosyaları kaldırıldı. Repo yerinde duruyor: $DOTFILES"
+    echo "Removed links and generated theme files. The repo is still at: $DOTFILES"
 }
 
 case "${1:-install}" in
     install)   do_install ;;
     uninstall) do_uninstall ;;
-    *) echo "Kullanım: $0 [install|uninstall]" >&2; exit 1 ;;
+    *) echo "Usage: $0 [install|uninstall]" >&2; exit 1 ;;
 esac

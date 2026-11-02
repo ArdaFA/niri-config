@@ -7,6 +7,9 @@ sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü.
 - KDE ayarlarına, giriş ekranına (GDM) ve varsayılan kabuğa (zsh) dokunulmaz.
 - Renkler tek kaynaktan gelir: `theme` komutu (preset ya da duvar kağıdı).
 - Font: Departure Mono (piksel). Köşeler 6 px, boşluklar 12 px, animasyonlar kısa ve sekmesiz.
+- **Arayüz İngilizce:** Saat, takvim, panel etiketleri, bildirimler, kilit ekranı, kısayol
+  listesi ve komutların ekrana yazdıkları. Türkçe yalnızca bu README'de ve config dosyalarındaki
+  açıklama satırlarında var. Yeni bir arayüz metni eklerken de İngilizce yaz.
 
 ---
 
@@ -133,6 +136,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `systemd/.config/systemd/user/swaybg.service` | Duvar kağıdı |
 | `systemd/.config/systemd/user/swayidle.service` | Boşta kalınca kilit ve ekran kapatma süreleri |
 | `systemd/.config/systemd/user/mako.service.d/niri-only.conf` | mako'nun KDE/GNOME'da başlamasını engeller |
+| `systemd/.config/systemd/user/app-…@autostart.service.d/not-in-niri.conf` | KDE'den gelen bazı autostart programlarının niri'de **başlamaması** (bkz. [Notlar](#notlar)) |
 | `autostart/.config/autostart/nm-applet.desktop` | Wi-Fi tepsi simgesi, yalnızca niri'de |
 | `autostart/.config/autostart/blueman.desktop` | Bluetooth tepsi simgesi, yalnızca niri'de |
 | `bin/.local/bin/osd` | Ses/mikrofon/parlaklık tuşları: değeri değiştirir, üst ortada gösterge açar |
@@ -162,6 +166,7 @@ GDM → niri-session → niri.service
         │    niri-polkit · theme-apply → waybar · mako · swaybg · swayidle
         └─ XDG autostart (OnlyShowIn=niri olanlar + KDE'de de açılanlar)
              nm-applet · blueman · KDE Connect · …
+             (Cisco Secure Client, Xwayland Video Bridge, imsettings/IBus niri'de başlamaz)
 ```
 
 Bu servislerin hiçbiri KDE oturumunda başlamaz. Durumlarını görmek için:
@@ -195,7 +200,7 @@ catppuccin-latte, gruvbox.
 | Bileşen | Nasıl |
 |---|---|
 | niri (odak halkası, arka plan, overview) | Dahil ettiği dosyayı kendisi izler, anında |
-| Waybar | `systemctl --user reload waybar`, anında |
+| Waybar | `@import` ettiği renk dosyasını kendisi izler (`reload_style_on_change`), anında |
 | mako | `makoctl reload`, anında |
 | Açık foot pencereleri | Kaçış dizileriyle, anında |
 | Yeni foot pencereleri | include ettiği dosyadan |
@@ -301,7 +306,8 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 - **Mod** = Super (Windows tuşu). KDE içinde pencere olarak açıkken Mod = Alt.
 - Kalıp: **Ctrl** = taşı, **Shift** = monitör ya da dikey, **Shift+Ctrl** = monitöre taşı.
 - Almanca klavyede AltGr isteyen `[ ] / =` tuşları bilerek kullanılmadı.
-- Ekranda liste: `Super+Shift+ß` (Super+?).
+- Ekranda liste: `Super+Shift+ß` (Super+?). Listedeki açıklamalar İngilizce; `binds.kdl`'de
+  `hotkey-overlay-title="…"` ile yazılıyor.
 
 ### Genel
 
@@ -434,8 +440,14 @@ Hangi modülün nerede durduğu `waybar/.config/waybar/config.jsonc` içindeki �
 Modüllerin bütün seçenekleri man sayfalarında: `man waybar-clock`, `man waybar-battery`,
 `man waybar-niri-workspaces`… Liste için: `ls /usr/share/man/man5 | grep waybar`.
 
-Değişiklikten sonra: `systemctl --user reload waybar`. Panelin renkleri `style.css`'e değil
-temaya ait; `@accent`, `@fg` gibi adlar kullanılır.
+Ne zaman ne yapılır:
+
+- `style.css` ya da tema renkleri değiştiğinde Waybar kendisi yenilenir (`reload_style_on_change`).
+- `config.jsonc`'yi değiştirdiysen: `systemctl --user restart waybar`.
+- **`reload` ya da SIGUSR2 kullanma.** Waybar 0.14 bu yolla eski barları kapatmadan yenilerini
+  açıyor, tepsi simgeleri de yeni barlara gelmiyor.
+
+Panelin renkleri `style.css`'e değil temaya ait; `@accent`, `@fg` gibi adlar kullanılır.
 
 ---
 
@@ -467,7 +479,24 @@ Dosya: `niri/.config/niri/outputs.kdl`. Bağlı ekranları görmek için: `niri 
 
 - **Laptop ekranı (`eDP-1`):** Ölçek **2**, mantıksal 1600×900. Daha fazla alan için `scale 1.85` yaz (KDE'deki değer); piksel font o zaman biraz yumuşar.
 - **Harici monitör:** Konumu yazılmadığı için niri onu otomatik olarak laptopun **sağına** koyar. Takıp çıkarınca düzen yeniden kurulur.
-- **Kapak kapalıyken:** niri iç ekranı kendisi kapatır. Harici monitör bağlıysa sistem uykuya geçmez, bağlı değilse uyur (logind varsayılanı).
+- **Kapak kapalıyken:** niri iç ekranı kendisi kapatır, harici monitörü (0,0)'a alır ve laptop
+  ekranındaki workspace'leri harici monitöre taşır. Kapak açılınca geri getirir. Harici monitör
+  bağlıysa sistem uykuya geçmez, bağlı değilse uyur (logind varsayılanı). Kontrol etmek için
+  kapak kapalıyken: `niri msg outputs` (eDP-1 "Disabled" görünmeli) ya da
+  `journalctl --user -b -u niri | grep lid`.
+- **Ekranın dışına taşan pencereler laptop ekranında değildir.** niri'de her workspace sağa ve sola
+  sonsuz uzanan bir şerit; sığmayan sütunlar ekranın kenarının ötesinde bekler. Bir pencereyi
+  fareyle kenara sürükleyince görünüm o yöne kayar. Bu, kapak açık ya da kapalı fark etmeden
+  böyledir. Gezinmek için `Super+H/L`, `Super+Home/End` ya da `Super+O` (genel bakış).
+  Sürüklerken görünümün kaymasını istemezsen `config.kdl`'ye şunu ekle:
+
+  ```kdl
+  gestures {
+      dnd-edge-view-scroll {
+          trigger-width 0
+      }
+  }
+  ```
 - **Belirli bir monitöre özel ayar** (ör. 120 Hz modu, farklı konum): `niri msg outputs` çıktısındaki marka-model-seri adıyla ekle:
 
   ```kdl
@@ -508,7 +537,7 @@ satırının başındaki `//` işaretini sil.
 ~/dotfiles/check.sh
 ```
 
-Her bileşen için `ok` ya da `HATA` ve hatanın satırını gösterir.
+Her bileşen için `ok` ya da `FAIL` ve hatanın satırını gösterir.
 
 **2. niri config hatası:** niri son geçerli config'le çalışmaya devam eder ve ekranda bir hata
 bildirimi gösterir. Ayrıntı için: `niri validate`.
@@ -584,6 +613,18 @@ baştan beri değiştirilmediği için geri alınacak başka bir şey yok.
   - `~/.config/autostart/nm-applet.desktop`, `blueman.desktop`: İkisinde de `OnlyShowIn=niri;` var. blueman paketi kendi autostart'ıyla KDE'de de başlıyordu; bu dosya onu yalnızca niri'yle sınırlıyor. Yani KDE'yi kurulumdan önceki hâlinde tutuyor.
   - `mako.service.d/niri-only.conf`: KDE'de bir uygulama bildirim gönderdiğinde mako'nun tetiklenip Plasma'nın bildirimlerinin yerine geçmesini engelliyor.
   - `brave-flags.conf`: Brave KDE'de zaten KWallet 6'yı seçiyordu. Bu dosya aynı seçimi niri'de de sabitliyor, KDE'de davranış değişmiyor.
+  - `app-…@autostart.service.d/not-in-niri.conf` (üç tane): KDE'nin de kullandığı autostart
+    girdilerine `ConditionEnvironment=!XDG_CURRENT_DESKTOP=niri` koşulu ekliyor. KDE'de koşul
+    sağlandığı için orada eskisi gibi başlıyorlar; yalnızca niri'de başlamıyorlar:
+    - **Cisco Secure Client**: niri'de gerektiğinde fuzzel'den açılır (`Super+D` → "Cisco").
+    - **Xwayland Video Bridge**: yalnızca KWin için gerekli; niri'de boş bir pencere açıyordu.
+    - **imsettings-start**: giriş yöntemini IBus'a geçiriyor ve "ibus start" uyarısı veriyordu.
+- **Başka bir autostart programını niri'de durdurmak:**
+  1. Birim adını bul: `systemctl --user list-units --all 'app-*@autostart.service'`
+  2. Aynı biçimde bir klasör aç:
+     `systemd/.config/systemd/user/<birim-adı>.service.d/not-in-niri.conf`
+     İçine yukarıdaki koşulu yaz. Addaki `\x2d` gibi kaçışlar aynen kalmalı.
+  3. `./install.sh` çalıştır.
 - **Chrome, Vivaldi, Chromium** da KWallet kullanıyor. niri'de bunları kullanacaksan aynı
   `--password-store=kwallet6` bayrağı gerekir; şu an yalnızca Brave ayarlı.
 - **Sol üst köşe** niri'de genel bakışı açar. Kapatmak için `config.kdl`'ye şunu ekle:

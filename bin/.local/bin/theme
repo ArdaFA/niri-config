@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
-"""theme — niri masaüstünün renklerini tek kaynaktan yönetir.
+"""theme — one source of colors for the niri desktop.
 
-  theme preset <isim>              sabit bir palet uygula (themes/presets/<isim>.toml)
-  theme wallpaper <dosya>          duvar kağıdını değiştir ve renkleri ondan üret (wallust)
-        --keep-colors              renklere dokunma, yalnızca duvar kağıdını değiştir
-        --dark | --light           üretilecek tema (varsayılan: görselin parlaklığına göre)
-  theme wallpaper none             duvar kağıdını kaldır (düz renk), renkler aynı kalır
-  theme list                       presetleri listele (* = geçerli)
-  theme current                    geçerli seçimi göster
-  theme apply                      kayıtlı seçimi yeniden uygula (oturum açılışında çalışır)
+  theme preset <name>              apply a fixed palette (themes/presets/<name>.toml)
+  theme wallpaper <file>           set the wallpaper and generate colors from it (wallust)
+        --keep-colors              keep the current colors, only change the wallpaper
+        --dark | --light           force a dark/light theme (default: from image brightness)
+  theme wallpaper none             remove the wallpaper (solid color), keep the colors
+  theme list                       list presets (* = current)
+  theme current                    show the current selection
+  theme apply                      re-apply the saved selection (runs at login)
 
-Akış: palet (preset ya da wallust) → themes/templates/* şablonları →
-~/.local/state/theme/ altındaki dosyalar → çalışan bileşenler yenilenir:
-niri dosyayı kendisi izler, Waybar ve mako yeniden yüklenir, açık foot
-pencerelerine kaçış dizileri gönderilir, fuzzel ve swaylock her açılışta okur.
+Flow: palette (preset or wallust) -> themes/templates/* -> files in
+~/.local/state/theme/ -> running components pick them up: niri and Waybar
+watch their files, mako is reloaded, open foot windows get escape sequences,
+fuzzel and swaylock read the files on every start.
 """
+# Not: Kullanıcıya görünen metinler (yardım, mesajlar) İngilizce; yorumlar Türkçe.
 
 import argparse
 import colorsys
@@ -82,10 +83,10 @@ def complete_palette(ui, term, name, variant):
     """[ui] renklerini doğrular, eksik terminal renklerini [ui]'dan türetir."""
     missing = [k for k in UI_KEYS if k not in ui]
     if missing:
-        die(f"{name}: [ui] içinde eksik renk(ler): {', '.join(missing)}")
+        die(f"{name}: missing color(s) in [ui]: {', '.join(missing)}")
     for key, value in {**ui, **term}.items():
         if not isinstance(value, str) or not HEX_RE.match(value):
-            die(f"{name}: '{key}' geçerli bir #rrggbb rengi değil: {value!r}")
+            die(f"{name}: '{key}' is not a valid #rrggbb color: {value!r}")
     ui = {k: v.lower() for k, v in ui.items()}
     term = {k: v.lower() for k, v in term.items()}
     cyan = mix(ui["ok"], ui["accent2"], 0.5)
@@ -112,12 +113,12 @@ def preset_names():
 def load_preset(name):
     path = PRESETS / f"{name}.toml"
     if not path.is_file():
-        die(f"'{name}' adında preset yok. Mevcut: {', '.join(preset_names())}")
+        die(f"no preset named '{name}'. Available: {', '.join(preset_names())}")
     try:
         with path.open("rb") as f:
             data = tomllib.load(f)
     except tomllib.TOMLDecodeError as e:
-        die(f"{path.name} okunamadı: {e}")
+        die(f"cannot read {path.name}: {e}")
     return complete_palette(data.get("ui", {}), data.get("term", {}),
                             data.get("name", name), data.get("variant", "dark"))
 
@@ -125,7 +126,7 @@ def load_preset(name):
 def wallust_bin():
     found = shutil.which("wallust") or str(Path.home() / ".cargo" / "bin" / "wallust")
     if not os.access(found, os.X_OK):
-        die("wallust bulunamadı (kurulum: cargo install --locked wallust)")
+        die("wallust not found (install: cargo install --locked wallust)")
     return found
 
 
@@ -135,7 +136,7 @@ def run_wallust(image, palette):
            "--config-dir", str(WALLUST_CONFIG), "--palette", palette, str(image)]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        die(f"wallust hata verdi:\n{result.stderr.strip()}")
+        die(f"wallust failed:\n{result.stderr.strip()}")
     data = json.loads(WALLUST_OUT.read_text())
     return (data["background"].lower(), data["foreground"].lower(),
             [c.lower() for c in data["colors"]])
@@ -222,7 +223,7 @@ def render(text, palette, source):
     def substitute(match):
         key, hex_only = match.group(1), match.group(2)
         if key not in palette:
-            die(f"{source}: bilinmeyen değişken {{{{{key}}}}}")
+            die(f"{source}: unknown variable {{{{{key}}}}}")
         value = palette[key]
         return value[1:] if hex_only else value
     return TOKEN_RE.sub(substitute, text)
@@ -297,9 +298,10 @@ def update_foot(palette):
 
 
 def reload_components(palette):
-    # niri: include ettiği dosyayı kendisi izler, ayrıca bir şey gerekmez.
-    if unit_active("waybar.service"):
-        subprocess.run(["systemctl", "--user", "reload", "waybar.service"])
+    # niri: include ettiği dosyayı kendisi izler.
+    # Waybar: reload_style_on_change ile @import ettiği renk dosyasını kendisi izler.
+    #   Ona `reload`/SIGUSR2 gönderilmez: Waybar 0.14 bu sinyalde eski barları kapatmadan
+    #   yenilerini açıyor ve tepsi simgeleri yeni barlara gelmiyor.
     if unit_active("mako.service"):
         subprocess.run(["makoctl", "reload"])
     if unit_active("swaybg.service"):
@@ -332,7 +334,7 @@ def apply(palette, state, reload=True):
     write_atomic(STATE_FILE, json.dumps(state, indent=2) + "\n")
     if reload:
         reload_components(palette)
-    print(f"tema: {palette['name']}")
+    print(f"theme: {palette['name']}")
 
 
 def find_image(arg):
@@ -340,7 +342,7 @@ def find_image(arg):
     if not path.is_file() and (WALLPAPERS / arg).is_file():
         path = WALLPAPERS / arg
     if not path.is_file():
-        die(f"görsel bulunamadı: {arg}")
+        die(f"image not found: {arg}")
     return path.resolve()
 
 
@@ -381,17 +383,17 @@ def cmd_list(args):
     for name in preset_names():
         print(f"{'*' if name == current else ' '} {name}")
     if state.get("source") == "wallpaper":
-        print(f"* (duvar kağıdından: {Path(state['wallpaper']).name})")
+        print(f"* (from wallpaper: {Path(state['wallpaper']).name})")
 
 
 def cmd_current(args):
     state = load_state()
     if state.get("source") == "wallpaper":
-        print(f"kaynak:        duvar kağıdı ({state.get('variant', 'dark')})")
+        print(f"source:     wallpaper ({state.get('variant', 'dark')})")
     else:
-        print(f"kaynak:        preset {state.get('preset', DEFAULT_PRESET)}")
-    print(f"duvar kağıdı:  {state.get('wallpaper', '(yok, düz renk)')}")
-    print(f"dosyalar:      {STATE}")
+        print(f"source:     preset {state.get('preset', DEFAULT_PRESET)}")
+    print(f"wallpaper:  {state.get('wallpaper', '(none, solid color)')}")
+    print(f"files:      {STATE}")
 
 
 def cmd_swaybg(args):
@@ -415,26 +417,28 @@ def main():
     parser = argparse.ArgumentParser(
         prog="theme", description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = parser.add_subparsers(dest="command", required=True, metavar="komut")
+    sub = parser.add_subparsers(dest="command", required=True, metavar="command")
 
-    p = sub.add_parser("preset", help="sabit bir palet uygula")
-    p.add_argument("name", metavar="isim")
+    p = sub.add_parser("preset", help="apply a fixed palette")
+    p.add_argument("name")
     p.set_defaults(func=cmd_preset)
 
-    p = sub.add_parser("wallpaper", help="duvar kağıdını değiştir, renkleri ondan üret")
-    p.add_argument("file", metavar="dosya")
-    p.add_argument("--keep-colors", action="store_true", help="renkleri değiştirme")
+    p = sub.add_parser("wallpaper", help="set the wallpaper, generate colors from it")
+    p.add_argument("file", help="image path, a file name in ~/dotfiles/wallpapers, or 'none'")
+    p.add_argument("--keep-colors", action="store_true", help="keep the current colors")
     group = p.add_mutually_exclusive_group()
-    group.add_argument("--dark", dest="variant", action="store_const", const="dark")
-    group.add_argument("--light", dest="variant", action="store_const", const="light")
+    group.add_argument("--dark", dest="variant", action="store_const", const="dark",
+                       help="force a dark theme")
+    group.add_argument("--light", dest="variant", action="store_const", const="light",
+                       help="force a light theme")
     p.set_defaults(func=cmd_wallpaper, variant=None)
 
-    p = sub.add_parser("apply", help="kayıtlı seçimi yeniden uygula")
+    p = sub.add_parser("apply", help="re-apply the saved selection")
     p.add_argument("--no-reload", action="store_true", help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_apply)
 
-    sub.add_parser("list", help="presetleri listele").set_defaults(func=cmd_list)
-    sub.add_parser("current", help="geçerli seçimi göster").set_defaults(func=cmd_current)
+    sub.add_parser("list", help="list presets").set_defaults(func=cmd_list)
+    sub.add_parser("current", help="show the current selection").set_defaults(func=cmd_current)
 
     # İç kullanım (yardımda listelenmez): swaybg.service ve check.sh.
     p = sub.add_parser("swaybg")

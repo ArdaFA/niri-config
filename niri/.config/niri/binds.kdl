@@ -8,15 +8,15 @@
 
 binds {
     // ── Genel ────────────────────────────────────────────────────────────
-    Mod+Shift+ssharp hotkey-overlay-title="Kısayol listesi" { show-hotkey-overlay; }
+    Mod+Shift+ssharp hotkey-overlay-title="Show this list" { show-hotkey-overlay; }
     Mod+Return hotkey-overlay-title="Terminal (foot)" { spawn "foot"; }
-    Mod+D hotkey-overlay-title="Uygulama başlatıcı (fuzzel)" { spawn "fuzzel"; }
+    Mod+D hotkey-overlay-title="App launcher (fuzzel)" { spawn "fuzzel"; }
     Mod+Space { spawn "fuzzel"; }
-    Mod+Alt+L hotkey-overlay-title="Ekranı kilitle" { spawn-sh "~/.local/bin/lock-screen"; }
-    Mod+Q repeat=false hotkey-overlay-title="Pencereyi kapat" { close-window; }
-    Mod+O repeat=false hotkey-overlay-title="Genel bakış (overview)" { toggle-overview; }
-    Mod+Shift+E hotkey-overlay-title="Oturumu kapat" { quit; }
-    Mod+Shift+P hotkey-overlay-title="Ekranları kapat" { power-off-monitors; }
+    Mod+Alt+L hotkey-overlay-title="Lock screen" { spawn-sh "~/.local/bin/lock-screen"; }
+    Mod+Q repeat=false hotkey-overlay-title="Close window" { close-window; }
+    Mod+O repeat=false hotkey-overlay-title="Overview" { toggle-overview; }
+    Mod+Shift+E hotkey-overlay-title="Log out" { quit; }
+    Mod+Shift+P hotkey-overlay-title="Turn off monitors" { power-off-monitors; }
     // Tam ekran bir uygulama (ör. sanal makine) kısayolları yakalarsa geri almak için.
     Mod+Escape allow-inhibiting=false { toggle-keyboard-shortcuts-inhibit; }
 
@@ -113,11 +113,11 @@ binds {
     Mod+Comma  { consume-or-expel-window-left; }
     Mod+Period { consume-or-expel-window-right; }
 
-    Mod+R       hotkey-overlay-title="Sütun genişliği: 1/3 · 1/2 · 2/3" { switch-preset-column-width; }
+    Mod+R       hotkey-overlay-title="Column width: 1/3 · 1/2 · 2/3" { switch-preset-column-width; }
     Mod+Shift+R { switch-preset-window-height; }
     Mod+Ctrl+R  { reset-window-height; }
-    Mod+F       hotkey-overlay-title="Sütunu büyüt" { maximize-column; }
-    Mod+Shift+F hotkey-overlay-title="Tam ekran" { fullscreen-window; }
+    Mod+F       hotkey-overlay-title="Maximize column" { maximize-column; }
+    Mod+Shift+F hotkey-overlay-title="Fullscreen" { fullscreen-window; }
     Mod+Ctrl+F  { expand-column-to-available-width; }
     Mod+C       { center-column; }
     Mod+Ctrl+C  { center-visible-columns; }
@@ -127,20 +127,20 @@ binds {
     Mod+Shift+Minus { set-window-height "-10%"; }
     Mod+Shift+Plus  { set-window-height "+10%"; }
 
-    Mod+V       hotkey-overlay-title="Yüzen pencere aç/kapat" { toggle-window-floating; }
+    Mod+V       hotkey-overlay-title="Toggle floating" { toggle-window-floating; }
     Mod+Shift+V { switch-focus-between-floating-and-tiling; }
-    Mod+W       hotkey-overlay-title="Sütunu sekmeli göster" { toggle-column-tabbed-display; }
+    Mod+W       hotkey-overlay-title="Toggle tabbed column" { toggle-column-tabbed-display; }
 
     // ── Ekran görüntüsü (~/Pictures/Screenshots + panoya kopyalanır) ─────
-    Print       hotkey-overlay-title="Ekran görüntüsü: alan seç" { screenshot; }
+    Print       hotkey-overlay-title="Screenshot (select area)" { screenshot; }
     Mod+Shift+S { screenshot; }
     Ctrl+Print  { screenshot-screen; }
     Alt+Print   { screenshot-window; }
 
     // ── Bildirimler (mako) ───────────────────────────────────────────────
-    Mod+N       hotkey-overlay-title="Bildirimi kapat" { spawn "makoctl" "dismiss"; }
+    Mod+N       hotkey-overlay-title="Dismiss notification" { spawn "makoctl" "dismiss"; }
     Mod+Shift+N { spawn "makoctl" "dismiss" "--all"; }
-    Mod+Ctrl+N  hotkey-overlay-title="Son bildirimi geri getir" { spawn "makoctl" "restore"; }
+    Mod+Ctrl+N  hotkey-overlay-title="Restore last notification" { spawn "makoctl" "restore"; }
 
     // ── Ses, medya, parlaklık (kilit ekranında da çalışır) ───────────────
     // osd scripti değeri değiştirir ve üst ortada kısa bir gösterge açar.

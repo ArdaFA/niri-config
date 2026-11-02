@@ -13,7 +13,7 @@ check() {
     if out=$("$@" 2>&1); then
         printf '  ok    %s\n' "$name"
     else
-        printf '  HATA  %s\n' "$name"
+        printf '  FAIL  %s\n' "$name"
         printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g; s/^/        /'
         FAILED=1
     fi
@@ -91,7 +91,7 @@ swaylock_conf() {
         [[ -z "$line" || "$line" == \#* ]] && continue
         key=${line%%=*}
         if ! grep -qx -- "$key" <<<"$opts"; then
-            echo "bilinmeyen seçenek: $key"; bad=1
+            echo "unknown option: $key"; bad=1
         fi
     done < "$1"
     return $bad
@@ -109,14 +109,14 @@ presets() {
             rc=1; continue
         fi
         niri validate -c "$out/niri.kdl" >/dev/null 2>&1 \
-            || { echo "$preset: niri.kdl geçersiz"; niri validate -c "$out/niri.kdl" 2>&1 | tail -5; rc=1; }
+            || { echo "$preset: niri.kdl invalid"; niri validate -c "$out/niri.kdl" 2>&1 | tail -5; rc=1; }
         foot --check-config -c "$out/foot.ini" >/dev/null 2>&1 \
-            || { echo "$preset: foot.ini geçersiz"; rc=1; }
+            || { echo "$preset: foot.ini invalid"; rc=1; }
         fuzzel --check-config --config "$out/fuzzel.ini" >/dev/null 2>&1 \
-            || { echo "$preset: fuzzel.ini geçersiz"; rc=1; }
-        mako_conf "$out/mako" || { echo "$preset: mako geçersiz"; rc=1; }
-        gtk_css "$out/waybar.css" || { echo "$preset: waybar.css geçersiz"; rc=1; }
-        swaylock_conf "$out/swaylock.conf" || { echo "$preset: swaylock.conf geçersiz"; rc=1; }
+            || { echo "$preset: fuzzel.ini invalid"; rc=1; }
+        mako_conf "$out/mako" || { echo "$preset: mako invalid"; rc=1; }
+        gtk_css "$out/waybar.css" || { echo "$preset: waybar.css invalid"; rc=1; }
+        swaylock_conf "$out/swaylock.conf" || { echo "$preset: swaylock.conf invalid"; rc=1; }
     done
     return $rc
 }
@@ -135,16 +135,16 @@ scripts() {
     return $rc
 }
 
-echo "Config kontrolü: $DOTFILES"
+echo "Checking configs: $DOTFILES"
 check "niri"              niri validate -c "$DOTFILES/niri/.config/niri/config.kdl"
 check "foot"              foot --check-config -c "$DOTFILES/foot/.config/foot/foot.ini"
 check "waybar config"     waybar_json "$HOME/.config/waybar/config.jsonc"
 check "waybar style"      gtk_css "$HOME/.config/waybar/style.css"
 check "fuzzel"            fuzzel --check-config --config "$DOTFILES/fuzzel/.config/fuzzel/fuzzel.ini"
 check "mako"              mako_conf "$DOTFILES/mako/.config/mako/config"
-check "swaylock (tema)"   swaylock_conf "${XDG_STATE_HOME:-$HOME/.local/state}/theme/swaylock.conf"
-check "scriptler"         scripts
-check "presetler"         presets
-check "systemd servisleri" units
+check "swaylock (theme)"  swaylock_conf "${XDG_STATE_HOME:-$HOME/.local/state}/theme/swaylock.conf"
+check "scripts"           scripts
+check "presets"           presets
+check "systemd units"     units
 
 exit $FAILED

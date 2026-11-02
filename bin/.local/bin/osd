@@ -39,7 +39,7 @@ case "${1:-} ${2:-}" in
     "brightness down")
         brightnessctl --quiet --class=backlight --min-value=1 set "${STEP}%-" ;;
     *)
-        echo "Kullanım: osd volume up|down|mute · osd mic mute · osd brightness up|down" >&2
+        echo "Usage: osd volume up|down|mute · osd mic mute · osd brightness up|down" >&2
         exit 1 ;;
 esac
 
