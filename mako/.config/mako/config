@@ -15,7 +15,8 @@ max-visible=5
 default-timeout=6000
 layer=overlay
 anchor=top-right
-format=<b>%s</b>\n%b
+# Başlık tam renk, gövde biraz soluk (piksel fontta yapay kalın yerine).
+format=%s\n<span alpha='70%%'>%b</span>
 
 # Renkler: `theme` komutunun ürettiği dosya (kendi bölümleriyle birlikte).
 include=~/.local/state/theme/mako

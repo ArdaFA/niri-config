@@ -40,4 +40,13 @@ layout {
     border {
         off
     }
+
+    // Gölgeler varsayılan kapalı (düz, sade görünüm); rules.kdl yalnızca yüzen
+    // pencerelerde açar. Rengi açık ve koyu temalarda aynı çalışsın diye nötr.
+    shadow {
+        softness 24
+        spread 2
+        offset x=0 y=4
+        color "#00000055"
+    }
 }

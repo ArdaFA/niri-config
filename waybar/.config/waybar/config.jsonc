@@ -39,7 +39,7 @@
             "mode-mon-col": 3,
             "on-scroll": 1,
             "format": {
-                "today": "<b><u>{}</u></b>"
+                "today": "<u>{}</u>"
             }
         },
         // Sağ tık: ay/yıl görünümü, tekerlek: aylar arasında gez.

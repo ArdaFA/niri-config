@@ -1,6 +1,20 @@
 // Pencere kuralları.
 // Açık pencerelerin app-id ve başlıklarını görmek için: niri msg windows
 
+// Tüm pencereler: hafif yuvarlak köşeler (Waybar, fuzzel, mako ile aynı 6 px).
+window-rule {
+    geometry-corner-radius 6
+    clip-to-geometry true
+}
+
+// Yüzen pencereler zeminden ayrılsın diye yumuşak gölge.
+window-rule {
+    match is-floating=true
+    shadow {
+        on
+    }
+}
+
 // Yönetici şifresi soran KDE polkit penceresi yüzen (floating) açılsın.
 window-rule {
     match app-id=r#"^org\.kde\.polkit-kde-authentication-agent-1$"#

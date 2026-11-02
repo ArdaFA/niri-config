@@ -7,7 +7,8 @@
 //   outputs.kdl  ekranlar: ölçek, konum, harici monitör
 //   layout.kdl   boşluklar, sütun genişlikleri, odak halkası
 //   binds.kdl    kısayollar
-//   rules.kdl    pencere kuralları
+//   rules.kdl    pencere kuralları (köşeler, gölgeler, yüzen pencereler)
+//   animations.kdl  animasyonlar
 //   ~/.local/state/theme/niri.kdl  renkler — `theme` komutu üretir (en sonda, öncekileri ezer)
 //
 // Kaydettiğin her değişiklik anında uygulanır. Hata kontrolü için: niri validate
@@ -17,6 +18,7 @@ include "outputs.kdl"
 include "layout.kdl"
 include "binds.kdl"
 include "rules.kdl"
+include "animations.kdl"
 include optional=true "~/.local/state/theme/niri.kdl"
 
 // Uygulamalardan kendi başlık çubuklarını çizmemelerini iste (sade görünüm).
