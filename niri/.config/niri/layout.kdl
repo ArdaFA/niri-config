@@ -1,0 +1,42 @@
+// Pencere düzeni: boşluklar, sütun genişlikleri, odak halkası.
+// Not: Renkler Aşama 4'te tema dosyasından gelecek; buradakiler geçici varsayılanlar.
+
+layout {
+    // Pencereler arası ve ekran kenarı boşluğu (mantıksal piksel).
+    gaps 12
+
+    // Odaktaki sütunu sadece ekrana sığmadığında kaydır.
+    center-focused-column "never"
+
+    // Ekranda tek pencere varsa ortala.
+    always-center-single-column
+
+    // Super+R ile sırayla dönülen sütun genişlikleri.
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+
+    // Super+Shift+R ile sırayla dönülen pencere yükseklikleri.
+    preset-window-heights {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+
+    // Yeni pencereler ekranın yarısı genişliğinde açılsın.
+    default-column-width { proportion 0.5; }
+
+    // Odaktaki pencerenin etrafındaki ince çizgi.
+    focus-ring {
+        width 2
+        active-color "#ebbcba"
+        inactive-color "#6e6a86"
+    }
+
+    // Pencere içi kenarlık kapalı; sadece odak halkası kullanılıyor.
+    border {
+        off
+    }
+}

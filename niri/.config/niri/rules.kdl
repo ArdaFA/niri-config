@@ -1,0 +1,8 @@
+// Pencere kuralları.
+// Açık pencerelerin app-id ve başlıklarını görmek için: niri msg windows
+
+// Yönetici şifresi soran KDE polkit penceresi yüzen (floating) açılsın.
+window-rule {
+    match app-id=r#"^org\.kde\.polkit-kde-authentication-agent-1$"#
+    open-floating true
+}

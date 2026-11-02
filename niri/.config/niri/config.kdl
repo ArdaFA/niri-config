@@ -1,0 +1,41 @@
+// niri — ana config dosyası
+//
+// Ayarlar konularına göre ayrı dosyalarda duruyor; bu dosya onları sırayla dahil eder.
+// "include" konumsaldır: sonra dahil edilen dosya, öncekinin aynı ayarını ezer.
+//
+//   input.kdl    klavye düzeni, touchpad
+//   outputs.kdl  ekranlar: ölçek, konum, harici monitör
+//   layout.kdl   boşluklar, sütun genişlikleri, odak halkası
+//   binds.kdl    kısayollar
+//   rules.kdl    pencere kuralları
+//
+// Kaydettiğin her değişiklik anında uygulanır. Hata kontrolü için: niri validate
+
+include "input.kdl"
+include "outputs.kdl"
+include "layout.kdl"
+include "binds.kdl"
+include "rules.kdl"
+
+// Uygulamalardan kendi başlık çubuklarını çizmemelerini iste (sade görünüm).
+prefer-no-csd
+
+screenshot-path "~/Pictures/Screenshots/%Y-%m-%d_%H-%M-%S.png"
+
+// Açılışta kısayol listesini gösterme. Listeyi açmak için: Super+Shift+ß (Super+?)
+hotkey-overlay {
+    skip-at-startup
+}
+
+// KDE'dekiyle aynı imleç teması (~/.icons içinde kurulu).
+cursor {
+    xcursor-theme "Layan-border-cursors"
+    xcursor-size 24
+    hide-when-typing
+}
+
+// Yalnızca niri'nin başlattığı programlara uygulanır; KDE oturumunu etkilemez.
+environment {
+    // KDE uygulamaları (Dolphin, Okular…) niri'de de Breeze simgelerini ve renklerini kullansın.
+    QT_QPA_PLATFORMTHEME "kde"
+}

@@ -1,0 +1,14 @@
+# KDE'nin polkit kimlik doğrulama ajanı, yalnızca niri oturumunda.
+# (KDE'nin kendi plasma-polkit-agent.service dosyasına dokunmamak için ayrı birim.)
+# install.sh bunu `systemctl --user add-wants niri.service` ile niri'ye bağlar.
+
+[Unit]
+Description=Polkit authentication agent (KDE) for the niri session
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+
+[Service]
+ExecStart=/usr/libexec/kf6/polkit-kde-authentication-agent-1
+Slice=background.slice
+Restart=on-failure

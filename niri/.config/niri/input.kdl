@@ -1,0 +1,18 @@
+// Giriş aygıtları: klavye, touchpad, fare.
+
+input {
+    keyboard {
+        xkb {
+            // KDE ile aynı: Almanca, varyant ve ek seçenek yok.
+            layout "de"
+        }
+    }
+
+    touchpad {
+        tap                 // dokunarak tıklama
+        dwt                 // yazarken touchpad'i devre dışı bırak
+        // natural-scroll   // doğal (ters) kaydırma istersen baştaki // işaretini sil
+    }
+
+    // Odak tıklamayla değişir (KDE'deki gibi); fare üstüne gelince değişmez.
+}
