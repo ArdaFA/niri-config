@@ -1,0 +1,158 @@
+{
+  "$schema": "/etc/xdg/swaync/configSchema.json",
+
+  "positionX": "right",
+  "positionY": "top",
+  "layer": "overlay",
+  "control-center-layer": "top",
+  "layer-shell": true,
+  "layer-shell-cover-screen": true,
+  "control-center-exclusive-zone": true,
+  "cssPriority": "user",
+  "ignore-gtk-theme": true,
+
+  "control-center-width": 380,
+  "control-center-height": -1,
+  "fit-to-screen": false,
+  "control-center-margin-top": 6,
+  "control-center-margin-right": 6,
+  "control-center-margin-bottom": 6,
+  "control-center-margin-left": 0,
+  "notification-window-width": 340,
+
+  "timeout": 6,
+  "timeout-low": 4,
+  "timeout-critical": 0,
+  "transition-time": 150,
+  "relative-timestamps": true,
+  "notification-grouping": true,
+  "image-visibility": "when-available",
+  "notification-2fa-action": true,
+  "notification-inline-replies": false,
+  "keyboard-shortcuts": true,
+  "hide-on-clear": false,
+  "hide-on-action": true,
+  "script-fail-notify": false,
+  "text-empty": "No notifications",
+
+  "notification-visibility": {
+    "osd": {
+      "app-name": "^osd$",
+      "state": "transient"
+    }
+  },
+
+  "widgets": [
+    "menubar",
+    "buttons-grid",
+    "volume",
+    "backlight",
+    "mpris",
+    "title",
+    "notifications"
+  ],
+
+  "widget-config": {
+    "menubar": {
+      "menu#settings": {
+        "label": "Settings ▼",
+        "position": "left",
+        "animation-type": "slide_down",
+        "animation-duration": 150,
+        "actions": [
+          { "label": "Sound", "command": "sh -c '~/.local/bin/quick-settings open pavucontrol'" },
+          { "label": "Network", "command": "sh -c '~/.local/bin/quick-settings open nm-connection-editor'" },
+          { "label": "Bluetooth", "command": "sh -c '~/.local/bin/quick-settings open blueman-manager'" }
+        ]
+      },
+      "buttons#lock": {
+        "position": "right",
+        "actions": [
+          { "label": "Lock", "command": "sh -c '~/.local/bin/quick-settings lock'" }
+        ]
+      },
+      "menu#power": {
+        "label": "Power ▼",
+        "position": "right",
+        "animation-type": "slide_down",
+        "animation-duration": 150,
+        "actions": [
+          { "label": "Log out", "command": "sh -c '~/.local/bin/quick-settings logout'" },
+          { "label": "Restart", "command": "sh -c '~/.local/bin/quick-settings reboot'" },
+          { "label": "Shut down", "command": "sh -c '~/.local/bin/quick-settings poweroff'" }
+        ]
+      }
+    },
+
+    "buttons-grid": {
+      "buttons-per-row": 3,
+      "actions": [
+        {
+          "label": "Wi-Fi",
+          "type": "toggle",
+          "command": "sh -c '~/.local/bin/quick-settings wifi'",
+          "update-command": "sh -c '~/.local/bin/quick-settings wifi status'"
+        },
+        {
+          "label": "Bluetooth",
+          "type": "toggle",
+          "command": "sh -c '~/.local/bin/quick-settings bluetooth'",
+          "update-command": "sh -c '~/.local/bin/quick-settings bluetooth status'"
+        },
+        {
+          "label": "Do not disturb",
+          "type": "toggle",
+          "command": "sh -c '~/.local/bin/quick-settings dnd'",
+          "update-command": "sh -c '~/.local/bin/quick-settings dnd status'"
+        },
+        {
+          "label": "Power saver",
+          "type": "toggle",
+          "command": "sh -c '~/.local/bin/quick-settings power-saver'",
+          "update-command": "sh -c '~/.local/bin/quick-settings power-saver status'"
+        },
+        {
+          "label": "Performance",
+          "type": "toggle",
+          "command": "sh -c '~/.local/bin/quick-settings performance'",
+          "update-command": "sh -c '~/.local/bin/quick-settings performance status'"
+        },
+        {
+          "label": "Auto layout",
+          "type": "toggle",
+          "command": "sh -c '~/.local/bin/quick-settings layout'",
+          "update-command": "sh -c '~/.local/bin/quick-settings layout status'"
+        }
+      ]
+    },
+
+    "volume": {
+      "label": "VOL",
+      "show-per-app": false
+    },
+
+    "backlight": {
+      "label": "LCD",
+      "device": "intel_backlight",
+      "subsystem": "backlight",
+      "min": 1
+    },
+
+    "mpris": {
+      "show-album-art": "when-available",
+      "autohide": true,
+      "blacklist": ["playerctld"],
+      "loop-carousel": false
+    },
+
+    "title": {
+      "text": "Notifications",
+      "clear-all-button": true,
+      "button-text": "Clear"
+    },
+
+    "notifications": {
+      "vexpand": false
+    }
+  }
+}

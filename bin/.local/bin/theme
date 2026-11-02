@@ -314,6 +314,10 @@ def reload_components(palette):
     # Waybar: reload_style_on_change ile @import ettiği renk dosyasını kendisi izler.
     #   Ona `reload`/SIGUSR2 gönderilmez: Waybar 0.14 bu sinyalde eski barları kapatmadan
     #   yenilerini açıyor ve tepsi simgeleri yeni barlara gelmiyor.
+    # swaync: renk dosyasını style.css @import eder; CSS'i yeniden okuması istenir.
+    if unit_active("swaync.service"):
+        subprocess.run(["swaync-client", "--reload-css", "--skip-wait"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if unit_active("mako.service"):
         subprocess.run(["makoctl", "reload"])
     if unit_active("swaybg.service"):

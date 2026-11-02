@@ -25,12 +25,13 @@ sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü.
 8. [Otomatik düzen: AUTO / FREE](#otomatik-düzen-auto--free)
 9. [Kısayollar](#kısayollar)
 10. [Waybar modülleri](#waybar-modülleri)
-11. [Font](#font)
-12. [Ekranlar](#ekranlar)
-13. [Kilit ve boşta kalma](#kilit-ve-boşta-kalma)
-14. [Bir şey bozulursa](#bir-şey-bozulursa)
-15. [Her şeyi tamamen kaldırmak](#her-şeyi-tamamen-kaldırmak)
-16. [Notlar](#notlar)
+11. [Hızlı ayarlar ve bildirimler](#hızlı-ayarlar-ve-bildirimler)
+12. [Font](#font)
+13. [Ekranlar](#ekranlar)
+14. [Kilit ve boşta kalma](#kilit-ve-boşta-kalma)
+15. [Bir şey bozulursa](#bir-şey-bozulursa)
+16. [Her şeyi tamamen kaldırmak](#her-şeyi-tamamen-kaldırmak)
+17. [Notlar](#notlar)
 
 ---
 
@@ -48,7 +49,7 @@ GDM son seçilen oturumu hatırlar. KDE'ye dönmek için aynı menüden **Plasma
 | `Super+Shift+E` | oturumu kapat |
 
 **KDE içinde pencere olarak denemek:** Konsole'da `niri` yaz. Bu modda Mod tuşu **Alt**'tır.
-Waybar, mako gibi servisler bu modda başlamaz, çünkü onlar oturumun systemd servisine bağlı.
+Waybar, swaync gibi servisler bu modda başlamaz, çünkü onlar oturumun systemd servisine bağlı.
 
 ---
 
@@ -58,7 +59,7 @@ Waybar, mako gibi servisler bu modda başlamaz, çünkü onlar oturumun systemd 
 # 1) Paketler — hepsi resmi Fedora reposundan (sudo gerekir)
 sudo dnf install --setopt=install_weak_deps=False \
     niri xwayland-satellite foot stow brightnessctl playerctl \
-    waybar fuzzel mako swaylock swayidle swaybg \
+    waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
     network-manager-applet pavucontrol blueman cargo
 
 # 2) wallust — duvar kağıdından renk üretir (resmi repoda yok; crates.io'dan derlenir)
@@ -81,7 +82,8 @@ fc-cache -f
 ```
 
 `--setopt=install_weak_deps=False` niri'nin önerdiği alacritty'nin ve Waybar'ın önerdiği
-fontawesome'un kurulmasını engeller.
+fontawesome'un kurulmasını engeller. mako, SwayNotificationCenter kaldırılırsa devreye giren
+yedek bildirim programı (bkz. [Hızlı ayarlar ve bildirimler](#hızlı-ayarlar-ve-bildirimler)).
 
 Fedora Workstation'da zaten gelenler: xdg-desktop-portal-gnome/-gtk, gnome-keyring, nautilus
 (dosya seçici), polkit-kde, wireplumber, wl-clipboard, libnotify, python3, python3-pillow.
@@ -116,7 +118,9 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `waybar/.config/waybar/config.jsonc` | Panel: hangi modüller nerede, biçimleri, tıklama eylemleri |
 | `waybar/.config/waybar/style.css` | Panel görünümü (font, boşluk, durum renkleri) |
 | `fuzzel/.config/fuzzel/fuzzel.ini` | Uygulama başlatıcı |
-| `mako/.config/mako/config` | Bildirimler ve ses/parlaklık göstergesinin yeri ve boyutu |
+| `swaync/.config/swaync/config.json` | Bildirimler ve hızlı ayarlar paneli: bölümler, düğmeler, zaman aşımları |
+| `swaync/.config/swaync/style.css` | Bildirimlerin ve panelin görünümü |
+| `mako/.config/mako/config` | Yedek bildirim programı (yalnızca swaync kaldırılırsa çalışır) |
 | `foot/.config/foot/foot.ini` | Terminal: font, iç boşluk, imleç, geçmiş |
 
 ### Renk sistemi
@@ -136,7 +140,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `systemd/.config/systemd/user/theme-apply.service` | Oturum açılışında kayıtlı temayı uygular |
 | `systemd/.config/systemd/user/swaybg.service` | Duvar kağıdı |
 | `systemd/.config/systemd/user/swayidle.service` | Boşta kalınca kilit ve ekran kapatma süreleri |
-| `systemd/.config/systemd/user/mako.service.d/niri-only.conf` | mako'nun KDE/GNOME'da başlamasını engeller |
+| `systemd/.config/systemd/user/swaync.service.d/niri-only.conf` | swaync'in KDE/GNOME'da başlamasını engeller |
+| `systemd/.config/systemd/user/mako.service.d/niri-only.conf` | mako'yu yalnızca niri'de ve yalnızca swaync kurulu değilse başlatır |
 | `systemd/.config/systemd/user/app-…@autostart.service.d/not-in-niri.conf` | KDE'den gelen bazı autostart programlarının niri'de **başlamaması** (bkz. [Notlar](#notlar)) |
 | `autostart/.config/autostart/nm-applet.desktop` | Wi-Fi tepsi simgesi, yalnızca niri'de |
 | `autostart/.config/autostart/blueman.desktop` | Bluetooth tepsi simgesi, yalnızca niri'de |
@@ -144,6 +149,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `bin/.local/bin/lock-screen` | Ekranı kilitler (zaten kilitliyse bir şey yapmaz) |
 | `bin/.local/bin/layout-mode` | Otomatik ızgara düzeni (AUTO) ve elle düzen (FREE), bkz. [Otomatik düzen](#otomatik-düzen-auto--free) |
 | `bin/.local/bin/calendar-popup` | Saate tıklayınca açılan takvim (GTK3 + gtk-layer-shell) |
+| `bin/.local/bin/quick-settings` | Hızlı ayarlar panelindeki düğmelerin komutları (Wi-Fi, Bluetooth, güç profili, oturum…) |
 | `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
 | `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)) |
 | `wallpapers/` | Duvar kağıtların. İçindekiler git'e girmez (bkz. [Duvar kağıdı](#duvar-kağıdı)). |
@@ -167,7 +173,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 ```
 GDM → niri-session → niri.service
         ├─ niri.service.wants/ (install.sh kaydeder)
-        │    niri-polkit · theme-apply → waybar · mako · swaybg · swayidle · layout-mode
+        │    niri-polkit · theme-apply → waybar · swaync · swaybg · swayidle · layout-mode
+        │    (mako: yalnızca swaync kurulu değilse)
         └─ XDG autostart (OnlyShowIn=niri olanlar + KDE'de de açılanlar)
              nm-applet · blueman · KDE Connect · …
              (Cisco Secure Client, Xwayland Video Bridge, imsettings/IBus niri'de başlamaz)
@@ -176,7 +183,7 @@ GDM → niri-session → niri.service
 Bu servislerin hiçbiri KDE oturumunda başlamaz. Durumlarını görmek için:
 
 ```bash
-systemctl --user status niri-polkit theme-apply waybar mako swaybg swayidle layout-mode
+systemctl --user status niri-polkit theme-apply waybar swaync swaybg swayidle layout-mode
 ```
 
 ---
@@ -205,7 +212,8 @@ catppuccin-latte, gruvbox.
 |---|---|
 | niri (odak halkası, arka plan, overview) | Dahil ettiği dosyayı kendisi izler, anında |
 | Waybar | `@import` ettiği renk dosyasını kendisi izler (`reload_style_on_change`), anında |
-| mako | `makoctl reload`, anında |
+| swaync (bildirimler, panel) | `swaync-client --reload-css`, anında |
+| mako (yedek) | `makoctl reload`, anında |
 | Açık foot pencereleri | Kaçış dizileriyle, anında |
 | Yeni foot pencereleri | include ettiği dosyadan |
 | fuzzel, swaylock | Her açılışta dosyayı okur |
@@ -313,8 +321,9 @@ yerine ekranı dolduran sabit bir ızgara istediğin için `layout-mode` adlı k
 niri'nin olaylarını dinler, pencereleri niri'nin IPC komutlarıyla doğru sütuna taşır ve
 genişliklerini ayarlar. niri bunu kendisi yapmıyor, yani bu bizim eklentimiz.
 
-İki mod var. Paneldeki küçük etiket hangisinde olduğunu gösterir. **`Super+T`** ya da etikete
-tıklamak modu değiştirir. Her girişte AUTO ile başlar.
+İki mod var. Paneldeki küçük etiket hangisinde olduğunu gösterir. **`Super+T`**, etikete
+tıklamak ya da hızlı ayarlar panelindeki **Auto layout** düğmesi modu değiştirir. Her girişte
+AUTO ile başlar.
 
 **AUTO (varsayılan):** her workspace'teki döşeli pencereler en fazla iki sütuna dizilir.
 
@@ -529,9 +538,9 @@ Görüntü `~/Pictures/Screenshots/` içine kaydedilir ve panoya kopyalanır.
 
 | Kısayol | İş |
 |---|---|
-| `Super+N` | Bildirimi kapat |
-| `Super+Shift+N` | Hepsini kapat |
-| `Super+Ctrl+N` | Son kapatılanı geri getir |
+| `Super+N` | Hızlı ayarlar ve bildirim paneli (aç/kapa) |
+| `Super+Shift+N` | Açık bildirimleri gizle (panelde kalırlar) |
+| `Super+Ctrl+N` | Rahatsız Etme aç/kapa |
 
 ### Medya tuşları (kilit ekranında da çalışır)
 
@@ -550,8 +559,10 @@ Görüntü `~/Pictures/Screenshots/` içine kaydedilir ve panoya kopyalanır.
 | `AUTO` / `FREE` | Tıkla: düzen modunu değiştir (`Super+T` ile aynı). `----` = servis çalışmıyor |
 | Saat | Tıkla: takvim. Tekrar tıkla, `Esc`'e bas ya da dışarı tıkla: kapanır. Üstüne gel: tam tarih. |
 | `\|<` `>` / `\|\|` `>\|` ♪ başlık | Yalnızca bir çalar açıkken görünür. Önceki · oynat/duraklat · sonraki. Başlığa tıkla: oynat/duraklat, orta tık: önceki, sağ tık: sonraki. |
-| `VOL` | Tıkla: pavucontrol · sağ tık: sessiz · tekerlek: ses ±%5 |
-| `NET` | Tıkla: ağ bağlantıları penceresi |
+| `VOL` | Tıkla: hızlı ayarlar · orta tık: pavucontrol · sağ tık: sessiz · tekerlek: ses ±%5 |
+| `NET` | Tıkla: hızlı ayarlar · sağ tık: ağ bağlantıları penceresi |
+| `BAT` / `AC` | Tıkla: hızlı ayarlar |
+| `MSG` / `DND` | `MSG`: geçmiş boş · `MSG •`: bildirim var · `DND`: Rahatsız Etme açık. Tıkla: panel · sağ tık: Rahatsız Etme aç/kapa |
 | Tepsi | Wi-Fi (nm-applet), Bluetooth (blueman) ve diğer uygulamalar |
 
 **Tepsi simgeleri ve açık temalar:** Tepsi simgeleri, KDE'de seçili simge temasından gelir
@@ -569,7 +580,7 @@ Hangi modülün nerede durduğu `waybar/.config/waybar/config.jsonc` içindeki �
 ```jsonc
 "modules-left":   ["niri/workspaces", "custom/layout", "niri/window"],
 "modules-center": ["clock"],
-"modules-right":  ["group/media", "tray", "wireplumber", "network", "battery"],
+"modules-right":  ["group/media", "tray", "wireplumber", "network", "battery", "custom/notifications"],
 ```
 
 Panel ekranın üstüne yapışık ve tam genişlikte; kenar boşluğu ve yuvarlak köşe yok, altta ince
@@ -614,6 +625,91 @@ Panelin renkleri `style.css`'e değil temaya ait; `@accent`, `@fg` gibi adlar ku
 
 ---
 
+## Hızlı ayarlar ve bildirimler
+
+Bildirimleri ve hızlı ayarlar panelini **SwayNotificationCenter** (swaync, resmi Fedora reposu)
+gösterir. Yalnızca niri oturumunda başlar; KDE'nin bildirimlerine dokunmaz.
+
+**Paneli açmak:** Waybar'da `VOL`, `NET`, `BAT` ya da `MSG`'ye tıkla ya da `Super+N`.
+Kapatmak: tekrar tıkla, `Esc`'e bas ya da panelin dışına tıkla.
+
+Panelde yukarıdan aşağıya:
+
+| Bölüm | Ne yapar |
+|---|---|
+| `Settings ▼` | Sound (pavucontrol) · Network (nm-connection-editor) · Bluetooth (blueman-manager) |
+| `Lock` | Ekranı kilitler |
+| `Power ▼` | Log out · Restart · Shut down. fuzzel'de onay ister; listede ilk sıradaki `Cancel`, yani Enter'a hemen basmak iptal eder. |
+| Wi-Fi | Aç/kapa (`nmcli radio wifi`) |
+| Bluetooth | Aç/kapa (`bluetoothctl power`; rfkill ile kapatılmışsa önce onu kaldırır) |
+| Do not disturb | Açıkken bildirimler açılır pencerede görünmez, yalnızca panelde birikir. Waybar'da `DND`. |
+| Power saver / Performance | Güç profili (tuned-ppd üzerinden, şifre istemez). İkisi de kapalıysa Balanced. |
+| Auto layout | AUTO ↔ FREE, `Super+T` ile aynı (bkz. [Otomatik düzen](#otomatik-düzen-auto--free)) |
+| `VOL`, `LCD` | Ses ve laptop ekranı parlaklığı kaydırıcıları |
+| Medya | Bir çalar açıksa: başlık, önceki · oynat/duraklat · sonraki |
+| Notifications | Bildirim geçmişi. Bildirime tıkla: uygulamasını açar · `×`: kapat · `Clear`: hepsini sil |
+
+**Açılır bildirimler:**
+
+- Sağ üstte, panelin hemen altında görünürler. Normal bildirim 6 sn, düşük öncelikli 4 sn kalır;
+  kritik olanlar sen kapatana kadar durur.
+- Kenar rengi önceliği gösterir: soluk = düşük, vurgu = normal, kırmızı = kritik.
+- Aynı uygulamanın bildirimleri panelde gruplanır.
+- Ses/parlaklık göstergesi (`osd`) de bir bildirimdir ama geçmişe yazılmaz. Artık üst ortada
+  değil, diğer bildirimlerle birlikte sağ üstte çıkar; swaync bütün bildirimleri tek yerde gösteriyor.
+
+**Bilinen sınırlar:**
+
+- Hızlı ayarlar ve bildirim geçmişi **aynı panelde**. swaync tek panel kullanıyor; GNOME'daki
+  gibi iki ayrı menü yok.
+- Panelde **Wi-Fi ağ listesi yok**. Ağ seçmek için tepsideki Wi-Fi simgesi (nm-applet) ya da
+  `Settings ▼` → Network.
+- Düğmelerin açık/kapalı hali panel açılırken okunur. Panel açıkken Power saver'dan doğrudan
+  Performance'a geçersen Power saver düğmesi panel kapanıp açılana kadar yanık görünür. Wi-Fi'yi
+  başka yerden değiştirirsen de düğme bir sonraki açılışta güncellenir.
+- Parlaklık kaydırıcısı yalnızca laptop ekranını (`intel_backlight`) ayarlar; harici monitörler
+  değişmez. Ses kaydırıcısı varsayılan çıkışı ayarlar; çıkış seçmek için `Settings ▼` → Sound.
+- Paneldeki düğme yazıları düz metin, çünkü panelin fontunda simge yok.
+
+**Ayar dosyaları:**
+
+- `swaync/.config/swaync/config.json`: panelin bölümleri, düğmeler, zaman aşımları.
+  - Seçenekler: `man 5 swaync`, şema: `/etc/xdg/swaync/configSchema.json`. `./check.sh`
+    config'i bu şemaya göre doğrular.
+  - Değiştirdikten sonra: `swaync-client --reload-config`.
+  - JSON yorum satırı kabul etmediği için açıklamalar bu README'de.
+- `swaync/.config/swaync/style.css`: görünüm. Renkler temadan gelir
+  (`themes/templates/swaync.css`); tema değişince `theme` swaync'e yeni renkleri kendisi okutur.
+  Elle değiştirdikten sonra: `swaync-client --reload-css`.
+- `bin/.local/bin/quick-settings`: düğmelerin komutları. Elle de çalışır, ör.
+  `quick-settings wifi status`, `quick-settings bluetooth status`.
+- **Düğme eklemek:** `config.json` → `"buttons-grid"` → `"actions"` listesine ekle:
+
+  ```json
+  { "label": "Night mode", "type": "toggle",
+    "command": "sh -c '...'", "update-command": "sh -c '... echo true ya da false'" }
+  ```
+
+  swaync komutları kabuk olmadan çalıştırır; `~` ve `$HOME` için `sh -c` şart. Aç/kapa
+  düğmesinde tıklamadan sonraki hal `SWAYNC_TOGGLE_STATE` (`true`/`false`) değişkeninde gelir.
+
+**Komutlar:**
+
+```bash
+swaync-client -t              # paneli aç/kapa
+swaync-client -d              # Rahatsız Etme aç/kapa
+swaync-client -C              # bütün bildirimleri sil
+systemctl --user status swaync
+journalctl --user -b -u swaync
+```
+
+**mako (yedek):** Eskiden bildirimleri mako gösteriyordu. Config'i repoda duruyor. mako artık
+yalnızca swaync kurulu değilse başlıyor (`mako.service.d/niri-only.conf` →
+`ConditionPathExists=!/usr/bin/swaync`). swaync'i kaldırırsan bir sonraki girişte bildirimler
+mako'yla eskisi gibi görünür; panel ve `MSG` modülü görünmez, `Super+N` bir şey yapmaz.
+
+---
+
 ## Font
 
 Departure Mono **11 px ve katlarında** (22, 33…) piksel-mükemmel görünür. Laptop ekranı
@@ -625,7 +721,7 @@ Departure Mono **11 px ve katlarında** (22, 33…) piksel-mükemmel görünür.
 | Terminal | `foot/.config/foot/foot.ini` → `font=`, `font-bold=`, `font-italic=`, `font-bold-italic=` |
 | Panel | `waybar/.config/waybar/style.css` → `font-family`, `font-size` |
 | Başlatıcı | `fuzzel/.config/fuzzel/fuzzel.ini` → `font=` |
-| Bildirimler | `mako/.config/mako/config` → `font=` (`11px` biçiminde) |
+| Bildirimler ve hızlı ayarlar paneli | `swaync/.config/swaync/style.css` → `font-family`, `font-size` |
 | Kilit ekranı | `themes/templates/swaylock.conf` → `font=`, `font-size=`, ardından `theme apply` |
 
 Başka bir fonta geçersen:
@@ -704,7 +800,8 @@ bildirimi gösterir. Ayrıntı için: `niri validate`.
 journalctl --user -b -u niri          # niri
 journalctl --user -b -u waybar        # panel
 journalctl --user -b -u layout-mode   # otomatik düzen
-systemctl --user status waybar mako swaybg swayidle theme-apply niri-polkit layout-mode
+journalctl --user -b -u swaync        # bildirimler ve hızlı ayarlar paneli
+systemctl --user status waybar swaync swaybg swayidle theme-apply niri-polkit layout-mode
 systemctl --user restart waybar       # panel kaybolduysa
 ```
 
@@ -756,7 +853,7 @@ rm -rf ~/.local/share/fonts/DepartureMono && fc-cache -f
 
 # 4) Paketler (sudo). stow ve cargo'yu başka işler için kullanıyorsan listeden çıkar.
 sudo dnf remove niri xwayland-satellite foot stow brightnessctl playerctl \
-    waybar fuzzel mako swaylock swayidle swaybg \
+    waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
     network-manager-applet pavucontrol blueman
 
 # 5) Repo
@@ -772,7 +869,11 @@ baştan beri değiştirilmediği için geri alınacak başka bir şey yok.
 
 - **KDE'yi etkileyebilecek tek dosyalar** ve neden etkilemedikleri:
   - `~/.config/autostart/nm-applet.desktop`, `blueman.desktop`: İkisinde de `OnlyShowIn=niri;` var. blueman paketi kendi autostart'ıyla KDE'de de başlıyordu; bu dosya onu yalnızca niri'yle sınırlıyor. Yani KDE'yi kurulumdan önceki hâlinde tutuyor.
-  - `mako.service.d/niri-only.conf`: KDE'de bir uygulama bildirim gönderdiğinde mako'nun tetiklenip Plasma'nın bildirimlerinin yerine geçmesini engelliyor.
+  - `swaync.service.d/niri-only.conf` ve `mako.service.d/niri-only.conf`: swaync ve mako
+    paketleri, bildirim gönderilince D-Bus üzerinden kendiliğinden başlayabilecek şekilde geliyor.
+    Bu dosyalar KDE'de ikisinin de tetiklenip Plasma'nın bildirimlerinin yerine geçmesini
+    engelliyor. Bu yüzden kullanıcı düzeyinde bir D-Bus geçersiz kılması **eklenmedi**: o,
+    Plasma'nın kendi bildirim servis dosyasını da gölgelerdi.
   - `brave-flags.conf`: Brave KDE'de zaten KWallet 6'yı seçiyordu. Bu dosya aynı seçimi niri'de de sabitliyor, KDE'de davranış değişmiyor.
   - `app-…@autostart.service.d/not-in-niri.conf` (üç tane): KDE'nin de kullandığı autostart
     girdilerine `ConditionEnvironment=!XDG_CURRENT_DESKTOP=niri` koşulu ekliyor. KDE'de koşul

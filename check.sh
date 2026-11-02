@@ -68,6 +68,35 @@ if errors:
 EOF
 }
 
+# swaync (GTK4) stili: GTK4'ün kendi ayrıştırıcısıyla (@import edilen tema dosyası dahil).
+gtk4_css() {
+    python3 -I - "$1" <<'EOF'
+import sys, gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk
+errors = []
+provider = Gtk.CssProvider()
+provider.connect("parsing-error", lambda p, s, e: errors.append(
+    f"{s.get_file().get_path() if s.get_file() else '?'}:{s.get_start_location().lines + 1}: {e.message}"))
+provider.load_from_path(sys.argv[1])
+if errors:
+    print("\n".join(errors)); sys.exit(1)
+EOF
+}
+
+# swaync config'i paketle gelen JSON şemasına göre (python3-jsonschema).
+swaync_conf() {
+    python3 -I - "$1" /etc/xdg/swaync/configSchema.json <<'EOF'
+import json, sys
+config = json.load(open(sys.argv[1], encoding="utf-8"))
+try:
+    import jsonschema
+except ImportError:
+    sys.exit(0)  # python3-jsonschema yoksa yalnızca JSON sözdizimine bakılır
+jsonschema.validate(config, json.load(open(sys.argv[2], encoding="utf-8")))
+EOF
+}
+
 units() {
     systemd-analyze --user verify "$DOTFILES"/systemd/.config/systemd/user/*.service
 }
@@ -117,6 +146,7 @@ presets() {
         mako_conf "$out/mako" || { echo "$preset: mako invalid"; rc=1; }
         gtk_css "$out/waybar.css" || { echo "$preset: waybar.css invalid"; rc=1; }
         gtk_css "$out/panel.css" || { echo "$preset: panel.css invalid"; rc=1; }
+        gtk4_css "$out/swaync.css" || { echo "$preset: swaync.css invalid"; rc=1; }
         swaylock_conf "$out/swaylock.conf" || { echo "$preset: swaylock.conf invalid"; rc=1; }
     done
     return $rc
@@ -142,7 +172,9 @@ check "foot"              foot --check-config -c "$DOTFILES/foot/.config/foot/fo
 check "waybar config"     waybar_json "$HOME/.config/waybar/config.jsonc"
 check "waybar style"      gtk_css "$HOME/.config/waybar/style.css"
 check "fuzzel"            fuzzel --check-config --config "$DOTFILES/fuzzel/.config/fuzzel/fuzzel.ini"
-check "mako"              mako_conf "$DOTFILES/mako/.config/mako/config"
+check "swaync config"     swaync_conf "$DOTFILES/swaync/.config/swaync/config.json"
+check "swaync style"      gtk4_css "$HOME/.config/swaync/style.css"
+check "mako (fallback)"   mako_conf "$DOTFILES/mako/.config/mako/config"
 check "swaylock (theme)"  swaylock_conf "${XDG_STATE_HOME:-$HOME/.local/state}/theme/swaylock.conf"
 check "scripts"           scripts
 check "layout planner"    python3 -I "$DOTFILES/bin/.local/bin/layout-mode" selftest

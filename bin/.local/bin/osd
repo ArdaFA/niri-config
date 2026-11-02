@@ -1,5 +1,6 @@
 #!/bin/sh
-# Ses / mikrofon / parlaklık değerini değiştirir ve mako ile kısa bir gösterge (OSD) açar.
+# Ses / mikrofon / parlaklık değerini değiştirir ve bildirim olarak kısa bir gösterge (OSD) açar.
+# Gösterge swaync'te geçmişe yazılmaz (config.json → notification-visibility → osd).
 # niri'deki medya tuşları bu scripti çağırır.
 #
 #   osd volume up|down|mute

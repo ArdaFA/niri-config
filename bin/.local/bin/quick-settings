@@ -1,0 +1,100 @@
+#!/bin/sh
+# quick-settings — hızlı ayarlar panelindeki (SwayNotificationCenter kontrol merkezi) düğmelerin
+# komutları. Panelin düzeni: ~/.config/swaync/config.json
+#
+#   quick-settings wifi | bluetooth | dnd | layout | power-saver | performance [status]
+#       Aç/kapa düğmeleri. swaync tıklamada SWAYNC_TOGGLE_STATE=true|false ile çağırır;
+#       "status" ile çağrılınca düğmenin güncel hali için true/false yazar.
+#       Güç profili: iki düğme de kapalıysa "balanced".
+#   quick-settings open <program> [argüman…]     paneli kapatıp programı niri üzerinden açar
+#   quick-settings lock | logout | reboot | poweroff
+#       Oturum. Çıkış / yeniden başlat / kapat önce fuzzel ile onay ister.
+#
+# swaync komutları kabuk olmadan çalıştırır; config.json bu yüzden `sh -c` ile çağırır.
+# Ekrana yazılan her şey İngilizce (arayüz kuralı); açıklamalar Türkçe.
+
+set -u
+
+PP=net.hadess.PowerProfiles      # tuned-ppd'nin sunduğu güç profili arayüzü (şifre istemez)
+BIN="$HOME/.local/bin"
+
+bool() {  # komut başarılıysa true, değilse false yazar
+    if "$@" >/dev/null 2>&1; then echo true; else echo false; fi
+}
+
+on() { [ "${SWAYNC_TOGGLE_STATE:-}" = true ]; }
+
+close_panel() {
+    swaync-client --close-panel --skip-wait >/dev/null 2>&1
+}
+
+profile() {
+    busctl --system get-property $PP /net/hadess/PowerProfiles $PP ActiveProfile | cut -d'"' -f2
+}
+
+set_profile() {
+    busctl --system set-property $PP /net/hadess/PowerProfiles $PP ActiveProfile s "$1"
+}
+
+bt_powered() {
+    timeout 3 bluetoothctl show | grep -q 'Powered: yes'
+}
+
+confirm() {  # confirm <düğme> <soru> : fuzzel ile evet/hayır; Enter'a hemen basmak iptal eder
+    choice=$(printf 'Cancel\n%s\n' "$1" | fuzzel --dmenu --lines 2 --width 24 --prompt "$2  ")
+    [ "$choice" = "$1" ]
+}
+
+item=${1:-}
+[ $# -gt 0 ] && shift
+
+case "$item ${1:-}" in
+    "wifi status")        bool [ "$(nmcli radio wifi)" = enabled ] ;;
+    "wifi ")              if on; then nmcli radio wifi on; else nmcli radio wifi off; fi ;;
+
+    "bluetooth status")   bool bt_powered ;;
+    "bluetooth ")
+        if on; then
+            rfkill unblock bluetooth 2>/dev/null
+            # rfkill kalktıktan sonra denetleyicinin hazır olması biraz sürebilir.
+            for _ in 1 2 3 4 5; do
+                timeout 3 bluetoothctl power on >/dev/null 2>&1 && break
+                sleep 0.4
+            done
+        else
+            timeout 3 bluetoothctl power off >/dev/null
+        fi ;;
+
+    "dnd status")         swaync-client --get-dnd --skip-wait ;;
+    "dnd ")               if on; then swaync-client --dnd-on -sw; else swaync-client --dnd-off -sw; fi >/dev/null ;;
+
+    "layout status")      bool [ "$("$BIN/layout-mode" status)" = auto ] ;;
+    "layout ")            if on; then "$BIN/layout-mode" auto; else "$BIN/layout-mode" free; fi ;;
+
+    "power-saver status") bool [ "$(profile)" = power-saver ] ;;
+    "performance status") bool [ "$(profile)" = performance ] ;;
+    "power-saver "|"performance ")
+        if on; then set_profile "$item"; else set_profile balanced; fi ;;
+
+    "open "*)
+        close_panel
+        niri msg action spawn -- "$@" ;;
+
+    "lock ")
+        close_panel
+        "$BIN/lock-screen" ;;
+    "logout ")
+        close_panel
+        confirm "Log out" "Log out?" && niri msg action quit --skip-confirmation ;;
+    "reboot ")
+        close_panel
+        confirm "Restart" "Restart?" && systemctl reboot ;;
+    "poweroff ")
+        close_panel
+        confirm "Shut down" "Shut down?" && systemctl poweroff ;;
+
+    *)
+        echo "Usage: quick-settings wifi|bluetooth|dnd|layout|power-saver|performance [status]" >&2
+        echo "       quick-settings open <program> · lock · logout · reboot · poweroff" >&2
+        exit 1 ;;
+esac

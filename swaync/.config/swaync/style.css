@@ -1,0 +1,303 @@
+/* SwayNotificationCenter görünümü: bildirimler ve hızlı ayarlar paneli (GTK4 CSS).
+ * Varsayılan stil ve bütün seçiciler: /etc/xdg/swaync/style.css — bu dosya onun üstüne yazar
+ * (config.json → "cssPriority": "user").
+ *
+ * Renkler (--qs-bg, --qs-accent …) `theme` komutunun ürettiği dosyadan gelir; tema değişince
+ * theme swaync'e `--reload-css` gönderir. Elle değiştirdikten sonra: swaync-client --reload-css */
+
+@import url("../../.local/state/theme/swaync.css");
+
+/* swaync'in kendi değişkenleri temaya bağlanır. */
+:root {
+  --cc-bg: var(--qs-bg);
+  --noti-border-color: var(--qs-overlay);
+  --noti-bg-darker: var(--qs-surface);
+  --noti-bg-hover: var(--qs-overlay);
+  --noti-bg-focus: transparent;
+  --noti-bg-alt: var(--qs-surface);
+  --noti-close-bg: var(--qs-overlay);
+  --noti-close-bg-hover: var(--qs-urgent);
+  --text-color: var(--qs-fg);
+  --text-color-disabled: var(--qs-muted);
+  --bg-selected: var(--qs-accent);
+  --border-radius: 6px;
+  --notification-icon-size: 32px;
+  --notification-group-icon-size: 20px;
+  --notification-shadow: none;
+  --font-size-body: 11px;
+  --font-size-summary: 11px;
+  --mpris-album-art-icon-size: 48px;
+  --mpris-album-art-shadow: none;
+  --widget-volume-row-icon-size: 16px;
+}
+
+* {
+  font-family: "Departure Mono", monospace;
+  font-size: 11px;
+  text-shadow: none;
+}
+
+/* ── Açılır bildirimler ve paneldeki bildirimler ───────────────────────── */
+.notification-row .notification-background {
+  padding: 4px 6px;
+}
+
+.notification-row .notification-background .notification {
+  background: var(--qs-bg);
+  border: 1px solid var(--qs-accent);
+  border-radius: 6px;
+}
+
+.notification-row .notification-background .notification.low {
+  border-color: var(--qs-muted);
+}
+
+.notification-row .notification-background .notification.critical {
+  border-color: var(--qs-urgent);
+}
+
+.notification-row .notification-background .notification .notification-default-action {
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+/* Başlık tam renk, gövde soluk; piksel fontta yapay kalın yazı kullanılmaz. */
+.notification-content .text-box .summary {
+  color: var(--qs-fg);
+  font-weight: normal;
+}
+
+/* Klavyeyle seçilen bildirimin zemini yerine kenarı belirginleşir (--noti-bg-focus saydam). */
+.notification-row:focus .notification-background .notification {
+  border-color: var(--qs-fg);
+}
+
+.notification-content .text-box .body {
+  color: var(--qs-subtle);
+}
+
+.notification-content .text-box .time {
+  color: var(--qs-muted);
+}
+
+/* Ses/parlaklık göstergesinin (osd) çubuğu. */
+.notification-content progressbar trough {
+  background: var(--qs-overlay);
+  min-height: 4px;
+  border-radius: 2px;
+}
+
+.notification-content progressbar progress {
+  background: var(--qs-accent2);
+  min-height: 4px;
+  border-radius: 2px;
+}
+
+.notification-row .notification-background .notification .notification-action > button {
+  background: var(--qs-surface);
+  color: var(--qs-fg);
+  border: none;
+  border-radius: 4px;
+  box-shadow: none;
+  margin: 4px;
+}
+
+.notification-row .notification-background .notification .notification-action > button:hover {
+  background: var(--qs-overlay);
+}
+
+.close-button {
+  min-width: 18px;
+  min-height: 18px;
+  margin: 6px 6px 0 0;
+  border-radius: 4px;
+}
+
+.close-button:hover {
+  color: var(--qs-bg);
+}
+
+.notification-group .notification-group-headers .notification-group-header {
+  color: var(--qs-subtle);
+}
+
+/* ── Panel (kontrol merkezi) ───────────────────────────────────────────── */
+.control-center {
+  background: var(--qs-bg);
+  border: 1px solid var(--qs-accent);
+  border-radius: 6px;
+  padding: 6px 0;
+}
+
+.control-center .control-center-list .notification {
+  border-color: var(--qs-overlay);
+}
+
+.control-center .control-center-list .notification.critical {
+  border-color: var(--qs-urgent);
+}
+
+.control-center .control-center-list-placeholder {
+  color: var(--qs-muted);
+  opacity: 1;
+  margin: 12px 0;
+}
+
+.widget {
+  margin: 4px 10px;
+  padding: 2px 0;
+}
+
+/* Paneldeki düz düğmeler (menü çubuğu, başlık, medya) */
+.widget-menubar button,
+.widget-title > button,
+.widget-buttons-grid flowboxchild > button {
+  background: var(--qs-surface);
+  color: var(--qs-fg);
+  border: none;
+  border-radius: 4px;
+  box-shadow: none;
+  outline: none;
+  min-height: 24px;
+  padding: 2px 10px;
+}
+
+.widget-menubar button:hover,
+.widget-title > button:hover,
+.widget-buttons-grid flowboxchild > button:hover {
+  background: var(--qs-overlay);
+}
+
+/* Menü çubuğu: Settings ▼ · Lock · Power ▼ ve açılan listeleri */
+.widget-menubar > .menu-button-bar > .start {
+  margin-left: 0;
+}
+
+.widget-menubar > .menu-button-bar > .end {
+  margin-right: 0;
+}
+
+.widget-menubar > .menu-button-bar > .widget-menubar-container button {
+  margin: 0 0 0 6px;
+}
+
+.widget-menubar > .menu-button-bar > .start .widget-menubar-container button {
+  margin: 0 6px 0 0;
+}
+
+.widget-menubar > revealer * {
+  margin-top: 4px;
+}
+
+.widget-menubar > revealer * button {
+  margin: 0 0 4px 0;
+  background: transparent;
+  color: var(--qs-subtle);
+}
+
+.widget-menubar > revealer * button:hover {
+  background: var(--qs-overlay);
+  color: var(--qs-fg);
+}
+
+/* Aç/kapa düğmeleri: açıkken vurgulu */
+.widget-buttons-grid flowboxchild > button {
+  min-height: 34px;
+  margin: 2px;
+}
+
+.widget-buttons-grid flowboxchild > button.toggle:checked,
+.widget-buttons-grid flowboxchild > button:checked {
+  background: var(--qs-accent);
+  color: var(--qs-bg);
+}
+
+/* Ses ve parlaklık kaydırıcıları */
+.widget-volume label,
+.widget-backlight label {
+  color: var(--qs-muted);
+  min-width: 34px;
+}
+
+.widget-volume button {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--qs-muted);
+}
+
+scale trough {
+  background: var(--qs-overlay);
+  min-height: 6px;
+  border-radius: 3px;
+  border: none;
+}
+
+scale highlight {
+  background: var(--qs-accent);
+  border-radius: 3px;
+  border: none;
+}
+
+scale slider {
+  background: var(--qs-fg);
+  min-width: 12px;
+  min-height: 12px;
+  margin: -4px 0;
+  border-radius: 6px;
+  border: none;
+  box-shadow: none;
+}
+
+/* Medya */
+.widget-mpris .widget-mpris-player {
+  margin: 4px 10px;
+  border: 1px solid var(--qs-overlay);
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.widget-mpris .widget-mpris-player .mpris-overlay {
+  padding: 10px;
+  background-color: var(--qs-surface);
+}
+
+.widget-mpris .widget-mpris-player .mpris-overlay .widget-mpris-title {
+  font-weight: normal;
+  color: var(--qs-fg);
+}
+
+.widget-mpris .widget-mpris-player .mpris-overlay .widget-mpris-subtitle {
+  color: var(--qs-subtle);
+}
+
+.widget-mpris .widget-mpris-player .mpris-overlay > box > button {
+  background: transparent;
+  color: var(--qs-fg);
+  border: none;
+  box-shadow: none;
+  border-radius: 4px;
+}
+
+.widget-mpris .widget-mpris-player .mpris-overlay > box > button:hover {
+  background: var(--qs-overlay);
+}
+
+.widget-mpris > box > button {
+  background: transparent;
+  color: var(--qs-muted);
+  border: none;
+  box-shadow: none;
+}
+
+/* Bildirim listesinin başlığı: "Notifications" ve Clear */
+.widget-title {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--qs-overlay);
+}
+
+.widget-title > label {
+  color: var(--qs-subtle);
+  font-size: 11px;
+}

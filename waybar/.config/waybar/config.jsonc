@@ -16,7 +16,7 @@
 
     "modules-left": ["niri/workspaces", "custom/layout", "niri/window"],
     "modules-center": ["clock"],
-    "modules-right": ["group/media", "tray", "wireplumber", "network", "battery"],
+    "modules-right": ["group/media", "tray", "wireplumber", "network", "battery", "custom/notifications"],
 
     // ── Sol ──────────────────────────────────────────────────────────────
     "niri/workspaces": {
@@ -107,13 +107,16 @@
     },
 
     // Etiketler retro metin; <span alpha> etiketi soluk, değeri parlak gösterir.
+    // VOL / NET / BAT / MSG'ye tıklamak hızlı ayarlar ve bildirim panelini açar (swaync),
+    // GNOME'un sağ üstteki durum simgeleri gibi.
     "wireplumber": {
         "format": "<span alpha='55%'>VOL</span> {volume}%",
         "format-muted": "<span alpha='55%'>VOL</span> --",
         "scroll-step": 5,
         "max-volume": 100,
         "tooltip-format": "{node_name}: {volume}%",
-        "on-click": "pavucontrol",
+        "on-click": "swaync-client --toggle-panel --skip-wait",
+        "on-click-middle": "pavucontrol",
         "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
     },
 
@@ -126,7 +129,8 @@
         "tooltip-format-wifi": "{essid}  {signalStrength}%\n{ipaddr}/{cidr}  {ifname}",
         "tooltip-format-ethernet": "{ipaddr}/{cidr}  {ifname}",
         "tooltip-format-disconnected": "Disconnected",
-        "on-click": "nm-connection-editor"
+        "on-click": "swaync-client --toggle-panel --skip-wait",
+        "on-click-right": "nm-connection-editor"
     },
 
     "battery": {
@@ -139,7 +143,31 @@
         "format-plugged": "<span alpha='55%'>AC</span> {capacity}%",
         "format-full": "<span alpha='55%'>AC</span> full",
         "format-time": "{H}h {M}m",
-        "tooltip-format": "{capacity}%  {time}"
+        "tooltip-format": "{capacity}%  {time}",
+        "on-click": "swaync-client --toggle-panel --skip-wait"
+    },
+
+    // Bildirimler (swaync). MSG: geçmiş boş · MSG •: okunmamış bildirim var ·
+    // DND: Rahatsız Etme açık. Tıkla: panel · sağ tık: Rahatsız Etme aç/kapa.
+    // swaync kurulu değilse (mako yedekte) modül görünmez.
+    "custom/notifications": {
+        "exec-if": "command -v swaync-client",
+        "exec": "swaync-client --subscribe-waybar",
+        "return-type": "json",
+        "format": "{icon}",
+        "format-icons": {
+            "none": "MSG",
+            "notification": "MSG •",
+            "dnd-none": "DND",
+            "dnd-notification": "DND •",
+            "inhibited-none": "MSG",
+            "inhibited-notification": "MSG •",
+            "dnd-inhibited-none": "DND",
+            "dnd-inhibited-notification": "DND •"
+        },
+        "on-click": "swaync-client --toggle-panel --skip-wait",
+        "on-click-right": "swaync-client --toggle-dnd --skip-wait",
+        "escape": true
     },
 
     "tray": {

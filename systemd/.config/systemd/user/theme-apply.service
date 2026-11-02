@@ -7,7 +7,7 @@ Description=Apply the saved theme for the niri session
 PartOf=graphical-session.target
 After=graphical-session.target
 Requisite=graphical-session.target
-Before=waybar.service mako.service swaybg.service
+Before=waybar.service swaync.service mako.service swaybg.service
 
 [Service]
 Type=oneshot

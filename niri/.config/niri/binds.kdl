@@ -144,10 +144,11 @@ binds {
     Ctrl+Print  { screenshot-screen; }
     Alt+Print   { screenshot-window; }
 
-    // ── Bildirimler (mako) ───────────────────────────────────────────────
-    Mod+N       hotkey-overlay-title="Dismiss notification" { spawn "makoctl" "dismiss"; }
-    Mod+Shift+N { spawn "makoctl" "dismiss" "--all"; }
-    Mod+Ctrl+N  hotkey-overlay-title="Restore last notification" { spawn "makoctl" "restore"; }
+    // ── Bildirimler ve hızlı ayarlar (swaync) ────────────────────────────
+    // Panel: hızlı ayarlar + bildirim geçmişi. Waybar'da VOL/NET/BAT ya da MSG'ye tıklamak da açar.
+    Mod+N       hotkey-overlay-title="Quick settings & notifications" { spawn "swaync-client" "--toggle-panel" "--skip-wait"; }
+    Mod+Shift+N hotkey-overlay-title="Hide notification popups" { spawn "swaync-client" "--hide-all" "--skip-wait"; }
+    Mod+Ctrl+N  hotkey-overlay-title="Do not disturb on/off" { spawn "swaync-client" "--toggle-dnd" "--skip-wait"; }
 
     // ── Ses, medya, parlaklık (kilit ekranında da çalışır) ───────────────
     // osd scripti değeri değiştirir ve üst ortada kısa bir gösterge açar.

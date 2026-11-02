@@ -1,0 +1,14 @@
+/* theme scripti tarafından üretildi ({{name}}). Elle düzenleme.
+ * Şablon: ~/dotfiles/themes/templates/swaync.css — ~/.config/swaync/style.css bunu @import eder. */
+
+:root {
+  --qs-bg: {{bg}};
+  --qs-surface: {{surface}};
+  --qs-overlay: {{overlay}};
+  --qs-muted: {{muted}};
+  --qs-subtle: {{subtle}};
+  --qs-fg: {{fg}};
+  --qs-accent: {{accent}};
+  --qs-accent2: {{accent2}};
+  --qs-urgent: {{urgent}};
+}
