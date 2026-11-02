@@ -6,3 +6,12 @@ window-rule {
     match app-id=r#"^org\.kde\.polkit-kde-authentication-agent-1$"#
     open-floating true
 }
+
+// Küçük ayar pencereleri (Waybar/tepsiden açılanlar) de yüzen açılsın:
+// ses mikseri, ağ bağlantıları, Bluetooth.
+window-rule {
+    match app-id=r#"^org\.pulseaudio\.pavucontrol$"#
+    match app-id=r#"^nm-connection-editor$"#
+    match app-id=r#"blueman-manager"#
+    open-floating true
+}

@@ -1,0 +1,39 @@
+# mako — bildirimler. Seçenekler: man 5 mako
+# Değişiklikten sonra: makoctl reload
+# Kısayollar: Super+N kapat · Super+Shift+N hepsini kapat · Super+Ctrl+N sonuncuyu geri getir
+
+font=Departure Mono 11px
+width=320
+height=180
+margin=12
+padding=10,14
+border-size=1
+border-radius=6
+icons=1
+max-icon-size=32
+max-visible=5
+default-timeout=6000
+layer=overlay
+anchor=top-right
+format=<b>%s</b>\n%b
+
+background-color=#1d1a21ee
+text-color=#ede4ea
+border-color=#f4a7b9
+progress-color=over #f4a7b944
+
+[urgency=low]
+border-color=#6f6577
+
+[urgency=critical]
+border-color=#e8697d
+default-timeout=0
+
+# Ses/parlaklık göstergesi (osd scripti): üst ortada, tek satır, geçmişe yazılmaz.
+[app-name=osd]
+anchor=top-center
+width=200
+format=%s
+border-color=#c9a7e0
+progress-color=over #c9a7e055
+history=0

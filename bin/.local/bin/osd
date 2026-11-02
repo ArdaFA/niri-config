@@ -1,0 +1,63 @@
+#!/bin/sh
+# Ses / mikrofon / parlaklık değerini değiştirir ve mako ile kısa bir gösterge (OSD) açar.
+# niri'deki medya tuşları bu scripti çağırır.
+#
+#   osd volume up|down|mute
+#   osd mic mute
+#   osd brightness up|down
+
+set -eu
+
+STEP=5
+ID_FILE="${XDG_RUNTIME_DIR:-/tmp}/osd-notification.id"
+
+# show <metin> [yüzde]  — aynı bildirimi yerinde günceller, üst üste yığmaz.
+show() {
+    id=$(cat "$ID_FILE" 2>/dev/null || echo 0)
+    if [ $# -ge 2 ]; then
+        set -- "$1" --hint="int:value:$2"
+    fi
+    notify-send --app-name=osd --urgency=low --expire-time=1200 \
+        --replace-id="$id" --print-id "$@" > "$ID_FILE"
+}
+
+percent() {  # wpctl çıktısındaki 0.45 → 45
+    awk '{ printf "%d", $2 * 100 + 0.5 }'
+}
+
+case "${1:-} ${2:-}" in
+    "volume up")
+        wpctl set-volume --limit 1.0 @DEFAULT_AUDIO_SINK@ "${STEP}%+" ;;
+    "volume down")
+        wpctl set-volume @DEFAULT_AUDIO_SINK@ "${STEP}%-" ;;
+    "volume mute")
+        wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
+    "mic mute")
+        wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle ;;
+    "brightness up")
+        brightnessctl --quiet --class=backlight set "${STEP}%+" ;;
+    "brightness down")
+        brightnessctl --quiet --class=backlight --min-value=1 set "${STEP}%-" ;;
+    *)
+        echo "Kullanım: osd volume up|down|mute · osd mic mute · osd brightness up|down" >&2
+        exit 1 ;;
+esac
+
+case "$1" in
+    volume)
+        out=$(wpctl get-volume @DEFAULT_AUDIO_SINK@)
+        vol=$(printf '%s\n' "$out" | percent)
+        case "$out" in
+            *MUTED*) show "VOL  muted" 0 ;;
+            *)       show "VOL  $vol%" "$vol" ;;
+        esac ;;
+    mic)
+        case "$(wpctl get-volume @DEFAULT_AUDIO_SOURCE@)" in
+            *MUTED*) show "MIC  muted" ;;
+            *)       show "MIC  on" ;;
+        esac ;;
+    brightness)
+        # brightnessctl -m: cihaz,sınıf,değer,yüzde%,max
+        pct=$(brightnessctl --class=backlight -m | cut -d, -f4 | tr -d '%')
+        show "LCD  $pct%" "$pct" ;;
+esac

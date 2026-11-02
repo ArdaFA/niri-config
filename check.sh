@@ -72,11 +72,52 @@ units() {
     systemd-analyze --user verify "$DOTFILES"/systemd/.config/systemd/user/*.service
 }
 
+# mako'nun config kontrol seçeneği yok: izole bir D-Bus'ta, Wayland'a bağlanamayacak
+# şekilde başlatılır; config'i okuyup "display" hatasıyla durursa config geçerlidir.
+mako_conf() {
+    local out
+    out=$(env -u DISPLAY -u WAYLAND_SOCKET WAYLAND_DISPLAY=config-check-no-display \
+          dbus-run-session -- timeout 5 mako -c "$1" 2>&1)
+    if grep -q 'Failed to parse' <<<"$out"; then
+        printf '%s\n' "$out"; return 1
+    fi
+}
+
+# swaylock çalıştırılmaz (gerçekten kilitler!): her satırın geçerli bir seçenek olduğuna bakılır.
+swaylock_conf() {
+    local opts bad=0 key
+    opts=$(swaylock --help 2>&1 | grep -oE -- '--[a-z-]+' | sed 's/^--//' | sort -u)
+    while IFS= read -r line; do
+        [[ -z "$line" || "$line" == \#* ]] && continue
+        key=${line%%=*}
+        if ! grep -qx -- "$key" <<<"$opts"; then
+            echo "bilinmeyen seçenek: $key"; bad=1
+        fi
+    done < "$1"
+    return $bad
+}
+
+scripts() {
+    local f rc=0
+    for f in "$DOTFILES"/bin/.local/bin/*; do
+        case "$(head -1 "$f")" in
+            *python*) python3 -I -m py_compile "$f" || rc=1 ;;
+            *bash*)   bash -n "$f" || rc=1 ;;
+            *)        sh -n "$f" || rc=1 ;;
+        esac
+    done
+    return $rc
+}
+
 echo "Config kontrolü: $DOTFILES"
 check "niri"              niri validate -c "$DOTFILES/niri/.config/niri/config.kdl"
 check "foot"              foot --check-config -c "$DOTFILES/foot/.config/foot/foot.ini"
 check "waybar config"     waybar_json "$HOME/.config/waybar/config.jsonc"
 check "waybar style"      gtk_css "$HOME/.config/waybar/style.css"
+check "fuzzel"            fuzzel --check-config --config "$DOTFILES/fuzzel/.config/fuzzel/fuzzel.ini"
+check "mako"              mako_conf "$DOTFILES/mako/.config/mako/config"
+check "swaylock"          swaylock_conf "$DOTFILES/swaylock/.config/swaylock/config"
+check "scriptler"         scripts
 check "systemd servisleri" units
 
 exit $FAILED

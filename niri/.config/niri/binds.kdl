@@ -10,6 +10,9 @@ binds {
     // ── Genel ────────────────────────────────────────────────────────────
     Mod+Shift+ssharp hotkey-overlay-title="Kısayol listesi" { show-hotkey-overlay; }
     Mod+Return hotkey-overlay-title="Terminal (foot)" { spawn "foot"; }
+    Mod+D hotkey-overlay-title="Uygulama başlatıcı (fuzzel)" { spawn "fuzzel"; }
+    Mod+Space { spawn "fuzzel"; }
+    Mod+Alt+L hotkey-overlay-title="Ekranı kilitle" { spawn-sh "~/.local/bin/lock-screen"; }
     Mod+Q repeat=false hotkey-overlay-title="Pencereyi kapat" { close-window; }
     Mod+O repeat=false hotkey-overlay-title="Genel bakış (overview)" { toggle-overview; }
     Mod+Shift+E hotkey-overlay-title="Oturumu kapat" { quit; }
@@ -134,17 +137,21 @@ binds {
     Ctrl+Print  { screenshot-screen; }
     Alt+Print   { screenshot-window; }
 
+    // ── Bildirimler (mako) ───────────────────────────────────────────────
+    Mod+N       hotkey-overlay-title="Bildirimi kapat" { spawn "makoctl" "dismiss"; }
+    Mod+Shift+N { spawn "makoctl" "dismiss" "--all"; }
+    Mod+Ctrl+N  hotkey-overlay-title="Son bildirimi geri getir" { spawn "makoctl" "restore"; }
+
     // ── Ses, medya, parlaklık (kilit ekranında da çalışır) ───────────────
-    XF86AudioRaiseVolume  allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05+" "-l" "1.0"; }
-    XF86AudioLowerVolume  allow-when-locked=true { spawn "wpctl" "set-volume" "@DEFAULT_AUDIO_SINK@" "0.05-"; }
-    XF86AudioMute         allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SINK@" "toggle"; }
-    XF86AudioMicMute      allow-when-locked=true { spawn "wpctl" "set-mute" "@DEFAULT_AUDIO_SOURCE@" "toggle"; }
+    // osd scripti değeri değiştirir ve üst ortada kısa bir gösterge açar.
+    XF86AudioRaiseVolume  allow-when-locked=true { spawn-sh "~/.local/bin/osd volume up"; }
+    XF86AudioLowerVolume  allow-when-locked=true { spawn-sh "~/.local/bin/osd volume down"; }
+    XF86AudioMute         allow-when-locked=true { spawn-sh "~/.local/bin/osd volume mute"; }
+    XF86AudioMicMute      allow-when-locked=true { spawn-sh "~/.local/bin/osd mic mute"; }
+    XF86MonBrightnessUp   allow-when-locked=true { spawn-sh "~/.local/bin/osd brightness up"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn-sh "~/.local/bin/osd brightness down"; }
     XF86AudioPlay         allow-when-locked=true { spawn "playerctl" "play-pause"; }
     XF86AudioPause        allow-when-locked=true { spawn "playerctl" "play-pause"; }
     XF86AudioNext         allow-when-locked=true { spawn "playerctl" "next"; }
     XF86AudioPrev         allow-when-locked=true { spawn "playerctl" "previous"; }
-    XF86MonBrightnessUp   allow-when-locked=true { spawn "brightnessctl" "--class=backlight" "set" "5%+"; }
-    XF86MonBrightnessDown allow-when-locked=true { spawn "brightnessctl" "--class=backlight" "--min-value=1" "set" "5%-"; }
-
-    // Aşama 3'te eklenecek: Super+D uygulama başlatıcı (fuzzel), Super+Alt+L kilit (swaylock)
 }

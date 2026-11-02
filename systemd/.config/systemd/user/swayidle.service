@@ -1,0 +1,19 @@
+# Boşta kalma yöneticisi (yalnızca niri oturumu).
+#   5 dk   → ekranı kilitle
+#   5.5 dk → ekranları kapat (fare/klavye ile geri açılır)
+#   uyku   → uykuya geçmeden önce kilitle
+# Süreleri değiştirdikten sonra: systemctl --user daemon-reload && systemctl --user restart swayidle
+
+[Unit]
+Description=Idle manager for the niri session (lock, screen off)
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/swayidle -w \
+    timeout 300 'loginctl lock-session' \
+    timeout 330 'niri msg action power-off-monitors' \
+    lock '%h/.local/bin/lock-screen' \
+    before-sleep '%h/.local/bin/lock-screen'
+Restart=on-failure

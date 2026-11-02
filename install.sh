@@ -10,10 +10,10 @@ set -euo pipefail
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ~ altına bağlanacak stow paketleri (repo'daki klasör adları).
-PACKAGES=(niri foot waybar autostart systemd)
+PACKAGES=(niri foot waybar fuzzel mako swaylock bin autostart systemd)
 
 # Sadece niri oturumunda başlayacak kullanıcı servisleri.
-NIRI_SERVICES=(niri-polkit.service waybar.service)
+NIRI_SERVICES=(niri-polkit.service waybar.service mako.service swayidle.service swaybg.service)
 
 WANTS_DIR="$HOME/.config/systemd/user/niri.service.wants"
 

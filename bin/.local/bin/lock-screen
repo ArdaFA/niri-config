@@ -1,0 +1,6 @@
+#!/bin/sh
+# Ekranı swaylock ile kilitler. Zaten kilitliyse hiçbir şey yapmaz.
+# Super+Alt+L, swayidle (boşta kalınca) ve uyku öncesi bu scripti çağırır.
+
+pidof -q swaylock && exit 0
+exec swaylock --daemonize
