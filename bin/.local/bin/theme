@@ -5,6 +5,7 @@
   theme wallpaper <dosya>          duvar kağıdını değiştir ve renkleri ondan üret (wallust)
         --keep-colors              renklere dokunma, yalnızca duvar kağıdını değiştir
         --dark | --light           üretilecek tema (varsayılan: görselin parlaklığına göre)
+  theme wallpaper none             duvar kağıdını kaldır (düz renk), renkler aynı kalır
   theme list                       presetleri listele (* = geçerli)
   theme current                    geçerli seçimi göster
   theme apply                      kayıtlı seçimi yeniden uygula (oturum açılışında çalışır)
@@ -352,8 +353,13 @@ def cmd_preset(args):
 
 
 def cmd_wallpaper(args):
-    image = find_image(args.file)
     state = load_state()
+    if args.file == "none":
+        # Duvar kağıdını kaldır, renkler aynı kalsın; swaybg temanın arka plan rengini gösterir.
+        state.pop("wallpaper", None)
+        apply(palette_for_state(state), state)
+        return
+    image = find_image(args.file)
     state["wallpaper"] = str(image)
     if args.keep_colors:
         palette = palette_for_state(state)
