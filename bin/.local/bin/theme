@@ -1,0 +1,447 @@
+#!/usr/bin/env python3
+"""theme — niri masaüstünün renklerini tek kaynaktan yönetir.
+
+  theme preset <isim>              sabit bir palet uygula (themes/presets/<isim>.toml)
+  theme wallpaper <dosya>          duvar kağıdını değiştir ve renkleri ondan üret (wallust)
+        --keep-colors              renklere dokunma, yalnızca duvar kağıdını değiştir
+        --dark | --light           üretilecek tema (varsayılan: görselin parlaklığına göre)
+  theme list                       presetleri listele (* = geçerli)
+  theme current                    geçerli seçimi göster
+  theme apply                      kayıtlı seçimi yeniden uygula (oturum açılışında çalışır)
+
+Akış: palet (preset ya da wallust) → themes/templates/* şablonları →
+~/.local/state/theme/ altındaki dosyalar → çalışan bileşenler yenilenir:
+niri dosyayı kendisi izler, Waybar ve mako yeniden yüklenir, açık foot
+pencerelerine kaçış dizileri gönderilir, fuzzel ve swaylock her açılışta okur.
+"""
+
+import argparse
+import colorsys
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[3]          # ~/dotfiles
+PRESETS = REPO / "themes" / "presets"
+TEMPLATES = REPO / "themes" / "templates"
+WALLUST_CONFIG = REPO / "themes" / "wallust"
+WALLPAPERS = REPO / "wallpapers"
+
+STATE = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "theme"
+STATE_FILE = STATE / "state.json"        # kalıcı seçim
+PALETTE_FILE = STATE / "palette.json"    # son uygulanan palet
+WALLPAPER_LINK = STATE / "wallpaper"     # swaybg'nin gösterdiği görsel (symlink)
+SWAYBG_RUNNING = STATE / "swaybg.args"   # çalışan swaybg'nin argümanları
+# wallust'ın yazdığı ham palet; themes/wallust/wallust.toml'daki hedefle aynı olmalı.
+WALLUST_OUT = Path.home() / ".local" / "state" / "theme" / "wallust.json"
+
+DEFAULT_PRESET = "sakura"
+
+UI_KEYS = ("bg", "surface", "overlay", "muted", "subtle", "fg",
+           "accent", "accent2", "urgent", "warn", "ok")
+TERM_KEYS = tuple(f"color{i}" for i in range(16))
+HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+TOKEN_RE = re.compile(r"\{\{\s*([a-z0-9_]+)(\.hex)?\s*\}\}")
+
+
+def die(msg):
+    print(f"theme: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+# ── Renk yardımcıları ─────────────────────────────────────────────────────
+
+def to_rgb(h):
+    return tuple(int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
+
+
+def to_hex(r, g, b):
+    return "#" + "".join(f"{round(min(max(c, 0), 1) * 255):02x}" for c in (r, g, b))
+
+
+def mix(a, b, t):
+    """a'dan b'ye doğru t oranında karışım (0 = a, 1 = b)."""
+    return to_hex(*(x + (y - x) * t for x, y in zip(to_rgb(a), to_rgb(b))))
+
+
+def tone(h, lightness, max_saturation):
+    """Rengin tonunu korur; açıklığını ayarlar, doygunluğunu sınırlar (pastelleştirir)."""
+    hue, _, sat = colorsys.rgb_to_hls(*to_rgb(h))
+    return to_hex(*colorsys.hls_to_rgb(hue, lightness, min(sat, max_saturation)))
+
+
+# ── Palet ─────────────────────────────────────────────────────────────────
+
+def complete_palette(ui, term, name, variant):
+    """[ui] renklerini doğrular, eksik terminal renklerini [ui]'dan türetir."""
+    missing = [k for k in UI_KEYS if k not in ui]
+    if missing:
+        die(f"{name}: [ui] içinde eksik renk(ler): {', '.join(missing)}")
+    for key, value in {**ui, **term}.items():
+        if not isinstance(value, str) or not HEX_RE.match(value):
+            die(f"{name}: '{key}' geçerli bir #rrggbb rengi değil: {value!r}")
+    ui = {k: v.lower() for k, v in ui.items()}
+    term = {k: v.lower() for k, v in term.items()}
+    cyan = mix(ui["ok"], ui["accent2"], 0.5)
+    derived = {
+        "color0": ui["overlay"], "color8": ui["muted"],
+        "color7": ui["subtle"], "color15": ui["fg"],
+        "color1": ui["urgent"], "color9": ui["urgent"],
+        "color2": ui["ok"], "color10": ui["ok"],
+        "color3": ui["warn"], "color11": ui["warn"],
+        "color4": ui["accent2"], "color12": ui["accent2"],
+        "color5": ui["accent"], "color13": ui["accent"],
+        "color6": cyan, "color14": cyan,
+    }
+    for key in TERM_KEYS:
+        term.setdefault(key, derived[key])
+    safe_name = re.sub(r"[^\w .,()+'-]", "_", name)
+    return {"name": safe_name, "variant": variant, "cursor": ui["accent"], **ui, **term}
+
+
+def preset_names():
+    return sorted(p.stem for p in PRESETS.glob("*.toml"))
+
+
+def load_preset(name):
+    path = PRESETS / f"{name}.toml"
+    if not path.is_file():
+        die(f"'{name}' adında preset yok. Mevcut: {', '.join(preset_names())}")
+    try:
+        with path.open("rb") as f:
+            data = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        die(f"{path.name} okunamadı: {e}")
+    return complete_palette(data.get("ui", {}), data.get("term", {}),
+                            data.get("name", name), data.get("variant", "dark"))
+
+
+def wallust_bin():
+    found = shutil.which("wallust") or str(Path.home() / ".cargo" / "bin" / "wallust")
+    if not os.access(found, os.X_OK):
+        die("wallust bulunamadı (kurulum: cargo install --locked wallust)")
+    return found
+
+
+def run_wallust(image, palette):
+    STATE.mkdir(parents=True, exist_ok=True)
+    cmd = [wallust_bin(), "run", "--quiet", "--skip-sequences",
+           "--config-dir", str(WALLUST_CONFIG), "--palette", palette, str(image)]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        die(f"wallust hata verdi:\n{result.stderr.strip()}")
+    data = json.loads(WALLUST_OUT.read_text())
+    return (data["background"].lower(), data["foreground"].lower(),
+            [c.lower() for c in data["colors"]])
+
+
+def guess_variant(image):
+    """Görsel ortalamada açıksa 'light', değilse 'dark'."""
+    try:
+        from PIL import Image, ImageStat
+        with Image.open(image) as im:
+            mean = ImageStat.Stat(im.convert("L").resize((64, 64))).mean[0] / 255
+        return "light" if mean > 0.5 else "dark"
+    except Exception:
+        return "dark"
+
+
+def palette_from_wallpaper(image, variant):
+    # Tonlar her zaman ANSI sırasını koruyan koyu paletten gelir:
+    # c1 kırmızı, c2 yeşil, c3 sarı, c4 mavi, c5 macenta (→ sakura vurgusu), c6 camgöbeği.
+    # Görselin tonu korunur; açıklık/doygunluk sakin bir pastel aralığa çekilir.
+    bg, fg, c = run_wallust(image, "ansidark16")
+    wisteria = mix(c[5], c[4], 0.5)
+    if variant == "dark":
+        term = {k: c[i] for i, k in ((0, "color0"), (7, "color7"), (8, "color8"), (15, "color15"))}
+        for i in range(1, 7):
+            term[f"color{i}"] = tone(c[i], 0.62, 0.55)
+            term[f"color{i + 8}"] = tone(c[i], 0.74, 0.60)
+        accent, accent2 = tone(c[5], 0.76, 0.65), tone(wisteria, 0.74, 0.45)
+        urgent, warn, ok = tone(c[1], 0.66, 0.65), tone(c[3], 0.72, 0.60), tone(c[2], 0.68, 0.45)
+    else:
+        # Açık tema: zemin/yazı light16'dan; tonlar açık zeminde okunacak kadar koyu.
+        bg, fg, _ = run_wallust(image, "light16")
+        term = {"color0": mix(fg, bg, 0.25), "color8": mix(fg, bg, 0.40),
+                "color7": mix(bg, fg, 0.30), "color15": mix(bg, fg, 0.18)}
+        for i in range(1, 7):
+            term[f"color{i}"] = tone(c[i], 0.40, 0.60)
+            term[f"color{i + 8}"] = tone(c[i], 0.33, 0.65)
+        accent, accent2 = tone(c[5], 0.52, 0.60), tone(wisteria, 0.45, 0.45)
+        urgent, warn, ok = tone(c[1], 0.45, 0.65), tone(c[3], 0.42, 0.70), tone(c[2], 0.36, 0.50)
+    ui = {
+        "bg": bg, "fg": fg,
+        "surface": mix(bg, fg, 0.06), "overlay": mix(bg, fg, 0.14),
+        "muted": mix(bg, fg, 0.42), "subtle": mix(bg, fg, 0.66),
+        "accent": accent, "accent2": accent2,
+        "urgent": urgent, "warn": warn, "ok": ok,
+    }
+    return complete_palette(ui, term, f"wallpaper {Path(image).name}", variant)
+
+
+# ── Durum ─────────────────────────────────────────────────────────────────
+
+def load_state():
+    try:
+        return json.loads(STATE_FILE.read_text())
+    except (OSError, ValueError):
+        return {"source": "preset", "preset": DEFAULT_PRESET}
+
+
+def write_atomic(path, text):
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text)
+    tmp.replace(path)
+
+
+def palette_for_state(state):
+    if state.get("source") == "wallpaper":
+        # Oturum açılışında wallust'ı yeniden çalıştırmamak için kayıtlı palet kullanılır.
+        try:
+            return json.loads(PALETTE_FILE.read_text())
+        except (OSError, ValueError):
+            wp = state.get("wallpaper")
+            if wp and Path(wp).is_file():
+                return palette_from_wallpaper(wp, state.get("variant", "dark"))
+            state.update(source="preset", preset=DEFAULT_PRESET)
+    name = state.get("preset", DEFAULT_PRESET)
+    if not (PRESETS / f"{name}.toml").is_file():
+        name = DEFAULT_PRESET
+    return load_preset(name)
+
+
+# ── Şablonlar ─────────────────────────────────────────────────────────────
+
+def render(text, palette, source):
+    def substitute(match):
+        key, hex_only = match.group(1), match.group(2)
+        if key not in palette:
+            die(f"{source}: bilinmeyen değişken {{{{{key}}}}}")
+        value = palette[key]
+        return value[1:] if hex_only else value
+    return TOKEN_RE.sub(substitute, text)
+
+
+def write_outputs(palette, outdir):
+    """themes/templates/ içindeki her şablonu aynı adla outdir'e yazar."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    for template in sorted(TEMPLATES.iterdir()):
+        if template.is_file() and not template.name.startswith("."):
+            write_atomic(outdir / template.name,
+                         render(template.read_text(), palette, template.name))
+
+
+# ── Çalışan bileşenleri yenileme ──────────────────────────────────────────
+
+def unit_active(unit):
+    return subprocess.run(["systemctl", "--user", "--quiet", "is-active", unit]).returncode == 0
+
+
+def swaybg_args(palette):
+    if WALLPAPER_LINK.exists():
+        return ["swaybg", "--mode", "fill", "--image", str(WALLPAPER_LINK.resolve())]
+    return ["swaybg", "--color", palette["bg"][1:]]
+
+
+def foot_terminals():
+    """foot pencerelerinde çalışan kabukların terminal aygıtları (/dev/pts/N)."""
+    procs = []
+    foot_pids = set()
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            stat = (entry / "stat").read_text()
+        except OSError:
+            continue
+        comm = stat[stat.find("(") + 1:stat.rfind(")")]
+        ppid = int(stat[stat.rfind(")") + 2:].split()[1])
+        if comm == "foot":
+            foot_pids.add(int(entry.name))
+        procs.append((int(entry.name), ppid))
+    ttys = set()
+    for pid, ppid in procs:
+        if ppid in foot_pids:
+            try:
+                tty = os.readlink(f"/proc/{pid}/fd/0")
+            except OSError:
+                continue
+            if tty.startswith("/dev/pts/"):
+                ttys.add(tty)
+    return ttys
+
+
+def update_foot(palette):
+    st = "\033\\"
+    seq = "".join(f"\033]4;{i};{palette[f'color{i}']}{st}" for i in range(16))
+    seq += (f"\033]10;{palette['fg']}{st}\033]11;{palette['bg']}{st}"
+            f"\033]12;{palette['cursor']}{st}"
+            f"\033]17;{palette['overlay']}{st}\033]19;{palette['fg']}{st}")
+    for tty in foot_terminals():
+        try:
+            fd = os.open(tty, os.O_WRONLY | os.O_NOCTTY | os.O_NONBLOCK)
+        except OSError:
+            continue
+        try:
+            os.write(fd, seq.encode())
+        except OSError:
+            pass
+        finally:
+            os.close(fd)
+
+
+def reload_components(palette):
+    # niri: include ettiği dosyayı kendisi izler, ayrıca bir şey gerekmez.
+    if unit_active("waybar.service"):
+        subprocess.run(["systemctl", "--user", "reload", "waybar.service"])
+    if unit_active("mako.service"):
+        subprocess.run(["makoctl", "reload"])
+    if unit_active("swaybg.service"):
+        try:
+            running = SWAYBG_RUNNING.read_text()
+        except OSError:
+            running = ""
+        if running != json.dumps(swaybg_args(palette)):
+            subprocess.run(["systemctl", "--user", "restart", "swaybg.service"])
+    update_foot(palette)
+
+
+# ── Uygulama ──────────────────────────────────────────────────────────────
+
+def apply(palette, state, reload=True):
+    STATE.mkdir(parents=True, exist_ok=True)
+    write_outputs(palette, STATE)
+    write_atomic(PALETTE_FILE, json.dumps(palette, indent=2) + "\n")
+
+    wallpaper = state.get("wallpaper")
+    if wallpaper and Path(wallpaper).is_file():
+        tmp = STATE / ".wallpaper.tmp"
+        tmp.unlink(missing_ok=True)
+        tmp.symlink_to(wallpaper)
+        tmp.replace(WALLPAPER_LINK)
+    else:
+        state.pop("wallpaper", None)
+        WALLPAPER_LINK.unlink(missing_ok=True)
+
+    write_atomic(STATE_FILE, json.dumps(state, indent=2) + "\n")
+    if reload:
+        reload_components(palette)
+    print(f"tema: {palette['name']}")
+
+
+def find_image(arg):
+    path = Path(arg).expanduser()
+    if not path.is_file() and (WALLPAPERS / arg).is_file():
+        path = WALLPAPERS / arg
+    if not path.is_file():
+        die(f"görsel bulunamadı: {arg}")
+    return path.resolve()
+
+
+def cmd_preset(args):
+    palette = load_preset(args.name)
+    state = load_state()
+    state.update(source="preset", preset=args.name)
+    state.pop("variant", None)
+    apply(palette, state)
+
+
+def cmd_wallpaper(args):
+    image = find_image(args.file)
+    state = load_state()
+    state["wallpaper"] = str(image)
+    if args.keep_colors:
+        palette = palette_for_state(state)
+    else:
+        variant = args.variant or guess_variant(image)
+        palette = palette_from_wallpaper(image, variant)
+        state.update(source="wallpaper", variant=variant)
+    apply(palette, state)
+
+
+def cmd_apply(args):
+    state = load_state()
+    apply(palette_for_state(state), state, reload=not args.no_reload)
+
+
+def cmd_list(args):
+    state = load_state()
+    current = state.get("preset") if state.get("source") == "preset" else None
+    for name in preset_names():
+        print(f"{'*' if name == current else ' '} {name}")
+    if state.get("source") == "wallpaper":
+        print(f"* (duvar kağıdından: {Path(state['wallpaper']).name})")
+
+
+def cmd_current(args):
+    state = load_state()
+    if state.get("source") == "wallpaper":
+        print(f"kaynak:        duvar kağıdı ({state.get('variant', 'dark')})")
+    else:
+        print(f"kaynak:        preset {state.get('preset', DEFAULT_PRESET)}")
+    print(f"duvar kağıdı:  {state.get('wallpaper', '(yok, düz renk)')}")
+    print(f"dosyalar:      {STATE}")
+
+
+def cmd_swaybg(args):
+    """swaybg.service tarafından çağrılır: geçerli duvar kağıdını (ya da rengi) gösterir."""
+    try:
+        palette = json.loads(PALETTE_FILE.read_text())
+    except (OSError, ValueError):
+        palette = load_preset(DEFAULT_PRESET)
+    argv = swaybg_args(palette)
+    STATE.mkdir(parents=True, exist_ok=True)
+    write_atomic(SWAYBG_RUNNING, json.dumps(argv))
+    os.execvp(argv[0], argv)
+
+
+def cmd_render(args):
+    """check.sh için: bir preseti verilen klasöre üretir, hiçbir şeyi yenilemez."""
+    write_outputs(load_preset(args.name), Path(args.outdir))
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="theme", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True, metavar="komut")
+
+    p = sub.add_parser("preset", help="sabit bir palet uygula")
+    p.add_argument("name", metavar="isim")
+    p.set_defaults(func=cmd_preset)
+
+    p = sub.add_parser("wallpaper", help="duvar kağıdını değiştir, renkleri ondan üret")
+    p.add_argument("file", metavar="dosya")
+    p.add_argument("--keep-colors", action="store_true", help="renkleri değiştirme")
+    group = p.add_mutually_exclusive_group()
+    group.add_argument("--dark", dest="variant", action="store_const", const="dark")
+    group.add_argument("--light", dest="variant", action="store_const", const="light")
+    p.set_defaults(func=cmd_wallpaper, variant=None)
+
+    p = sub.add_parser("apply", help="kayıtlı seçimi yeniden uygula")
+    p.add_argument("--no-reload", action="store_true", help=argparse.SUPPRESS)
+    p.set_defaults(func=cmd_apply)
+
+    sub.add_parser("list", help="presetleri listele").set_defaults(func=cmd_list)
+    sub.add_parser("current", help="geçerli seçimi göster").set_defaults(func=cmd_current)
+
+    # İç kullanım (yardımda listelenmez): swaybg.service ve check.sh.
+    p = sub.add_parser("swaybg")
+    p.set_defaults(func=cmd_swaybg)
+
+    p = sub.add_parser("render")
+    p.add_argument("name")
+    p.add_argument("outdir")
+    p.set_defaults(func=cmd_render)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

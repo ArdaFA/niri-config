@@ -1,0 +1,15 @@
+# wallust ayarları — yalnızca `theme wallpaper` tarafından kullanılır:
+#   wallust run --config-dir ~/dotfiles/themes/wallust ...
+# (~/.config/wallust kullanılmaz.)
+#
+# lchansi + ansidark16: terminal renklerinde ANSI sırasını korur
+# (color1 kırmızı, color2 yeşil, color3 sarı, color4 mavi, color5 macenta, color6 camgöbeği).
+# theme scripti açık temalar için --palette light16 ile ayrıca çağırır.
+
+backend = "fastresize"
+color_space = "lchansi"
+palette = "ansidark16"
+check_contrast = true
+
+[templates]
+palette = { template = 'palette.json', target = '~/.local/state/theme/wallust.json' }

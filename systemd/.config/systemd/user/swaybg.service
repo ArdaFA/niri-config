@@ -1,13 +1,13 @@
 # Duvar kağıdı (yalnızca niri oturumu).
-# ~/.local/state/theme/wallpaper bağlantısı varsa onu gösterir, yoksa düz renk.
-# ($$ = systemd'nin kendisinin değil, sh'nin değişkeni)
+# `theme swaybg` geçerli duvar kağıdını gösterir; duvar kağıdı yoksa temanın arka plan rengini.
+# Duvar kağıdını değiştirmek için: theme wallpaper <dosya>
 
 [Unit]
 Description=Wallpaper for the niri session
 PartOf=graphical-session.target
-After=graphical-session.target
+After=graphical-session.target theme-apply.service
 Requisite=graphical-session.target
 
 [Service]
-ExecStart=/bin/sh -c 'w="$$HOME/.local/state/theme/wallpaper"; if [ -e "$$w" ]; then exec swaybg --mode fill --image "$$w"; else exec swaybg --color 1d1a21; fi'
+ExecStart=%h/.local/bin/theme swaybg
 Restart=on-failure

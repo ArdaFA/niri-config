@@ -1,0 +1,32 @@
+// theme scripti tarafından üretildi ({{name}}). Elle düzenleme; şablon: ~/dotfiles/themes/templates/niri.kdl
+// config.kdl bu dosyayı en sonda dahil eder; layout.kdl'deki renkleri ezer.
+
+layout {
+    background-color "{{bg}}"
+
+    focus-ring {
+        active-color "{{accent}}"
+        inactive-color "{{overlay}}"
+        urgent-color "{{urgent}}"
+    }
+
+    border {
+        active-color "{{accent}}"
+        inactive-color "{{overlay}}"
+        urgent-color "{{urgent}}"
+    }
+
+    insert-hint {
+        color "{{accent}}66"
+    }
+
+    tab-indicator {
+        active-color "{{accent}}"
+        inactive-color "{{muted}}"
+        urgent-color "{{urgent}}"
+    }
+}
+
+overview {
+    backdrop-color "{{surface}}"
+}

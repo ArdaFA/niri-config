@@ -3,4 +3,10 @@
 # Super+Alt+L, swayidle (boşta kalınca) ve uyku öncesi bu scripti çağırır.
 
 pidof -q swaylock && exit 0
-exec swaylock --daemonize
+
+# Kilit ekranı ayarları ve renkleri `theme` komutunun ürettiği dosyada.
+conf="${XDG_STATE_HOME:-$HOME/.local/state}/theme/swaylock.conf"
+if [ -f "$conf" ]; then
+    exec swaylock --daemonize --config "$conf"
+fi
+exec swaylock --daemonize --color 1d1a21

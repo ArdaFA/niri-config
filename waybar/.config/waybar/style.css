@@ -1,18 +1,10 @@
 /* Waybar görünümü (GTK3 CSS).
  * Sınıf ve kimlik listesi: man waybar-styles, man waybar-<modül>
- * Not: Renkler Aşama 4'te tema dosyasından gelecek; aşağıdakiler geçici varsayılanlar. */
+ *
+ * Renkler (@bg, @fg, @accent …) `theme` komutunun ürettiği dosyadan gelir.
+ * Yol bu dosyanın ~/.config/waybar/ içindeki bağlantısına göredir. */
 
-@define-color bg      #1d1a21;
-@define-color surface #26222b;
-@define-color overlay #332d39;
-@define-color muted   #6f6577;
-@define-color subtle  #a397a8;
-@define-color fg      #ede4ea;
-@define-color accent  #f4a7b9;
-@define-color accent2 #c9a7e0;
-@define-color urgent  #e8697d;
-@define-color warn    #e9c28b;
-@define-color ok      #a8c9a0;
+@import "../../.local/state/theme/waybar.css";
 
 * {
     font-family: "Departure Mono", monospace;

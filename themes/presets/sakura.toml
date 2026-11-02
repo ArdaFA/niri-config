@@ -1,0 +1,40 @@
+# Sakura — bu kurulumun varsayılan paleti: mürekkep-erik zemin, washi kâğıdı yazı,
+# kiraz çiçeği pembesi vurgu, wisteria (fuji) moru ikinci vurgu.
+#
+# Yeni preset eklemek için bu dosyayı kopyala, adını değiştir (ör. benim.toml),
+# renkleri düzenle ve `theme preset benim` çalıştır.
+# [ui] zorunlu; [term] isteğe bağlı (yazılmayan terminal renkleri [ui]'dan türetilir).
+
+name = "Sakura"
+variant = "dark"
+
+[ui]
+bg      = "#1d1a21"  # ana arka plan
+surface = "#26222b"  # bir ton açık yüzey (overview arka planı)
+overlay = "#332d39"  # seçim, hover, pasif kenarlık
+muted   = "#6f6577"  # soluk yazı, boş workspace
+subtle  = "#a397a8"  # ikincil yazı (pencere başlığı)
+fg      = "#ede4ea"  # ana yazı
+accent  = "#f4a7b9"  # vurgu: odak halkası, seçili workspace, imleç
+accent2 = "#c9a7e0"  # ikinci vurgu: OSD, linkler, doğrulama halkası
+urgent  = "#e8697d"  # hata / acil
+warn    = "#e9c28b"  # uyarı / düşük pil
+ok      = "#a8c9a0"  # şarjda / olumlu
+
+[term]
+color0  = "#2b2630"
+color1  = "#e8697d"
+color2  = "#a8c9a0"
+color3  = "#e9c28b"
+color4  = "#8fb8d6"
+color5  = "#f4a7b9"
+color6  = "#9fd0c7"
+color7  = "#d8ccd6"
+color8  = "#5e5466"
+color9  = "#f08a9b"
+color10 = "#bfdcb7"
+color11 = "#f2d4a8"
+color12 = "#aacbe3"
+color13 = "#f8c3d0"
+color14 = "#b8e0d8"
+color15 = "#f5eef2"

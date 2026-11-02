@@ -10,17 +10,25 @@ set -euo pipefail
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ~ altına bağlanacak stow paketleri (repo'daki klasör adları).
-PACKAGES=(niri foot waybar fuzzel mako swaylock bin autostart systemd)
+PACKAGES=(niri foot waybar fuzzel mako bin autostart systemd)
 
 # Sadece niri oturumunda başlayacak kullanıcı servisleri.
-NIRI_SERVICES=(niri-polkit.service waybar.service mako.service swayidle.service swaybg.service)
+NIRI_SERVICES=(
+    niri-polkit.service
+    theme-apply.service
+    waybar.service
+    mako.service
+    swayidle.service
+    swaybg.service
+)
 
 WANTS_DIR="$HOME/.config/systemd/user/niri.service.wants"
+THEME_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/theme"
 
 stow_cmd() {
     # --no-folding: klasörleri değil tek tek dosyaları bağla; programların
     # ~/.config altına yazdığı dosyalar repo'ya karışmasın.
-    stow --dir "$DOTFILES" --target "$HOME" --no-folding "$@"
+    stow --dir "$DOTFILES" --target "$HOME" --no-folding --ignore='__pycache__' "$@"
 }
 
 install() {
@@ -29,6 +37,8 @@ install() {
     for svc in "${NIRI_SERVICES[@]}"; do
         systemctl --user add-wants niri.service "$svc"
     done
+    # Tema dosyalarını üret (kayıtlı seçim yoksa varsayılan: sakura).
+    "$HOME/.local/bin/theme" apply
     echo "Bağlandı: ${PACKAGES[*]}"
     echo "niri servisleri: ${NIRI_SERVICES[*]}"
 }
@@ -40,7 +50,9 @@ uninstall() {
     rmdir --ignore-fail-on-non-empty "$WANTS_DIR" 2>/dev/null || true
     stow_cmd --delete "${PACKAGES[@]}"
     systemctl --user daemon-reload
-    echo "Bağlantılar kaldırıldı. Repo yerinde duruyor: $DOTFILES"
+    # theme komutunun ürettiği dosyalar (yalnızca üretilmiş veriler).
+    rm -rf "$THEME_STATE"
+    echo "Bağlantılar ve üretilmiş tema dosyaları kaldırıldı. Repo yerinde duruyor: $DOTFILES"
 }
 
 case "${1:-install}" in

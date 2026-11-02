@@ -1,0 +1,14 @@
+# Oturum açılışında kayıtlı temayı yeniden uygular (yalnızca niri oturumu).
+# Şablonlarda yapılan değişiklikler de böylece her girişte dosyalara yansır.
+# Bileşenlerden önce çalışır ki hepsi güncel renklerle başlasın.
+
+[Unit]
+Description=Apply the saved theme for the niri session
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+Before=waybar.service mako.service swaybg.service
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/theme apply --no-reload

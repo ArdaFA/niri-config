@@ -17,16 +17,10 @@ layer=overlay
 anchor=top-right
 format=<b>%s</b>\n%b
 
-background-color=#1d1a21ee
-text-color=#ede4ea
-border-color=#f4a7b9
-progress-color=over #f4a7b944
-
-[urgency=low]
-border-color=#6f6577
+# Renkler: `theme` komutunun ürettiği dosya (kendi bölümleriyle birlikte).
+include=~/.local/state/theme/mako
 
 [urgency=critical]
-border-color=#e8697d
 default-timeout=0
 
 # Ses/parlaklık göstergesi (osd scripti): üst ortada, tek satır, geçmişe yazılmaz.
@@ -34,6 +28,4 @@ default-timeout=0
 anchor=top-center
 width=200
 format=%s
-border-color=#c9a7e0
-progress-color=over #c9a7e055
 history=0

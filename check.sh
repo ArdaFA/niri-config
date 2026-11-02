@@ -97,11 +97,37 @@ swaylock_conf() {
     return $bad
 }
 
+# Her preseti geçici bir klasöre üretip her bileşenin parçasını ayrı ayrı doğrular.
+presets() {
+    local tmp preset rc=0
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' RETURN
+    for preset in "$DOTFILES"/themes/presets/*.toml; do
+        preset=$(basename "$preset" .toml)
+        local out="$tmp/$preset"
+        if ! "$DOTFILES/bin/.local/bin/theme" render "$preset" "$out"; then
+            rc=1; continue
+        fi
+        niri validate -c "$out/niri.kdl" >/dev/null 2>&1 \
+            || { echo "$preset: niri.kdl geçersiz"; niri validate -c "$out/niri.kdl" 2>&1 | tail -5; rc=1; }
+        foot --check-config -c "$out/foot.ini" >/dev/null 2>&1 \
+            || { echo "$preset: foot.ini geçersiz"; rc=1; }
+        fuzzel --check-config --config "$out/fuzzel.ini" >/dev/null 2>&1 \
+            || { echo "$preset: fuzzel.ini geçersiz"; rc=1; }
+        mako_conf "$out/mako" || { echo "$preset: mako geçersiz"; rc=1; }
+        gtk_css "$out/waybar.css" || { echo "$preset: waybar.css geçersiz"; rc=1; }
+        swaylock_conf "$out/swaylock.conf" || { echo "$preset: swaylock.conf geçersiz"; rc=1; }
+    done
+    return $rc
+}
+
 scripts() {
     local f rc=0
     for f in "$DOTFILES"/bin/.local/bin/*; do
+        [[ -f "$f" ]] || continue
         case "$(head -1 "$f")" in
-            *python*) python3 -I -m py_compile "$f" || rc=1 ;;
+            # ast.parse: sözdizimi kontrolü, __pycache__ yazmaz.
+            *python*) python3 -I -c 'import ast, sys; ast.parse(open(sys.argv[1]).read(), sys.argv[1])' "$f" || rc=1 ;;
             *bash*)   bash -n "$f" || rc=1 ;;
             *)        sh -n "$f" || rc=1 ;;
         esac
@@ -116,8 +142,9 @@ check "waybar config"     waybar_json "$HOME/.config/waybar/config.jsonc"
 check "waybar style"      gtk_css "$HOME/.config/waybar/style.css"
 check "fuzzel"            fuzzel --check-config --config "$DOTFILES/fuzzel/.config/fuzzel/fuzzel.ini"
 check "mako"              mako_conf "$DOTFILES/mako/.config/mako/config"
-check "swaylock"          swaylock_conf "$DOTFILES/swaylock/.config/swaylock/config"
+check "swaylock (tema)"   swaylock_conf "${XDG_STATE_HOME:-$HOME/.local/state}/theme/swaylock.conf"
 check "scriptler"         scripts
+check "presetler"         presets
 check "systemd servisleri" units
 
 exit $FAILED

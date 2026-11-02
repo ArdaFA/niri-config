@@ -1,5 +1,6 @@
 // Pencere düzeni: boşluklar, sütun genişlikleri, odak halkası.
-// Not: Renkler Aşama 4'te tema dosyasından gelecek; buradakiler geçici varsayılanlar.
+// Renkler `theme` komutunun ürettiği dosyadan gelir; buradakiler yalnızca o dosya
+// yoksa kullanılan yedek (sakura) renklerdir.
 
 layout {
     // Pencereler arası ve ekran kenarı boşluğu (mantıksal piksel).

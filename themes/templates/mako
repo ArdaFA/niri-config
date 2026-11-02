@@ -1,0 +1,17 @@
+# theme scripti tarafından üretildi ({{name}}). Elle düzenleme.
+# Şablon: ~/dotfiles/themes/templates/mako — mako config'i bunu include eder.
+
+background-color={{bg}}ee
+text-color={{fg}}
+border-color={{accent}}
+progress-color=over {{accent}}44
+
+[urgency=low]
+border-color={{muted}}
+
+[urgency=critical]
+border-color={{urgent}}
+
+[app-name=osd]
+border-color={{accent2}}
+progress-color=over {{accent2}}55
