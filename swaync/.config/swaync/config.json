@@ -122,6 +122,24 @@
           "type": "toggle",
           "command": "sh -c '~/.local/bin/quick-settings layout'",
           "update-command": "sh -c '~/.local/bin/quick-settings layout status'"
+        },
+        {
+          "label": "Microphone",
+          "type": "toggle",
+          "command": "sh -c '~/.local/bin/quick-settings mic'",
+          "update-command": "sh -c '~/.local/bin/quick-settings mic status'"
+        },
+        {
+          "label": "Night light",
+          "type": "toggle",
+          "command": "sh -c '~/.local/bin/quick-settings night'",
+          "update-command": "sh -c '~/.local/bin/quick-settings night status'"
+        },
+        {
+          "label": "Stay awake",
+          "type": "toggle",
+          "command": "sh -c '~/.local/bin/quick-settings awake'",
+          "update-command": "sh -c '~/.local/bin/quick-settings awake status'"
         }
       ]
     },

@@ -37,7 +37,9 @@ tooltip label {
 /* ── Ortak modül boşlukları ─────────────────────────────────────────── */
 #window,
 #clock,
+#custom-mic,
 #wireplumber,
+#backlight,
 #network,
 #battery {
     padding: 0 10px;
@@ -166,20 +168,86 @@ window#waybar.empty #window {
     color: @warn;
 }
 
+/* Mikrofon yalnızca sessizdeyken görünür: hatırlatma olarak uyarı renginde. */
+#custom-mic {
+    color: @warn;
+}
+
 /* Hızlı ayarları açan durum yazıları: üstüne gelince hafif zemin. */
+#custom-mic:hover,
 #wireplumber:hover,
+#backlight:hover,
 #network:hover,
 #battery:hover,
 #custom-notifications:hover {
     background: @overlay;
 }
 
+#custom-mic,
 #wireplumber,
+#backlight,
 #network,
 #battery,
 #custom-notifications {
     margin: 4px 0;
     border-radius: 4px;
+}
+
+/* ── Gerektiğinde görünen göstergeler ───────────────────────────────── */
+/* Gizliyken yer kaplamazlar; görününce kısa, renkli birer yazı. */
+#custom-privacy,
+#custom-failed,
+#custom-system,
+#custom-vpn,
+#custom-awake,
+#custom-night,
+#custom-power {
+    padding: 0 6px;
+    margin: 4px 2px;
+    border-radius: 4px;
+}
+
+/* Kayıt ışığı gibi: mikrofon / kamera / ekran paylaşımı. */
+#custom-privacy {
+    color: @bg;
+    background: @urgent;
+}
+
+#custom-failed {
+    color: @urgent;
+}
+
+#custom-system {
+    color: @warn;
+}
+
+#custom-vpn {
+    color: @accent2;
+}
+
+#custom-awake {
+    color: @accent;
+}
+
+#custom-night {
+    color: @warn;
+}
+
+#custom-power.power-saver {
+    color: @ok;
+}
+
+#custom-power.performance {
+    color: @warn;
+}
+
+/* Tıklanabilenler: üstüne gelince hafif zemin. */
+#custom-failed:hover,
+#custom-system:hover,
+#custom-awake:hover,
+#custom-night:hover,
+#custom-power:hover {
+    background: @overlay;
 }
 
 /* ── Medya (yalnızca bir çalar açıkken görünür) ─────────────────────── */

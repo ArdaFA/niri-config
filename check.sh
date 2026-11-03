@@ -178,6 +178,7 @@ check "mako (fallback)"   mako_conf "$DOTFILES/mako/.config/mako/config"
 check "swaylock (theme)"  swaylock_conf "${XDG_STATE_HOME:-$HOME/.local/state}/theme/swaylock.conf"
 check "scripts"           scripts
 check "layout planner"    python3 -I "$DOTFILES/bin/.local/bin/layout-mode" selftest
+check "bar status rules"  python3 -I "$DOTFILES/bin/.local/bin/bar-status" selftest
 check "presets"           presets
 check "systemd units"     units
 

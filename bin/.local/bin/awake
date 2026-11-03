@@ -1,0 +1,60 @@
+#!/bin/sh
+# awake — ekranı açık tutar ("kafein"): açıkken boşta kalınca ekran kilitlenmez ve kapanmaz.
+# Uyku öncesi kilit yine çalışır (kapağı kapatınca ekran her zaman kilitlenir).
+# Durum yalnızca bu niri oturumu için geçerli: oturumdan çıkınca kendiliğinden kapanır.
+#
+#   awake on | off | toggle
+#   awake status            true / false (hızlı ayarlar düğmesi)
+#   awake label             Waybar modülü için JSON; kapalıyken boş (modül gizlenir)
+#   awake unless <komut…>   awake açık değilse komutu çalıştırır (swayidle böyle çağırır)
+#
+# Ekrana yazılanlar İngilizce (arayüz kuralı); açıklamalar Türkçe.
+
+set -u
+
+FLAG="${XDG_RUNTIME_DIR:-/tmp}/awake"
+SIGNAL=9   # Waybar config.jsonc → custom/awake → "signal"
+
+# Bayrak dosyası açıldığı niri oturumunun soketini tutar; başka (eski) bir oturumdan
+# kalmış bayrak geçersizdir.
+is_on() {
+    [ -n "${NIRI_SOCKET:-}" ] && [ "$(cat "$FLAG" 2>/dev/null)" = "$NIRI_SOCKET" ]
+}
+
+refresh_bar() {
+    pkill "-RTMIN+$SIGNAL" -x waybar 2>/dev/null || true
+}
+
+turn_on() {
+    if [ -z "${NIRI_SOCKET:-}" ]; then
+        echo "awake: not in a niri session" >&2
+        exit 1
+    fi
+    printf '%s' "$NIRI_SOCKET" > "$FLAG"
+    refresh_bar
+}
+
+turn_off() {
+    rm -f "$FLAG"
+    refresh_bar
+}
+
+case "${1:-}" in
+    on)      turn_on ;;
+    off)     turn_off ;;
+    toggle)  if is_on; then turn_off; else turn_on; fi ;;
+    status)  if is_on; then echo true; else echo false; fi ;;
+    label)
+        if is_on; then
+            printf '%s\n' '{"text":"AWAKE","class":"on","tooltip":"Screen stays on: no idle lock, no screen off\nClick: turn off"}'
+        else
+            printf '%s\n' '{"text":""}'
+        fi ;;
+    unless)
+        shift
+        is_on && exit 0
+        exec "$@" ;;
+    *)
+        echo "Usage: awake on|off|toggle|status|label · awake unless <command…>" >&2
+        exit 1 ;;
+esac

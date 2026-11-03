@@ -1,0 +1,520 @@
+#!/usr/bin/env python3
+"""bar-status — status modules for Waybar. Each one prints a JSON line whenever its
+state changes; an empty text hides the module.
+
+  bar-status privacy        MIC / CAM / SCR while the microphone, camera or screen sharing is in use
+  bar-status mic            MIC off while the microphone is muted
+  bar-status failed         FAIL n while a systemd service (user or system) has failed
+  bar-status system         CPU / MEM / TEMP while load, memory use or temperature stays high
+  bar-status vpn            VPN while traffic goes through a VPN
+  bar-status power          ECO / PERF while the power profile is not "balanced"
+  bar-status power reset    switch the power profile back to "balanced"
+  bar-status selftest       check the detection rules against sample data
+"""
+# Not: Ekranda görünen metinler İngilizce; yorumlar Türkçe.
+#
+# Neden Waybar'ın kendi "privacy" modülü değil: o modül metin değil simge gösteriyor (bar baştan
+# sona retro metin) ve kamerayı yalnızca PipeWire üzerinden görüyor; tarayıcılar kamerayı
+# çoğunlukla doğrudan /dev/video* ile açar.
+
+import json
+import os
+import re
+import socket
+import subprocess
+import sys
+import time
+
+PRIVACY_INTERVAL = 2      # saniye
+VPN_INTERVAL = 5
+SYSTEM_INTERVAL = 5
+
+# CPU / MEM / TEMP eşikleri. Gösterge, değer SUSTAIN ölçüm boyunca (5 sn × 3 = 15 sn) eşiğin
+# üstünde kalınca görünür, aynı süre altında kalınca gizlenir: kısa sıçramalarda yanıp sönmez.
+SYSTEM_LIMITS = {"cpu": 80, "mem": 85, "temp": 85}    # %, %, °C
+SUSTAIN = 3
+
+PP_NAME = "net.hadess.PowerProfiles"   # tuned-ppd bu arayüzü sunar (şifre istemez)
+PP_PATH = "/net/hadess/PowerProfiles"
+POWER_LABELS = {"power-saver": "ECO", "performance": "PERF"}
+
+# Varsayılan rota bu arayüzlerden birinden geçiyorsa trafik bir VPN'den akıyordur.
+VPN_DEV_RE = re.compile(r"^(tun|tap|wg|ppp|tailscale|cscotun|nordlynx|proton|mullvad)")
+
+
+def emit(state, last):
+    """Durum değiştiyse Waybar'a bir JSON satırı yazar; yeni durumu döndürür."""
+    if state != last:
+        print(json.dumps(state), flush=True)
+    return state
+
+
+def run(cmd, timeout=3):
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return out.stdout if out.returncode == 0 else None
+
+
+def run_json(cmd):
+    out = run(cmd)
+    try:
+        return json.loads(out) if out else None
+    except ValueError:
+        return None
+
+
+# ── Gizlilik: mikrofon, kamera, ekran paylaşımı ───────────────────────────
+
+# pavucontrol'ün seviye göstergeleri de kayıt akışı açar; bunlar mikrofon kullanımı sayılmaz.
+METER_BINARIES = {"pavucontrol", "pwvucontrol"}
+
+
+def mic_users(outputs, sources):
+    """Mikrofonu kullanan uygulamalar. outputs/sources: `pactl -f json list ...` çıktısı.
+    Sayılmayanlar: duraklatılmış (corked) akışlar, hoparlör çıkışını dinleyenler (.monitor),
+    ses seviyesi göstergeleri."""
+    monitors = {s["index"] for s in sources if s.get("name", "").endswith(".monitor")}
+    users = []
+    for so in outputs:
+        props = so.get("properties", {})
+        if so.get("corked") or so.get("source") in monitors:
+            continue
+        if (props.get("application.process.binary") in METER_BINARIES
+                or props.get("media.name") == "Peak detect"):
+            continue
+        name = props.get("application.name") or props.get("node.name") or "unknown"
+        if name not in users:
+            users.append(name)
+    return users
+
+
+def camera_users():
+    """/dev/video* aygıtlarından birini açık tutan süreçlerin adları (aynı kullanıcı)."""
+    if not any(n.startswith("video") for n in os.listdir("/dev")):
+        return []
+    users = []
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            fds = os.listdir(f"/proc/{pid}/fd")
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                target = os.readlink(f"/proc/{pid}/fd/{fd}")
+            except OSError:
+                continue
+            if target.startswith("/dev/video"):
+                try:
+                    with open(f"/proc/{pid}/comm") as f:
+                        name = f.read().strip()
+                except OSError:
+                    name = pid
+                if name not in users:
+                    users.append(name)
+                break
+    return users
+
+
+def niri_casts():
+    """niri'nin şu an yaptığı ekran yayınları (portal üzerinden ekran paylaşımı)."""
+    path = os.environ.get("NIRI_SOCKET")
+    if not path:
+        return []
+    try:
+        with socket.socket(socket.AF_UNIX) as s:
+            s.settimeout(2)
+            s.connect(path)
+            s.sendall(b'"Casts"\n')
+            reply = json.loads(s.makefile().readline())
+    except (OSError, ValueError):
+        return []
+    return reply.get("Ok", {}).get("Casts", []) or []
+
+
+def cast_target(cast):
+    """niri'nin yayın kaydı → "screen eDP-1" / "a window"; izleyen yoksa "(paused)".
+    Gizlilik için temkinli: duraklatılmış yayın da SCR olarak gösterilir."""
+    target = cast.get("target") or {}
+    if "Output" in target:
+        desc = f"screen {target['Output'].get('name', '?')}"
+    elif "Window" in target:
+        desc = "a window"
+    else:
+        desc = "not chosen yet"
+    return desc if cast.get("is_active", True) else f"{desc} (paused)"
+
+
+def privacy_state(mic, cam, casts):
+    parts, tips, classes = [], [], []
+    if mic:
+        parts.append("MIC"); classes.append("mic")
+        tips.append("Microphone: " + ", ".join(mic))
+    if cam:
+        parts.append("CAM"); classes.append("cam")
+        tips.append("Camera: " + ", ".join(cam))
+    if casts:
+        parts.append("SCR"); classes.append("scr")
+        tips.append("Screen sharing: " + ", ".join(cast_target(c) for c in casts))
+    if not parts:
+        return {"text": ""}
+    return {"text": " ".join(parts), "tooltip": "\n".join(tips), "class": classes}
+
+
+def cmd_privacy():
+    last = None
+    while True:
+        outputs = run_json(["pactl", "-f", "json", "list", "source-outputs"]) or []
+        sources = run_json(["pactl", "-f", "json", "list", "sources", "short"]) or []
+        last = emit(privacy_state(mic_users(outputs, sources), camera_users(), niri_casts()), last)
+        time.sleep(PRIVACY_INTERVAL)
+
+
+# ── Mikrofon sessizde ─────────────────────────────────────────────────────
+# Waybar'ın wireplumber modülü boş format'ta gizlenmiyor (boş bir kutu olarak yer kaplıyor);
+# bu yüzden ayrı bir modül. pactl subscribe ile yalnızca değişiklik olunca bakar.
+
+def die_with_parent():
+    """Alt süreç, bu script ölünce (ör. Waybar çökünce) kendisi de kapansın."""
+    import ctypes
+    import signal
+    ctypes.CDLL(None).prctl(1, signal.SIGTERM)   # PR_SET_PDEATHSIG
+
+
+def mic_state(wpctl_out):
+    """wpctl_out: `wpctl get-volume @DEFAULT_AUDIO_SOURCE@` çıktısı (mikrofon yoksa None)."""
+    if not wpctl_out or "[MUTED]" not in wpctl_out:
+        return {"text": ""}
+    return {"text": "<span alpha='55%'>MIC</span> off", "class": "muted",
+            "tooltip": "Microphone muted\nClick: unmute"}
+
+
+def cmd_mic():
+    last = None
+    while True:
+        last = emit(mic_state(run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@"])), last)
+        try:
+            proc = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE,
+                                    stderr=subprocess.DEVNULL, text=True, preexec_fn=die_with_parent)
+        except OSError:
+            time.sleep(5)
+            continue
+        # "Event 'change' on source #79" (sessiz/ses) · "... on server" (varsayılan mikrofon değişti)
+        for line in proc.stdout:
+            if " on source #" in line or " on server" in line:
+                last = emit(mic_state(run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@"])), last)
+        proc.wait()
+        time.sleep(2)   # PipeWire yeniden başladıysa biraz bekle, sonra yeniden abone ol
+
+
+# ── Çökmüş servisler ──────────────────────────────────────────────────────
+# Waybar 0.14'ün systemd-failed-units modülü bir kez gizlendikten sonra bir daha görünmüyor
+# (test edildi); bu yüzden ayrı bir modül. systemd'nin NFailedUnits özelliği değişince sinyal
+# gelir; yeniden başlayan servisler bir anlık "failed" görünmesin diye 1 sn beklenir.
+
+def failed_state(system_units, user_units):
+    units = list(system_units) + [f"{u} (user)" for u in user_units]
+    if not units:
+        return {"text": ""}
+    return {"text": f"FAIL {len(units)}", "class": "failed",
+            "tooltip": "Failed: " + ", ".join(units) + "\nClick: details"}
+
+
+def cmd_failed():
+    Gio, GLib = gio()
+    managers = []
+    for bus in (Gio.BusType.SYSTEM, Gio.BusType.SESSION):
+        try:
+            managers.append(Gio.DBusProxy.new_for_bus_sync(
+                bus, Gio.DBusProxyFlags.NONE, None, "org.freedesktop.systemd1",
+                "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", None))
+        except GLib.Error:
+            managers.append(None)
+    last, pending = None, False
+
+    def failed_units(proxy):
+        if proxy is None:
+            return []
+        try:
+            units = proxy.call_sync("ListUnitsFiltered", GLib.Variant("(as)", (["failed"],)),
+                                    Gio.DBusCallFlags.NONE, 3000, None).unpack()[0]
+        except GLib.Error:
+            return []
+        return sorted(u[0] for u in units)
+
+    def update():
+        nonlocal last, pending
+        pending = False
+        last = emit(failed_state(*(failed_units(m) for m in managers)), last)
+        return False
+
+    def changed(proxy, props, _invalidated):
+        nonlocal pending
+        if "NFailedUnits" in props.keys() and not pending:
+            pending = True
+            GLib.timeout_add(1000, update)
+
+    for m in managers:
+        if m is not None:
+            m.connect("g-properties-changed", changed)
+    update()
+    GLib.MainLoop().run()
+
+
+# ── Sistem: CPU / MEM / TEMP ──────────────────────────────────────────────
+# Waybar'ın cpu/temperature modülleri anlık değere bakıyor; bu laptop kısa yüklerde hemen
+# 85 °C'yi geçtiği için gösterge yanıp sönüyordu. Burada değer bir süre yüksek kalmalı.
+
+class Sustained:
+    """Son SUSTAIN ölçümün hepsi eşiğin üstündeyse açılır, hepsi altındaysa kapanır."""
+
+    def __init__(self, limit):
+        self.limit, self.samples, self.on = limit, [], False
+
+    def add(self, value):
+        self.samples = (self.samples + [value])[-SUSTAIN:]
+        if len(self.samples) == SUSTAIN:
+            if all(v >= self.limit for v in self.samples):
+                self.on = True
+            elif all(v < self.limit for v in self.samples):
+                self.on = False
+        return self.on
+
+
+def cpu_times():
+    with open("/proc/stat") as f:
+        fields = [int(x) for x in f.readline().split()[1:]]
+    idle = fields[3] + fields[4]          # idle + iowait
+    return sum(fields), idle
+
+
+def mem_percent():
+    info = {}
+    with open("/proc/meminfo") as f:
+        for line in f:
+            key, value = line.split(":")
+            info[key] = int(value.split()[0])
+    return 100 * (1 - info["MemAvailable"] / info["MemTotal"])
+
+
+def temp_sensor():
+    """İşlemci paketi sıcaklığı dosyası (coretemp; yoksa x86_pkg_temp termal bölgesi)."""
+    import glob
+    for path in sorted(glob.glob("/sys/devices/platform/coretemp.0/hwmon/hwmon*/temp1_input")):
+        return path
+    for zone in sorted(glob.glob("/sys/class/thermal/thermal_zone*")):
+        try:
+            with open(f"{zone}/type") as f:
+                if f.read().strip() == "x86_pkg_temp":
+                    return f"{zone}/temp"
+        except OSError:
+            pass
+    return None
+
+
+def system_state(values, active):
+    """values: {"cpu": %, "mem": %, "temp": °C} · active: o an gösterilecek anahtarlar."""
+    labels = {"cpu": ("CPU", "{:.0f}%"), "mem": ("MEM", "{:.0f}%"), "temp": ("TEMP", "{:.0f}°C")}
+    known = [k for k in ("cpu", "mem", "temp") if values.get(k) is not None]
+    shown = [k for k in known if k in active]
+    if not shown:
+        return {"text": ""}
+    fmt = lambda k: labels[k][1].format(values[k])
+    tip = " · ".join(f"{labels[k][0]} {fmt(k)}" for k in known)
+    return {"text": "  ".join(f"<span alpha='55%'>{labels[k][0]}</span> {fmt(k)}" for k in shown),
+            "tooltip": tip + "\nClick: system monitor", "class": shown}
+
+
+def cmd_system():
+    watch = {k: Sustained(v) for k, v in SYSTEM_LIMITS.items()}
+    sensor = temp_sensor()
+    last, prev = None, cpu_times()
+    while True:
+        time.sleep(SYSTEM_INTERVAL)
+        total, idle = cpu_times()
+        dt = total - prev[0]
+        values = {"cpu": 100 * (1 - (idle - prev[1]) / dt) if dt > 0 else 0.0,
+                  "mem": mem_percent(), "temp": None}
+        prev = (total, idle)
+        if sensor:
+            try:
+                with open(sensor) as f:
+                    values["temp"] = int(f.read()) / 1000
+            except (OSError, ValueError):
+                pass
+        active = {k for k, w in watch.items() if values[k] is not None and w.add(values[k])}
+        # Görünürken değer her ölçümde değişir; gizliyken yalnızca durum değişince yazılır.
+        last = emit(system_state(values, active), last)
+
+
+# ── VPN ───────────────────────────────────────────────────────────────────
+
+def vpn_state(route_dev, cisco_ifaces, nm_active):
+    """route_dev: 1.1.1.1'e giden rotanın arayüzü · cisco_ifaces: cscotun* arayüzleri ·
+    nm_active: NetworkManager'ın etkin bağlantıları [(ad, tür)].
+    Tailscale her zaman açık olabildiği için yalnızca exit node kullanılırken sayılır
+    (o zaman varsayılan rota tailscale0'dan geçer)."""
+    tips = []
+    if cisco_ifaces:
+        tips.append(f"Cisco Secure Client ({', '.join(cisco_ifaces)})")
+    for name, kind in nm_active:
+        if kind in ("vpn", "wireguard"):
+            tips.append(f"{name} ({'WireGuard' if kind == 'wireguard' else 'VPN'})")
+    if route_dev and VPN_DEV_RE.match(route_dev):
+        if route_dev.startswith("tailscale"):
+            tips.append("Tailscale exit node")
+        elif not any(route_dev in t for t in tips):
+            tips.append(f"All traffic via {route_dev}")
+    if not tips:
+        return {"text": ""}
+    return {"text": "VPN", "tooltip": "\n".join(tips), "class": "on"}
+
+
+def route_dev():
+    routes = run_json(["ip", "-j", "route", "get", "1.1.1.1"]) or []
+    return routes[0].get("dev") if routes else None
+
+
+def cisco_ifaces():
+    try:
+        return sorted(n for n in os.listdir("/sys/class/net") if n.startswith("cscotun"))
+    except OSError:
+        return []
+
+
+def nm_active():
+    out = run(["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show", "--active"]) or ""
+    active = []
+    for line in out.splitlines():
+        # nmcli -t, addaki ':' karakterini '\:' olarak kaçırır; tür son alandır.
+        name, _, kind = line.rpartition(":")
+        active.append((name.replace("\\:", ":"), kind))
+    return active
+
+
+def cmd_vpn():
+    last = None
+    while True:
+        last = emit(vpn_state(route_dev(), cisco_ifaces(), nm_active()), last)
+        time.sleep(VPN_INTERVAL)
+
+
+# ── Güç profili ───────────────────────────────────────────────────────────
+
+def power_state(profile):
+    label = POWER_LABELS.get(profile or "")
+    if not label:
+        return {"text": ""}
+    return {"text": label, "class": profile,
+            "tooltip": f"Power profile: {profile}\nClick: back to balanced"}
+
+
+def gio():
+    import gi
+    gi.require_version("Gio", "2.0")
+    from gi.repository import Gio, GLib
+    return Gio, GLib
+
+
+def cmd_power(args):
+    Gio, GLib = gio()
+    if args[:1] == ["reset"]:
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
+        bus.call_sync(PP_NAME, PP_PATH, "org.freedesktop.DBus.Properties", "Set",
+                      GLib.Variant("(ssv)", (PP_NAME, "ActiveProfile", GLib.Variant("s", "balanced"))),
+                      None, Gio.DBusCallFlags.NONE, 5000)
+        return
+
+    # Profil değişince D-Bus sinyaliyle haber gelir; yoklama yok.
+    proxy = Gio.DBusProxy.new_for_bus_sync(
+        Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None, PP_NAME, PP_PATH, PP_NAME, None)
+    last = None
+
+    def update(*_):
+        nonlocal last
+        value = proxy.get_cached_property("ActiveProfile")
+        last = emit(power_state(value.unpack() if value else None), last)
+
+    proxy.connect("g-properties-changed", update)
+    proxy.connect("notify::g-name-owner", update)
+    update()
+    GLib.MainLoop().run()
+
+
+# ── Kendi kendini sınama (check.sh) ───────────────────────────────────────
+
+def sustained_trace(limit, values):
+    w = Sustained(limit)
+    return [w.add(v) for v in values]
+
+
+def cmd_selftest():
+    sources = [{"index": 78, "name": "alsa_output.analog-stereo.monitor"},
+               {"index": 79, "name": "alsa_input.analog-stereo"}]
+    stream = lambda src, corked=False, **p: {"source": src, "corked": corked, "properties": p}
+    cases = [
+        (mic_users([], sources), []),
+        (mic_users([stream(79, **{"application.name": "Firefox"})], sources), ["Firefox"]),
+        (mic_users([stream(79, True, **{"application.name": "Firefox"})], sources), []),
+        (mic_users([stream(78, **{"application.name": "OBS"})], sources), []),
+        (mic_users([stream(79, **{"application.process.binary": "pavucontrol",
+                                  "application.name": "PulseAudio Volume Control"})], sources), []),
+        (privacy_state([], [], []), {"text": ""}),
+        (privacy_state(["Firefox"], ["brave"], [{}])["text"], "MIC CAM SCR"),
+        (privacy_state([], [], [{"target": {"Output": {"name": "eDP-1"}}, "is_active": True},
+                                {"target": {"Window": {"id": 7}}, "is_active": False}])["tooltip"],
+         "Screen sharing: screen eDP-1, a window (paused)"),
+        (vpn_state("wlp58s0", [], [("eduroam", "802-11-wireless"),
+                                   ("tailscale0", "tun")]), {"text": ""}),
+        (vpn_state("tailscale0", [], [])["tooltip"], "Tailscale exit node"),
+        (vpn_state("wlp58s0", ["cscotun0"], [])["tooltip"], "Cisco Secure Client (cscotun0)"),
+        (vpn_state("cscotun0", ["cscotun0"], [])["tooltip"], "Cisco Secure Client (cscotun0)"),
+        (vpn_state("wg0", [], [("Home", "wireguard")])["tooltip"], "Home (WireGuard)\nAll traffic via wg0"),
+        (vpn_state(None, [], [("Work", "vpn")])["text"], "VPN"),
+        (mic_state(None), {"text": ""}),
+        (mic_state("Volume: 0.11\n"), {"text": ""}),
+        (mic_state("Volume: 0.11 [MUTED]\n")["class"], "muted"),
+        (failed_state([], []), {"text": ""}),
+        (failed_state(["a.service"], ["b.service"])["text"], "FAIL 2"),
+        (failed_state([], ["b.service"])["tooltip"], "Failed: b.service (user)\nClick: details"),
+        (system_state({"cpu": 95, "mem": 40, "temp": 70}, set()), {"text": ""}),
+        (system_state({"cpu": 95, "mem": 40, "temp": 91}, {"cpu", "temp"})["text"],
+         "<span alpha='55%'>CPU</span> 95%  <span alpha='55%'>TEMP</span> 91°C"),
+        (system_state({"cpu": 95, "mem": 40, "temp": None}, {"cpu", "temp"})["class"], ["cpu"]),
+        (sustained_trace(85, [90, 90, 70, 90, 90, 90, 70, 70, 70]),
+         [False, False, False, False, False, True, True, True, False]),
+        (power_state("balanced"), {"text": ""}),
+        (power_state(None), {"text": ""}),
+        (power_state("power-saver")["text"], "ECO"),
+        (power_state("performance")["text"], "PERF"),
+    ]
+    failed = 0
+    for i, (got, want) in enumerate(cases):
+        if got != want:
+            failed += 1
+            print(f"case {i}: got {got!r}, want {want!r}", file=sys.stderr)
+    if failed:
+        sys.exit(1)
+    print(f"bar-status: {len(cases)} checks ok")
+
+
+def main():
+    args = sys.argv[1:]
+    commands = {"privacy": lambda: cmd_privacy(), "mic": lambda: cmd_mic(),
+                "failed": lambda: cmd_failed(), "system": lambda: cmd_system(),
+                "vpn": lambda: cmd_vpn(),
+                "power": lambda: cmd_power(args[1:]), "selftest": lambda: cmd_selftest()}
+    if not args or args[0] not in commands:
+        print(__doc__.strip(), file=sys.stderr)
+        sys.exit(1)
+    try:
+        commands[args[0]]()
+    except (KeyboardInterrupt, BrokenPipeError):
+        pass
+
+
+if __name__ == "__main__":
+    main()

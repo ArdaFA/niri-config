@@ -2,6 +2,7 @@
 #   5 dk   → ekranı kilitle
 #   5.5 dk → ekranları kapat (fare/klavye ile geri açılır)
 #   uyku   → uykuya geçmeden önce kilitle
+# İlk ikisi `awake` açıkken atlanır (hızlı ayarlar → Stay awake); uyku öncesi kilit her zaman çalışır.
 # Süreleri değiştirdikten sonra: systemctl --user daemon-reload && systemctl --user restart swayidle
 
 [Unit]
@@ -12,8 +13,8 @@ Requisite=graphical-session.target
 
 [Service]
 ExecStart=/usr/bin/swayidle -w \
-    timeout 300 'loginctl lock-session' \
-    timeout 330 'niri msg action power-off-monitors' \
+    timeout 300 '%h/.local/bin/awake unless loginctl lock-session' \
+    timeout 330 '%h/.local/bin/awake unless niri msg action power-off-monitors' \
     lock '%h/.local/bin/lock-screen' \
     before-sleep '%h/.local/bin/lock-screen'
 Restart=on-failure

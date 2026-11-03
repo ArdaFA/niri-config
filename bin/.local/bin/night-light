@@ -1,0 +1,56 @@
+#!/bin/sh
+# night-light — gece ışığı: ekran renklerini sıcak tona çeker (wlsunset, night-light.service).
+# Açıkken gün içinde de sıcak kalır; zaman çizelgesi yok. Sıcaklık: night-light.service.
+# Oturumdan çıkınca kapanır.
+#
+#   night-light on | off | toggle
+#   night-light status      true / false (hızlı ayarlar düğmesi)
+#   night-light label       Waybar modülü için JSON; kapalıyken boş (modül gizlenir)
+#
+# wlsunset kurulu değilse "on" bir bildirimle kurulum komutunu söyler.
+# Ekrana yazılanlar İngilizce (arayüz kuralı); açıklamalar Türkçe.
+
+set -u
+
+UNIT=night-light.service
+SIGNAL=10   # Waybar config.jsonc → custom/night → "signal"
+
+is_on() {
+    systemctl --user --quiet is-active "$UNIT"
+}
+
+refresh_bar() {
+    pkill "-RTMIN+$SIGNAL" -x waybar 2>/dev/null || true
+}
+
+turn_on() {
+    if ! command -v wlsunset >/dev/null 2>&1; then
+        notify-send --app-name="Night light" "Night light needs wlsunset" \
+            "Install it with: sudo dnf install wlsunset" 2>/dev/null
+        echo "night-light: wlsunset is not installed (sudo dnf install wlsunset)" >&2
+        exit 1
+    fi
+    systemctl --user start "$UNIT"
+    refresh_bar
+}
+
+turn_off() {
+    systemctl --user stop "$UNIT"
+    refresh_bar
+}
+
+case "${1:-}" in
+    on)      turn_on ;;
+    off)     turn_off ;;
+    toggle)  if is_on; then turn_off; else turn_on; fi ;;
+    status)  if is_on; then echo true; else echo false; fi ;;
+    label)
+        if is_on; then
+            printf '%s\n' '{"text":"NIGHT","class":"on","tooltip":"Night light: warm screen colors\nClick: turn off"}'
+        else
+            printf '%s\n' '{"text":""}'
+        fi ;;
+    *)
+        echo "Usage: night-light on|off|toggle|status|label" >&2
+        exit 1 ;;
+esac

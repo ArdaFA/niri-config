@@ -2,10 +2,12 @@
 # quick-settings — hızlı ayarlar panelindeki (SwayNotificationCenter kontrol merkezi) düğmelerin
 # komutları. Panelin düzeni: ~/.config/swaync/config.json
 #
-#   quick-settings wifi | bluetooth | dnd | layout | power-saver | performance [status]
+#   quick-settings wifi | bluetooth | dnd | layout | power-saver | performance
+#                  | mic | night | awake [status]
 #       Aç/kapa düğmeleri. swaync tıklamada SWAYNC_TOGGLE_STATE=true|false ile çağırır;
 #       "status" ile çağrılınca düğmenin güncel hali için true/false yazar.
-#       Güç profili: iki düğme de kapalıysa "balanced".
+#       Güç profili: iki düğme de kapalıysa "balanced". mic: açık = mikrofon sessizde değil.
+#       night: gece ışığı (night-light), awake: ekranı açık tut (awake).
 #   quick-settings open <program> [argüman…]     paneli kapatıp programı niri üzerinden açar
 #   quick-settings lock | logout | reboot | poweroff
 #       Oturum. Çıkış / yeniden başlat / kapat önce fuzzel ile onay ister.
@@ -76,6 +78,15 @@ case "$item ${1:-}" in
     "power-saver "|"performance ")
         if on; then set_profile "$item"; else set_profile balanced; fi ;;
 
+    "mic status")         bool sh -c 'wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -qv MUTED' ;;
+    "mic ")               if on; then wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 0; else wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 1; fi ;;
+
+    "night status")       "$BIN/night-light" status ;;
+    "night ")             if on; then "$BIN/night-light" on; else "$BIN/night-light" off; fi ;;
+
+    "awake status")       "$BIN/awake" status ;;
+    "awake ")             if on; then "$BIN/awake" on; else "$BIN/awake" off; fi ;;
+
     "open "*)
         close_panel
         niri msg action spawn -- "$@" ;;
@@ -94,7 +105,7 @@ case "$item ${1:-}" in
         confirm "Shut down" "Shut down?" && systemctl poweroff ;;
 
     *)
-        echo "Usage: quick-settings wifi|bluetooth|dnd|layout|power-saver|performance [status]" >&2
+        echo "Usage: quick-settings wifi|bluetooth|dnd|layout|power-saver|performance|mic|night|awake [status]" >&2
         echo "       quick-settings open <program> · lock · logout · reboot · poweroff" >&2
         exit 1 ;;
 esac

@@ -60,7 +60,7 @@ Waybar, swaync gibi servisler bu modda başlamaz, çünkü onlar oturumun system
 sudo dnf install --setopt=install_weak_deps=False \
     niri xwayland-satellite foot stow brightnessctl playerctl \
     waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
-    network-manager-applet pavucontrol blueman cargo
+    network-manager-applet pavucontrol blueman cargo wlsunset
 
 # 2) wallust — duvar kağıdından renk üretir (resmi repoda yok; crates.io'dan derlenir)
 cargo install --locked wallust          # → ~/.cargo/bin/wallust
@@ -150,6 +150,10 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `bin/.local/bin/layout-mode` | Otomatik ızgara düzeni (AUTO) ve elle düzen (FREE), bkz. [Otomatik düzen](#otomatik-düzen-auto--free) |
 | `bin/.local/bin/calendar-popup` | Saate tıklayınca açılan takvim (GTK3 + gtk-layer-shell) |
 | `bin/.local/bin/quick-settings` | Hızlı ayarlar panelindeki düğmelerin komutları (Wi-Fi, Bluetooth, güç profili, oturum…) |
+| `bin/.local/bin/bar-status` | Waybar'ın gerektiğinde görünen göstergeleri: MIC/CAM/SCR, MIC off, FAIL, CPU/MEM/TEMP, VPN, ECO/PERF |
+| `bin/.local/bin/awake` | Ekranı açık tutar (kafein): boşta kilit ve ekran kapatma durur |
+| `bin/.local/bin/night-light` | Gece ışığını açar/kapatır (`night-light.service`) |
+| `systemd/.config/systemd/user/night-light.service` | Gece ışığı: wlsunset ile sıcak ekran rengi. Oturum açılışında başlamaz. |
 | `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
 | `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)) |
 | `wallpapers/` | Duvar kağıtların. İçindekiler git'e girmez (bkz. [Duvar kağıdı](#duvar-kağıdı)). |
@@ -557,9 +561,16 @@ Görüntü `~/Pictures/Screenshots/` içine kaydedilir ve panoya kopyalanır.
 |---|---|
 | Workspace numarası | Tıkla: o workspace'e git |
 | `AUTO` / `FREE` | Tıkla: düzen modunu değiştir (`Super+T` ile aynı). `----` = servis çalışmıyor |
+| `AWAKE` · `NIGHT` · `ECO` / `PERF` | Yalnızca açıkken görünür. Tıkla: kapat (ECO/PERF → balanced) |
+| `VPN` | Yalnızca VPN bağlıyken. Üstüne gel: hangi bağlantı |
 | Saat | Tıkla: takvim. Tekrar tıkla, `Esc`'e bas ya da dışarı tıkla: kapanır. Üstüne gel: tam tarih. |
 | `\|<` `>` / `\|\|` `>\|` ♪ başlık | Yalnızca bir çalar açıkken görünür. Önceki · oynat/duraklat · sonraki. Başlığa tıkla: oynat/duraklat, orta tık: önceki, sağ tık: sonraki. |
+| `MIC CAM SCR` (kırmızı) | Mikrofon / kamera / ekran paylaşımı kullanılırken. Üstüne gel: hangi uygulama |
+| `FAIL n` | Bir servis çöktüğünde. Üstüne gel: adları · tıkla: ayrıntılar (terminalde) |
+| `CPU` `MEM` `TEMP` | Yalnızca 15 sn boyunca yüksek kalırsa. Tıkla: GNOME System Monitor |
+| `MIC off` | Mikrofon sessizdeyken. Tıkla: aç |
 | `VOL` | Tıkla: hızlı ayarlar · orta tık: pavucontrol · sağ tık: sessiz · tekerlek: ses ±%5 |
+| `LCD` | Tıkla: hızlı ayarlar · tekerlek: parlaklık ±%5 (parlaklık tuşları gibi gösterge açar) |
 | `NET` | Tıkla: hızlı ayarlar · sağ tık: ağ bağlantıları penceresi |
 | `BAT` / `AC` | Tıkla: hızlı ayarlar |
 | `MSG` / `DND` | `MSG`: geçmiş boş · `MSG •`: bildirim var · `DND`: Rahatsız Etme açık. Tıkla: panel · sağ tık: Rahatsız Etme aç/kapa |
@@ -578,9 +589,11 @@ koyu küçük bir zeminin üstünde durur; koyu temalarda zemin yoktur. Zemin re
 Hangi modülün nerede durduğu `waybar/.config/waybar/config.jsonc` içindeki üç listede tanımlı:
 
 ```jsonc
-"modules-left":   ["niri/workspaces", "custom/layout", "niri/window"],
+"modules-left":   ["niri/workspaces", "custom/layout",
+                   "custom/awake", "custom/night", "custom/power", "custom/vpn", "niri/window"],
 "modules-center": ["clock"],
-"modules-right":  ["group/media", "tray", "wireplumber", "network", "battery", "custom/notifications"],
+"modules-right":  ["custom/privacy", "custom/failed", "custom/system", "group/media", "tray",
+                   "custom/mic", "wireplumber", "backlight", "network", "battery", "custom/notifications"],
 ```
 
 Panel ekranın üstüne yapışık ve tam genişlikte; kenar boşluğu ve yuvarlak köşe yok, altta ince
@@ -596,20 +609,52 @@ bir çizgi var (`style.css` → `window#waybar`).
   - Hepsi en son kullanılan çaları hedefler: Waybar'ın `mpris` modülü playerctld'yi izler,
     playerctl da playerctld çalışırken aynı çaları seçer.
   - Panelin fontunda medya simgeleri olmadığı için düz metin kullanılıyor (`|<`, `>`, `||`, `>|`).
+  - Bar kalabalıklaşınca önce başlık kısalır (`…`), NET/VOL gibi yazılar değil (`max-length`).
+
+### Gerektiğinde görünen göstergeler
+
+Normal bir anda bar eskisi gibi görünür. Aşağıdakiler yalnızca bir şey olduğunda çıkar, sonra
+kendiliğinden kaybolur. Solda **senin açtığın modlar**, sağda **o an olup bitenler** durur.
+Sağ yarı zaten dolu olduğu için modlar solda; orada pencere başlığı gerekirse kısalır.
+
+| Gösterge | Ne zaman | Nasıl anlıyor |
+|---|---|---|
+| `AWAKE` | Hızlı ayarlar → Stay awake açıkken | `awake` scripti; swayidle bu sırada kilitlemez, ekranı kapatmaz |
+| `NIGHT` | Hızlı ayarlar → Night light açıkken | `night-light.service` (wlsunset) çalışıyor mu |
+| `ECO` / `PERF` | Güç profili balanced değilken | tuned-ppd'nin D-Bus sinyali (anında) |
+| `VPN` | Trafik bir VPN'den geçerken | Cisco (`cscotun*`), NetworkManager VPN/WireGuard, varsayılan rota. **Tailscale** hep açık olduğu için yalnızca exit node kullanılırken sayılır. |
+| `MIC CAM SCR` | Mikrofon, kamera ya da ekran paylaşımı kullanılırken | Mikrofon: PipeWire kayıt akışları (pavucontrol'ün seviye göstergeleri ve hoparlör dinleyenler sayılmaz). Kamera: `/dev/video*`'yu açık tutan süreçler. Ekran: `niri msg casts`. 2 sn'de bir bakar. |
+| `FAIL n` | Bir systemd servisi (kullanıcı ya da sistem) çöktüğünde | systemd'nin D-Bus sinyali. Silmek için: `systemctl --user reset-failed` |
+| `CPU` `MEM` `TEMP` | CPU %80, bellek %85, sıcaklık 85 °C üstünde **15 sn kalırsa** | 5 sn'de bir ölçer; kısa sıçramalarda yanıp sönmez. Eşikler `bar-status` başında. |
+| `MIC off` | Mikrofon sessizdeyken (görüşmelerde hatırlatma) | `pactl subscribe` (anında) |
+
+Hepsi `bar-status`, `awake` ve `night-light` scriptlerinden gelir. Modül boş metin yazınca Waybar
+onu gizler ve yer kaplamaz. Kurallar `./check.sh` içinde örnek verilerle sınanır
+(`bar-status selftest`).
+
+**Neden Waybar'ın kendi modülleri değil (Waybar 0.14'te test edildi):**
+
+- `wireplumber` (mikrofon için) boş format'ta gizlenmiyor, boş bir kutu olarak yer kaplıyor.
+- `systemd-failed-units` bir kez gizlendikten sonra bir daha görünmüyor.
+- `cpu` / `temperature` anlık değere bakıyor. Bu laptop kısa yüklerde hemen 85 °C'yi geçtiği için
+  gösterge yanıp sönüyordu.
+- `privacy` metin değil simge gösteriyor ve kamerayı yalnızca PipeWire üzerinden görüyor;
+  tarayıcılar kamerayı çoğunlukla doğrudan `/dev/video*` ile açar.
 
 - **Kaldırmak:** Listeden sil.
 - **Yer değiştirmek:** Listeler arasında taşı.
-- **Eklemek:** Listeye adını yaz ve altına ayar bloğunu ekle. Örnek, parlaklık modülü:
+- **Eklemek:** Listeye adını yaz ve altına ayar bloğunu ekle. Örnek, disk doluluğu:
 
   ```jsonc
-  "modules-right": ["backlight", "wireplumber", "network", "battery", "tray"],
-  "backlight": {
-      "format": "<span alpha='55%'>LCD</span> {percent}%"
+  "modules-right": [..., "disk", "wireplumber", ...],
+  "disk": {
+      "path": "/",
+      "format": "<span alpha='55%'>DSK</span> {percentage_used}%"
   },
   ```
 
-  Aralık için `style.css`'teki `#wireplumber, #network, #battery { padding: … }` listesine
-  `#backlight` ekle.
+  Aralık için `style.css`'teki `#wireplumber, #backlight, #network, #battery { padding: … }`
+  listesine `#disk` ekle.
 
 Modüllerin bütün seçenekleri man sayfalarında: `man waybar-clock`, `man waybar-battery`,
 `man waybar-niri-workspaces`… Liste için: `ls /usr/share/man/man5 | grep waybar`.
@@ -630,7 +675,7 @@ Panelin renkleri `style.css`'e değil temaya ait; `@accent`, `@fg` gibi adlar ku
 Bildirimleri ve hızlı ayarlar panelini **SwayNotificationCenter** (swaync, resmi Fedora reposu)
 gösterir. Yalnızca niri oturumunda başlar; KDE'nin bildirimlerine dokunmaz.
 
-**Paneli açmak:** Waybar'da `VOL`, `NET`, `BAT` ya da `MSG`'ye tıkla ya da `Super+N`.
+**Paneli açmak:** Waybar'da `VOL`, `LCD`, `NET`, `BAT` ya da `MSG`'ye tıkla ya da `Super+N`.
 Kapatmak: tekrar tıkla, `Esc`'e bas ya da panelin dışına tıkla.
 
 Panelde yukarıdan aşağıya:
@@ -645,6 +690,9 @@ Panelde yukarıdan aşağıya:
 | Do not disturb | Açıkken bildirimler açılır pencerede görünmez, yalnızca panelde birikir. Waybar'da `DND`. |
 | Power saver / Performance | Güç profili (tuned-ppd üzerinden, şifre istemez). İkisi de kapalıysa Balanced. |
 | Auto layout | AUTO ↔ FREE, `Super+T` ile aynı (bkz. [Otomatik düzen](#otomatik-düzen-auto--free)) |
+| Microphone | Mikrofonu sessize al / aç. Sessizken Waybar'da `MIC off`. |
+| Night light | Ekran renklerini sıcak tona çeker (wlsunset, 4000 K). Açıkken gün içinde de sıcak kalır; oturumdan çıkınca kapanır. Waybar'da `NIGHT`. wlsunset kurulu değilse kurulum komutunu bildirimle söyler. |
+| Stay awake | Ekranı açık tutar: boşta kilit ve ekran kapatma durur. Uyku öncesi kilit yine çalışır. Oturumdan çıkınca kapanır. Waybar'da `AWAKE`. |
 | `VOL`, `LCD` | Ses ve laptop ekranı parlaklığı kaydırıcıları |
 | Medya | Bir çalar açıksa: başlık, önceki · oynat/duraklat · sonraki |
 | Notifications | Bildirim geçmişi. Bildirime tıkla: uygulamasını açar · `×`: kapat · `Clear`: hepsini sil |
@@ -670,6 +718,9 @@ Panelde yukarıdan aşağıya:
 - Parlaklık kaydırıcısı yalnızca laptop ekranını (`intel_backlight`) ayarlar; harici monitörler
   değişmez. Ses kaydırıcısı varsayılan çıkışı ayarlar; çıkış seçmek için `Settings ▼` → Sound.
 - Paneldeki düğme yazıları düz metin, çünkü panelin fontunda simge yok.
+- Night light'ın sıcaklığı `night-light.service` içinde (`-t 4000`). Daha sıcak için düşür
+  (ör. 3500); `-T` her zaman bir fazlası olsun. Sonra `systemctl --user daemon-reload` ve
+  düğmeyi kapatıp aç.
 
 **Ayar dosyaları:**
 
@@ -686,7 +737,7 @@ Panelde yukarıdan aşağıya:
 - **Düğme eklemek:** `config.json` → `"buttons-grid"` → `"actions"` listesine ekle:
 
   ```json
-  { "label": "Night mode", "type": "toggle",
+  { "label": "My toggle", "type": "toggle",
     "command": "sh -c '...'", "update-command": "sh -c '... echo true ya da false'" }
   ```
 
@@ -778,6 +829,9 @@ satırının başındaki `//` işaretini sil.
   ```
 - **Kilit ekranının görünümü:** `themes/templates/swaylock.conf`, ardından `theme apply`.
 - Video izlerken tarayıcılar ve oynatıcılar boşta kalmayı kendileri engeller.
+- **Stay awake** (hızlı ayarlar ya da `awake on`): kilit ve ekran kapatma, sen kapatana ya da
+  oturumdan çıkana kadar durur. Waybar'da `AWAKE` görünür; tıklayınca kapanır. Kapağı kapatınca
+  ekran yine kilitlenir (uyku öncesi kilit `awake`'ten etkilenmez).
 
 ---
 

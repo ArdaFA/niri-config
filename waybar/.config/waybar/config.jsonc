@@ -14,9 +14,20 @@
     "height": 28,
     "spacing": 0,
 
-    "modules-left": ["niri/workspaces", "custom/layout", "niri/window"],
+    // Sol: workspace'ler ve açıp kapattığın modlar (düzen, AWAKE, NIGHT, ECO/PERF, VPN).
+    // Sağ: o an olup bitenler (MIC/CAM/SCR, FAIL, CPU/MEM/TEMP), medya, tepsi ve durum yazıları.
+    // Modlar solda çünkü sağ yarı dolu; sol yarıda pencere başlığı gerekirse kısalır.
+    "modules-left": [
+        "niri/workspaces", "custom/layout",
+        "custom/awake", "custom/night", "custom/power", "custom/vpn",
+        "niri/window"
+    ],
     "modules-center": ["clock"],
-    "modules-right": ["group/media", "tray", "wireplumber", "network", "battery", "custom/notifications"],
+    "modules-right": [
+        "custom/privacy", "custom/failed", "custom/system",
+        "group/media", "tray",
+        "custom/mic", "wireplumber", "backlight", "network", "battery", "custom/notifications"
+    ],
 
     // ── Sol ──────────────────────────────────────────────────────────────
     "niri/workspaces": {
@@ -52,6 +63,76 @@
         "tooltip-format": "{:%A, %d %B %Y}",
         // Tıkla: takvim (tekrar tıkla, Esc ya da dışarı tıkla: kapanır).
         "on-click": "~/.local/bin/calendar-popup"
+    },
+
+    // ── Yalnızca gerektiğinde görünen göstergeler (sol: modlar, sağ: olaylar) ──
+    // Hepsi boş metin yazınca gizlenir; normal bir anda bar bugünküyle aynı görünür.
+
+    // MIC / CAM / SCR: mikrofon, kamera ya da ekran paylaşımı kullanılırken (kırmızı).
+    // Üstüne gelince hangi uygulama olduğu görünür.
+    "custom/privacy": {
+        "exec": "~/.local/bin/bar-status privacy",
+        "return-type": "json",
+        "restart-interval": 10,
+        "escape": true
+    },
+
+    // FAIL n: çökmüş bir servis var (kullanıcı ya da sistem). Üstüne gel: adları · tıkla: ayrıntı.
+    // (Waybar'ın systemd-failed-units modülü bir kez gizlenince bir daha görünmüyor.)
+    "custom/failed": {
+        "exec": "~/.local/bin/bar-status failed",
+        "return-type": "json",
+        "restart-interval": 10,
+        "escape": true,
+        "on-click": "niri msg action spawn -- foot --hold --title 'Failed units' sh -c 'systemctl --failed; echo; systemctl --user --failed'"
+    },
+
+    // CPU / MEM / TEMP: yalnızca yük, bellek ya da sıcaklık 15 sn boyunca yüksek kalırsa
+    // (eşikler: CPU %80, MEM %85, TEMP 85 °C; bar-status içinde). Kısa sıçramalarda yanıp sönmez.
+    // Tıkla: GNOME System Monitor (işlemler).
+    "custom/system": {
+        "exec": "~/.local/bin/bar-status system",
+        "return-type": "json",
+        "restart-interval": 10,
+        "on-click": "niri msg action spawn -- gnome-system-monitor --show-processes-tab"
+    },
+
+    // VPN: trafik bir VPN'den geçerken (Cisco, NetworkManager VPN/WireGuard, Tailscale exit node).
+    // Tailscale'in kendisi hep açık olduğu için yalnızca exit node kullanılırken sayılır.
+    "custom/vpn": {
+        "exec": "~/.local/bin/bar-status vpn",
+        "return-type": "json",
+        "restart-interval": 10,
+        "escape": true
+    },
+
+    // AWAKE: ekran açık tutuluyor (boşta kilit ve ekran kapatma yok). Hızlı ayarlar → Stay awake.
+    // Tıkla: kapat. awake scripti durum değişince SIGRTMIN+9 gönderir.
+    "custom/awake": {
+        "exec": "~/.local/bin/awake label",
+        "return-type": "json",
+        "interval": "once",
+        "signal": 9,
+        "on-click": "~/.local/bin/awake off"
+    },
+
+    // NIGHT: gece ışığı açık (wlsunset). Hızlı ayarlar → Night light. Tıkla: kapat.
+    // night-light scripti SIGRTMIN+10 gönderir; servis kendi kendine durursa 30 sn içinde güncellenir.
+    "custom/night": {
+        "exec-if": "command -v wlsunset",
+        "exec": "~/.local/bin/night-light label",
+        "return-type": "json",
+        "interval": 30,
+        "signal": 10,
+        "on-click": "~/.local/bin/night-light off"
+    },
+
+    // ECO / PERF: güç profili "balanced" değilken. Tıkla: balanced'a dön.
+    "custom/power": {
+        "exec": "~/.local/bin/bar-status power",
+        "return-type": "json",
+        "restart-interval": 10,
+        "on-click": "~/.local/bin/bar-status power reset"
     },
 
     // ── Sağ ──────────────────────────────────────────────────────────────
@@ -102,13 +183,25 @@
         "dynamic-order": ["title", "artist"],
         "dynamic-separator": " · ",
         "dynamic-len": 40,
+        // Bar kalabalıklaşınca önce medya başlığı kısalsın (… ile), NET/VOL gibi yazılar değil.
+        // 42 = "♪ " + dynamic-len (40): sığdığı sürece hiçbir şey kesilmez.
+        "max-length": 42,
         "tooltip-format": "{title}\n{artist}\nClick: play / pause · Middle: previous · Right: next",
         "on-click": "playerctl play-pause"
     },
 
     // Etiketler retro metin; <span alpha> etiketi soluk, değeri parlak gösterir.
-    // VOL / NET / BAT / MSG'ye tıklamak hızlı ayarlar ve bildirim panelini açar (swaync),
+    // VOL / LCD / NET / BAT / MSG'ye tıklamak hızlı ayarlar ve bildirim panelini açar (swaync),
     // GNOME'un sağ üstteki durum simgeleri gibi.
+    // MIC off: yalnızca mikrofon sessizdeyken görünür (görüşmelerde hatırlatma). Tıkla: aç.
+    // (wireplumber modülü boş format'ta gizlenmediği için ayrı bir modül.)
+    "custom/mic": {
+        "exec": "~/.local/bin/bar-status mic",
+        "return-type": "json",
+        "restart-interval": 10,
+        "on-click": "~/.local/bin/osd mic mute"
+    },
+
     "wireplumber": {
         "format": "<span alpha='55%'>VOL</span> {volume}%",
         "format-muted": "<span alpha='55%'>VOL</span> --",
@@ -118,6 +211,16 @@
         "on-click": "swaync-client --toggle-panel --skip-wait",
         "on-click-middle": "pavucontrol",
         "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"
+    },
+
+    // LCD: ekran parlaklığı. Tekerlek: değiştir (parlaklık tuşları gibi gösterge açar).
+    "backlight": {
+        "device": "intel_backlight",
+        "format": "<span alpha='55%'>LCD</span> {percent}%",
+        "tooltip": false,
+        "on-scroll-up": "~/.local/bin/osd brightness up",
+        "on-scroll-down": "~/.local/bin/osd brightness down",
+        "on-click": "swaync-client --toggle-panel --skip-wait"
     },
 
     "network": {
