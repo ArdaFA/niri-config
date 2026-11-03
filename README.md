@@ -122,7 +122,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `swaync/.config/swaync/config.json` | Bildirimler ve hızlı ayarlar paneli: bölümler, düğmeler, zaman aşımları |
 | `swaync/.config/swaync/style.css` | Bildirimlerin ve panelin görünümü |
 | `mako/.config/mako/config` | Yedek bildirim programı (yalnızca swaync kaldırılırsa çalışır) |
-| `foot/.config/foot/foot.ini` | Terminal: font, iç boşluk, imleç, geçmiş |
+| `foot/.config/foot/foot.ini` | Terminal: font, iç boşluk, imleç, geçmiş, saydamlık (`alpha`) |
 | `swappy/.config/swappy/config` | Ekran görüntüsü düzenleyici: kayıt klasörü, kaydet/kopyala sonrası kapanma, varsayılan araç |
 
 ### Renk sistemi
@@ -846,6 +846,24 @@ Başka bir fonta geçersen:
 - Adını öğrenmek için: `fc-list : family | grep -i <ad>`. Örneğin resmi repodaki `jetbrains-mono-fonts`.
 - Departure Mono'nun kalın sürümü olmadığı için `foot.ini`'deki `font-bold/italic` satırları ve
   `bold-text-in-bright` var. Kalın sürümü olan bir fontta bu satırları silebilirsin.
+
+---
+
+## Terminal saydamlığı
+
+Terminalin zemini yarı saydamdır. Arkada duvar kağıdı bulanık görünür, yazı opak kalır.
+
+- **Ne kadar saydam:** `foot/.config/foot/foot.ini` → `[colors]` → `alpha=0.9`. 1.0 opak, daha
+  küçük sayı daha saydam (0.8 belirgin, 0.95 hafif). Değişiklik yeni açılan terminallerde
+  geçerli olur.
+- **Bulanıklık:** niri yapar (`niri/.config/niri/rules.kdl` → foot kuralı → `background-effect`).
+  Arkada yalnızca duvar kağıdı görünür, altta kalan başka pencereler görünmez.
+  - Bulanıklık olmasın, düz saydam olsun: o kuraldaki `blur true` satırını sil.
+  - Bulanıklığın gücü: `niri/.config/niri/config.kdl`'e, en üst düzeye (`layout {}` içine değil)
+    `blur { passes 3; offset 3 }` ekle; bunlar varsayılan değerler.
+    `offset` büyüdükçe daha yumuşak ve ek maliyetsiz; bozulma görülürse `passes`'i artır.
+- **Tamamen opak:** `alpha=1.0`.
+- `theme` renkleri değiştirirken saydamlığa dokunmaz; açık terminaller de saydamlıklarını korur.
 
 ---
 
