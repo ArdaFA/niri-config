@@ -853,7 +853,7 @@ Başka bir fonta geçersen:
 
 Terminalin zemini yarı saydamdır. Arkada duvar kağıdı bulanık görünür, yazı opak kalır.
 
-- **Ne kadar saydam:** `foot/.config/foot/foot.ini` → `[colors]` → `alpha=0.9`. 1.0 opak, daha
+- **Ne kadar saydam:** `foot/.config/foot/foot.ini` → `[colors]` → `alpha=0.8`. 1.0 opak, daha
   küçük sayı daha saydam (0.8 belirgin, 0.95 hafif). Değişiklik yeni açılan terminallerde
   geçerli olur.
 - **Bulanıklık:** niri yapar (`niri/.config/niri/rules.kdl` → foot kuralı → `background-effect`).
