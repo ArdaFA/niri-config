@@ -206,7 +206,7 @@ theme wallpaper foto.png --light    # açık tema zorla (ya da --dark)
 theme wallpaper foto.png --keep-colors   # yalnızca duvar kağıdı, renkler aynı
 theme wallpaper none                # duvar kağıdını kaldır (düz renk)
 theme list                          # presetler (* = geçerli)
-theme pick                          # menüden seç (fuzzel) — Super+Shift+T
+theme pick                          # menüden seç: preset ya da duvar kağıdı (fuzzel) — Super+Shift+T
 theme current                       # geçerli seçim
 theme apply                         # kayıtlı seçimi yeniden uygula
 ```
@@ -445,7 +445,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 |---|---|
 | `Super+Enter` | Terminal (foot) |
 | `Super+D` / `Super+Space` | Uygulama başlatıcı (fuzzel) |
-| `Super+Shift+T` | Renk teması seç (fuzzel'de liste; yazarak ara, ör. `light`) |
+| `Super+Shift+T` | Renk teması seç: presetler ve `wallpapers/` içindeki resimler (resim seçilirse renkler ondan üretilir). Yazarak ara, ör. `light` ya da `wallpaper`. |
 | `Alt+Tab` / `Alt+Shift+Tab` | Son kullanılan pencereler arasında geçiş (niri). Seçili pencerenin vurgusu temanın rengini alır. `` Alt+` `` aynı uygulamanın pencereleri. |
 | `Super+Q` | Pencereyi kapat |
 | `Super+O` | Genel bakış (overview). Sol üst köşeye fareyle gitmek de açar. |

@@ -7,7 +7,7 @@
         --dark | --light           force a dark/light theme (default: from image brightness)
   theme wallpaper none             remove the wallpaper (solid color), keep the colors
   theme list                       list presets (* = current)
-  theme pick                       choose a preset from a menu (fuzzel; Super+Shift+T)
+  theme pick                       choose a preset or a wallpaper from a menu (fuzzel; Super+Shift+T)
   theme current                    show the current selection
   theme apply                      re-apply the saved selection (runs at login)
 
@@ -403,10 +403,19 @@ def cmd_list(args):
         print(f"* (from wallpaper: {Path(state['wallpaper']).name})")
 
 
-def picker_rows(presets, current):
-    """presets: [(dosya adı, görünen ad, açık/koyu)] → fuzzel satırları ve seçili satırın sırası."""
-    rows = [f"{title:<24} {variant}" for _, title, variant in presets]
-    index = next((i for i, (name, _, _) in enumerate(presets) if name == current), 0)
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+TITLE_WIDTH = 24        # menüde adın sütunu; uzun adlar … ile kısalır
+
+
+def picker_rows(entries, current):
+    """entries: [(tür, anahtar, görünen ad, etiket)] — tür "preset" ya da "wallpaper".
+    current: (tür, anahtar) → fuzzel satırları ve seçili satırın sırası."""
+    rows = []
+    for _, _, title, tag in entries:
+        if len(title) > TITLE_WIDTH:
+            title = title[:TITLE_WIDTH - 1] + "…"
+        rows.append(f"{title:<{TITLE_WIDTH}} {tag}")
+    index = next((i for i, (kind, key, _, _) in enumerate(entries) if (kind, key) == current), 0)
     return rows, index
 
 
@@ -416,30 +425,52 @@ def preset_info(name):
             data = tomllib.load(f)
     except (OSError, tomllib.TOMLDecodeError):
         data = {}
-    return name, data.get("name", name), data.get("variant", "dark")
+    return "preset", name, data.get("name", name), data.get("variant", "dark")
+
+
+def wallpaper_entries():
+    """~/dotfiles/wallpapers içindeki resimler; seçilince renkler resimden üretilir."""
+    try:
+        files = [f for f in WALLPAPERS.iterdir()
+                 if f.is_file() and f.suffix.lower() in IMAGE_SUFFIXES and not f.name.startswith(".")]
+    except OSError:
+        return []
+    return [("wallpaper", str(f.resolve()), f.stem, "wallpaper")
+            for f in sorted(files, key=lambda f: f.name.lower())]
+
+
+def current_choice(state):
+    if state.get("source") == "wallpaper":
+        return "wallpaper", state.get("wallpaper")
+    return "preset", state.get("preset", DEFAULT_PRESET)
 
 
 def cmd_pick(args):
-    """fuzzel'de presetlerin listesi; seçilen uygulanır. Esc: hiçbir şey değişmez."""
+    """fuzzel'de presetler ve duvar kağıtları. Preset: sabit palet · duvar kağıdı: resmi koyar,
+    renkleri ondan üretir (theme wallpaper <dosya>). Esc ya da geçerli seçim: hiçbir şey değişmez."""
     state = load_state()
-    current = state.get("preset") if state.get("source") == "preset" else None
-    presets = [preset_info(name) for name in preset_names()]
-    rows, index = picker_rows(presets, current)
+    current = current_choice(state)
+    entries = [preset_info(name) for name in preset_names()] + wallpaper_entries()
+    rows, index = picker_rows(entries, current)
     try:
         result = subprocess.run(
-            ["fuzzel", "--dmenu", "--index", "--no-sort", "--minimal-lines",
+            ["fuzzel", "--dmenu", "--index", "--no-sort", f"--lines={min(len(rows), 20)}",
              f"--select-index={index}", "--prompt=theme ❯ ", "--placeholder=search themes"],
             input="\n".join(rows) + "\n", capture_output=True, text=True)
     except FileNotFoundError:
         die("fuzzel is not installed")
     choice = result.stdout.strip()
-    if result.returncode != 0 or not choice.isdigit() or int(choice) >= len(presets):
+    if result.returncode != 0 or not choice.isdigit() or int(choice) >= len(entries):
         return                                   # Esc ya da listede olmayan bir yazı
-    name = presets[int(choice)][0]
-    if name == current:
+    kind, key, _, _ = entries[int(choice)]
+    if (kind, key) == current:
         return
-    args.name = name
-    cmd_preset(args)
+    if kind == "preset":
+        args.name = key
+        cmd_preset(args)
+    else:
+        args.file, args.keep_colors, args.variant = key, False, None
+        cmd_wallpaper(args)
 
 
 def cmd_current(args):
@@ -494,7 +525,7 @@ def main():
     p.set_defaults(func=cmd_apply)
 
     sub.add_parser("list", help="list presets").set_defaults(func=cmd_list)
-    sub.add_parser("pick", help="choose a preset from a menu (fuzzel)").set_defaults(func=cmd_pick)
+    sub.add_parser("pick", help="choose a preset or a wallpaper from a menu (fuzzel)").set_defaults(func=cmd_pick)
     sub.add_parser("current", help="show the current selection").set_defaults(func=cmd_current)
 
     # İç kullanım (yardımda listelenmez): swaybg.service ve check.sh.
