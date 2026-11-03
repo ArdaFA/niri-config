@@ -442,6 +442,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 | `Super+Enter` | Terminal (foot) |
 | `Super+D` / `Super+Space` | Uygulama başlatıcı (fuzzel) |
 | `Super+Shift+T` | Renk teması seç (fuzzel'de liste; yazarak ara, ör. `light`) |
+| `Alt+Tab` / `Alt+Shift+Tab` | Son kullanılan pencereler arasında geçiş (niri). Seçili pencerenin vurgusu temanın rengini alır. `` Alt+` `` aynı uygulamanın pencereleri. |
 | `Super+Q` | Pencereyi kapat |
 | `Super+O` | Genel bakış (overview). Sol üst köşeye fareyle gitmek de açar. |
 | `Super+Shift+ß` | Kısayol listesi |

@@ -30,3 +30,11 @@ layout {
 overview {
     backdrop-color "{{surface}}"
 }
+
+// Alt+Tab pencere değiştiricisinde seçili pencerenin arkasındaki vurgu.
+recent-windows {
+    highlight {
+        active-color "{{accent}}"
+        urgent-color "{{urgent}}"
+    }
+}

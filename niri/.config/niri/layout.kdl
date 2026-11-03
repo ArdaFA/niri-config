@@ -50,3 +50,13 @@ layout {
         color "#00000055"
     }
 }
+
+// Alt+Tab pencere değiştirici: seçili pencerenin arkasındaki vurgu. (niri'nin Super+Tab'ı
+// burada çalışmaz: binds.kdl'de Super+Tab = önceki workspace, o öncelikli.)
+// Renk temadan gelir (~/.local/state/theme/niri.kdl ezer); buradaki yalnızca yedek.
+recent-windows {
+    highlight {
+        active-color "#ebbcba"
+        corner-radius 12
+    }
+}
