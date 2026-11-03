@@ -1,0 +1,37 @@
+# Kanagawa (wave) — https://github.com/rebelot/kanagawa.nvim
+# Hokusai'nin "Kanagawa Oki Nami Ura" baskısından: sumi mürekkebi zemin, fuji beyazı yazı.
+# Vurgu doğrudan paletin kendi sakura pembesi (sakuraPink).
+
+name = "Kanagawa"
+variant = "dark"
+
+[ui]
+bg      = "#1f1f28"  # sumiInk3
+surface = "#2a2a37"  # sumiInk4
+overlay = "#363646"  # sumiInk5
+muted   = "#727169"  # fujiGray
+subtle  = "#c8c093"  # oldWhite
+fg      = "#dcd7ba"  # fujiWhite
+accent  = "#d27e99"  # sakuraPink
+accent2 = "#957fb8"  # oniViolet
+urgent  = "#e46876"  # waveRed
+warn    = "#e6c384"  # carpYellow
+ok      = "#98bb6c"  # springGreen
+
+[term]
+color0  = "#16161d"
+color1  = "#c34043"
+color2  = "#76946a"
+color3  = "#c0a36e"
+color4  = "#7e9cd8"
+color5  = "#957fb8"
+color6  = "#6a9589"
+color7  = "#c8c093"
+color8  = "#727169"
+color9  = "#e82424"
+color10 = "#98bb6c"
+color11 = "#e6c384"
+color12 = "#7fb4ca"
+color13 = "#938aa9"
+color14 = "#7aa89f"
+color15 = "#dcd7ba"

@@ -1,0 +1,35 @@
+# Everforest (dark, medium) — https://github.com/sainnhe/everforest
+
+name = "Everforest"
+variant = "dark"
+
+[ui]
+bg      = "#2d353b"  # bg0
+surface = "#343f44"  # bg1
+overlay = "#475258"  # bg3
+muted   = "#7a8478"  # grey0
+subtle  = "#9da9a0"  # grey2
+fg      = "#d3c6aa"  # fg
+accent  = "#a7c080"  # green
+accent2 = "#7fbbb3"  # blue
+urgent  = "#e67e80"  # red
+warn    = "#dbbc7f"  # yellow
+ok      = "#83c092"  # aqua (yeşil zaten vurgu)
+
+[term]
+color0  = "#475258"
+color1  = "#e67e80"
+color2  = "#a7c080"
+color3  = "#dbbc7f"
+color4  = "#7fbbb3"
+color5  = "#d699b6"
+color6  = "#83c092"
+color7  = "#9da9a0"
+color8  = "#7a8478"
+color9  = "#e67e80"
+color10 = "#a7c080"
+color11 = "#dbbc7f"
+color12 = "#7fbbb3"
+color13 = "#d699b6"
+color14 = "#83c092"
+color15 = "#d3c6aa"

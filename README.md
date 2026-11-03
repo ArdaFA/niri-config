@@ -201,8 +201,8 @@ theme current                       # geçerli seçim
 theme apply                         # kayıtlı seçimi yeniden uygula
 ```
 
-Gelen presetler: **sakura** (varsayılan), rose-pine, rose-pine-dawn, catppuccin-mocha,
-catppuccin-latte, gruvbox.
+Gelen presetler: **sakura** (varsayılan), kanagawa, rose-pine, rose-pine-dawn, catppuccin-mocha,
+catppuccin-latte, gruvbox, tokyo-night, nord, everforest.
 
 **Seçim kalıcıdır** (`~/.local/state/theme/state.json`). Her oturum açılışında yeniden uygulanır.
 

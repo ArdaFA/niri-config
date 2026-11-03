@@ -1,0 +1,35 @@
+# Tokyo Night (night) — https://github.com/folke/tokyonight.nvim
+
+name = "Tokyo Night"
+variant = "dark"
+
+[ui]
+bg      = "#1a1b26"  # bg
+surface = "#292e42"  # bg_highlight
+overlay = "#3b4261"  # fg_gutter
+muted   = "#737aa2"  # dark5 (comment rengi #565f89 panel yazısı için fazla soluk)
+subtle  = "#a9b1d6"  # fg_dark
+fg      = "#c0caf5"  # fg
+accent  = "#7aa2f7"  # blue
+accent2 = "#bb9af7"  # magenta
+urgent  = "#f7768e"  # red
+warn    = "#e0af68"  # yellow
+ok      = "#9ece6a"  # green
+
+[term]
+color0  = "#15161e"
+color1  = "#f7768e"
+color2  = "#9ece6a"
+color3  = "#e0af68"
+color4  = "#7aa2f7"
+color5  = "#bb9af7"
+color6  = "#7dcfff"
+color7  = "#a9b1d6"
+color8  = "#414868"
+color9  = "#f7768e"
+color10 = "#9ece6a"
+color11 = "#e0af68"
+color12 = "#7aa2f7"
+color13 = "#bb9af7"
+color14 = "#7dcfff"
+color15 = "#c0caf5"
