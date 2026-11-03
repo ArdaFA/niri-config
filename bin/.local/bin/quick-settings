@@ -3,11 +3,13 @@
 # komutları. Panelin düzeni: ~/.config/swaync/config.json
 #
 #   quick-settings wifi | bluetooth | dnd | layout | power-saver | performance
-#                  | mic | night | awake [status]
+#                  | mic | night | awake | record [status]
 #       Aç/kapa düğmeleri. swaync tıklamada SWAYNC_TOGGLE_STATE=true|false ile çağırır;
 #       "status" ile çağrılınca düğmenin güncel hali için true/false yazar.
 #       Güç profili: iki düğme de kapalıysa "balanced". mic: açık = mikrofon sessizde değil.
-#       night: gece ışığı (night-light), awake: ekranı açık tut (awake).
+#       night: gece ışığı (night-light), awake: ekranı açık tut (awake),
+#       record: ekran kaydı (screen-record; panel kapanınca başlar, kendisi kayda girmesin).
+#   quick-settings screenshot | edit-shot      paneli kapatıp alan seçtirir / son görüntüyü düzenler
 #   quick-settings open <program> [argüman…]     paneli kapatıp programı niri üzerinden açar
 #   quick-settings lock | logout | reboot | poweroff
 #       Oturum. Çıkış / yeniden başlat / kapat önce fuzzel ile onay ister.
@@ -87,6 +89,24 @@ case "$item ${1:-}" in
     "awake status")       "$BIN/awake" status ;;
     "awake ")             if on; then "$BIN/awake" on; else "$BIN/awake" off; fi ;;
 
+    "record status")      "$BIN/screen-record" status ;;
+    "record ")
+        if on; then
+            close_panel
+            sleep 0.3                                   # panelin kapanma animasyonu bitsin
+            "$BIN/screen-record" start screen
+        else
+            "$BIN/screen-record" stop
+        fi ;;
+
+    "screenshot ")
+        close_panel
+        sleep 0.3
+        niri msg action screenshot ;;
+    "edit-shot ")
+        close_panel
+        "$BIN/screenshot-edit" last ;;
+
     "open "*)
         close_panel
         niri msg action spawn -- "$@" ;;
@@ -105,7 +125,7 @@ case "$item ${1:-}" in
         confirm "Shut down" "Shut down?" && systemctl poweroff ;;
 
     *)
-        echo "Usage: quick-settings wifi|bluetooth|dnd|layout|power-saver|performance|mic|night|awake [status]" >&2
-        echo "       quick-settings open <program> · lock · logout · reboot · poweroff" >&2
+        echo "Usage: quick-settings wifi|bluetooth|dnd|layout|power-saver|performance|mic|night|awake|record [status]" >&2
+        echo "       quick-settings screenshot · edit-shot · open <program> · lock · logout · reboot · poweroff" >&2
         exit 1 ;;
 esac

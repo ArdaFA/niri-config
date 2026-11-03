@@ -140,6 +140,20 @@
           "type": "toggle",
           "command": "sh -c '~/.local/bin/quick-settings awake'",
           "update-command": "sh -c '~/.local/bin/quick-settings awake status'"
+        },
+        {
+          "label": "Record screen",
+          "type": "toggle",
+          "command": "sh -c '~/.local/bin/quick-settings record'",
+          "update-command": "sh -c '~/.local/bin/quick-settings record status'"
+        },
+        {
+          "label": "Screenshot",
+          "command": "sh -c '~/.local/bin/quick-settings screenshot'"
+        },
+        {
+          "label": "Edit screenshot",
+          "command": "sh -c '~/.local/bin/quick-settings edit-shot'"
         }
       ]
     },

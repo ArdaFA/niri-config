@@ -24,7 +24,7 @@
     ],
     "modules-center": ["clock"],
     "modules-right": [
-        "custom/privacy", "custom/failed", "custom/system",
+        "custom/rec", "custom/privacy", "custom/failed", "custom/system",
         "group/media", "tray",
         "custom/mic", "wireplumber", "backlight", "network", "battery", "custom/notifications"
     ],
@@ -70,6 +70,17 @@
 
     // MIC / CAM / SCR: mikrofon, kamera ya da ekran paylaşımı kullanılırken (kırmızı).
     // Üstüne gelince hangi uygulama olduğu görünür.
+    // REC 0:42: ekran kaydı sürüyor (screen-record). Tıkla: durdur.
+    // exec-if: kayıt yokken her saniye yalnızca bir dosya kontrolü; modül gizli kalır.
+    "custom/rec": {
+        "exec": "~/.local/bin/screen-record label",
+        "exec-if": "test -e \"$XDG_RUNTIME_DIR/screen-record\"",
+        "return-type": "json",
+        "interval": 1,
+        "signal": 11,
+        "on-click": "~/.local/bin/screen-record stop"
+    },
+
     "custom/privacy": {
         "exec": "~/.local/bin/bar-status privacy",
         "return-type": "json",

@@ -1,0 +1,172 @@
+#!/bin/sh
+# screen-record — ekran kaydı (wf-recorder). Kayıt sürerken Waybar'da kırmızı "REC 0:42";
+# ona tıklamak kaydı durdurur. Dosyalar: ~/Videos/Recordings/YYYY-MM-DD_HH-MM-SS.mp4
+#
+#   screen-record start [screen|region] [--audio]
+#       screen: odaktaki ekranın tamamı (varsayılan) · region: alan seç (slurp)
+#       --audio: bilgisayarın sesi de kaydedilir (mikrofon değil)
+#   screen-record stop
+#   screen-record toggle [screen|region] [--audio]   kayıt varsa durdurur, yoksa başlatır
+#   screen-record status      true / false (hızlı ayarlar düğmesi)
+#   screen-record label       Waybar modülü için JSON; kayıt yokken boş (modül gizlenir)
+#
+# Kodlayıcı: önce ekran kartı (h264_vaapi; az işlemci, az pil), olmazsa yazılım (OpenH264),
+# o da olmazsa VP8 (.webm). Fedora'nın ffmpeg'inde libx264 yok; wf-recorder'ın varsayılanı
+# o olduğu için kodlayıcı hep açıkça verilir.
+#   Bu dizüstünde (Kaby Lake, Fedora'nın Intel sürücüsü) ekran kartında H.264 kodlama yok:
+#   kayıt OpenH264 ile yapılır, tam çözünürlükte (3200x1800) bir çekirdeğin ~%80'i.
+#   RPM Fusion'ın intel-media-driver'ı kurulursa h264_vaapi kendiliğinden kullanılır.
+# Ekrana yazılanlar İngilizce (arayüz kuralı); açıklamalar Türkçe.
+
+set -u
+
+RUNTIME=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+STATE=$RUNTIME/screen-record      # satırlar: pid, dosya, başlangıç (epoch sn), ne kaydediliyor
+LOG=$RUNTIME/screen-record.log
+SIGNAL=11                         # Waybar config.jsonc → custom/rec → "signal"
+RENDER_NODE=/dev/dri/renderD128
+DIR=$(xdg-user-dir VIDEOS 2>/dev/null || echo "$HOME/Videos")/Recordings
+# Yarı çözünürlük (1600x900; daha küçük dosya, ~%25 daha az işlemci): SIZE_FILTER="scale=iw/2:ih/2"
+SIZE_FILTER=""
+
+refresh_bar() {
+    pkill "-RTMIN+$SIGNAL" -x waybar 2>/dev/null || true
+}
+
+notify() {  # notify <başlık> <metin>
+    notify-send --app-name="Screen recorder" "$1" "$2" 2>/dev/null || true
+}
+
+field() {  # field <satır no>
+    sed -n "${1}p" "$STATE" 2>/dev/null
+}
+
+alive() {  # alive <pid> : o pid hâlâ wf-recorder mı
+    [ -n "$1" ] && [ "$(cat "/proc/$1/comm" 2>/dev/null)" = wf-recorder ]
+}
+
+is_recording() {
+    alive "$(field 1)"
+}
+
+focused_output() {
+    niri msg --json focused-output 2>/dev/null | jq -r '.name // empty'
+}
+
+start() {
+    mode=screen audio=
+    for arg in "$@"; do
+        case $arg in
+            screen|region) mode=$arg ;;
+            --audio)       audio=1 ;;
+            *) echo "screen-record: unknown option '$arg'" >&2; exit 2 ;;
+        esac
+    done
+    is_recording && return 0
+    if ! command -v wf-recorder >/dev/null 2>&1; then
+        notify "Screen recording needs wf-recorder" "Install it with: sudo dnf install wf-recorder"
+        echo "screen-record: wf-recorder is not installed" >&2
+        exit 1
+    fi
+
+    # Ne kaydedilecek: $1 $2 = wf-recorder seçeneği ve değeri, $what = ipucu metni.
+    if [ "$mode" = region ]; then
+        if ! command -v slurp >/dev/null 2>&1; then
+            notify "Recording an area needs slurp" "Install it with: sudo dnf install slurp"
+            exit 1
+        fi
+        geometry=$(slurp -d) || exit 0          # Esc: vazgeçildi
+        set -- -g "$geometry"
+        what="an area ($geometry)"
+    else
+        output=$(focused_output)
+        [ -n "$output" ] || { echo "screen-record: no output (is niri running?)" >&2; exit 1; }
+        set -- -o "$output"
+        what="screen $output"
+    fi
+    if [ -n "$audio" ]; then
+        sink=$(pactl get-default-sink 2>/dev/null)
+        [ -n "$sink" ] && set -- "$@" "--audio=$sink.monitor" && what="$what with sound"
+    fi
+
+    [ -n "$SIZE_FILTER" ] && set -- "$@" -F "$SIZE_FILTER"
+
+    mkdir -p "$DIR"
+    name=$(date +%Y-%m-%d_%H-%M-%S)
+    for codec in h264_vaapi libopenh264 libvpx; do
+        case $codec in
+            h264_vaapi)  [ -e "$RENDER_NODE" ] || continue
+                         ext=mp4;  extra="-d $RENDER_NODE" ;;
+            libopenh264) ext=mp4;  extra="" ;;
+            libvpx)      ext=webm; extra="-p deadline=realtime -p cpu-used=8 -p b=4M" ;;
+        esac
+        file=$DIR/$name.$ext
+        # shellcheck disable=SC2086  # $extra bilerek bölünür
+        setsid wf-recorder "$@" -c "$codec" $extra -f "$file" -y > "$LOG" 2>&1 < /dev/null &
+        pid=$!
+        # Kodlayıcı açılamazsa wf-recorder hemen çıkar: 1 sn ayakta kalırsa kayıt başlamıştır.
+        # (Süreç adına bakılmaz: ilk anlarda henüz "setsid"tir, wf-recorder'a dönüşmemiştir.)
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            [ -e "/proc/$pid" ] || break
+            sleep 0.1
+        done
+        if alive "$pid"; then
+            printf '%s\n%s\n%s\n%s\n' "$pid" "$file" "$(date +%s)" "$what" > "$STATE"
+            refresh_bar
+            return 0
+        fi
+        rm -f "$file"
+    done
+    notify "Screen recording failed" "$(tail -n 3 "$LOG" 2>/dev/null)"
+    exit 1
+}
+
+stop() {
+    pid=$(field 1) file=$(field 2)
+    if ! alive "$pid"; then
+        rm -f "$STATE"
+        refresh_bar
+        return 0
+    fi
+    kill -INT "$pid"                            # wf-recorder dosyayı kapatıp çıkar
+    for _ in $(seq 50); do
+        alive "$pid" || break
+        sleep 0.1
+    done
+    alive "$pid" && kill -TERM "$pid"
+    rm -f "$STATE"
+    refresh_bar
+    if [ -s "$file" ]; then
+        # Bildirimdeki "Show in folder" düğmesi klasörü açar (5 dk boyunca).
+        (
+            action=$(timeout 300 notify-send --app-name="Screen recorder" \
+                --action=show="Show in folder" "Recording saved" "${file##*/}" 2>/dev/null)
+            [ "$action" = show ] && xdg-open "$DIR"
+        ) > /dev/null 2>&1 &
+    else
+        notify "Screen recording failed" "$(tail -n 3 "$LOG" 2>/dev/null)"
+    fi
+}
+
+label() {
+    if is_recording; then
+        elapsed=$(( $(date +%s) - $(field 3) ))
+        printf '{"text":"REC %d:%02d","class":"recording","tooltip":"Recording %s\\nClick: stop"}\n' \
+            $((elapsed / 60)) $((elapsed % 60)) "$(field 4)"
+    else
+        printf '%s\n' '{"text":""}'
+    fi
+}
+
+cmd=${1:-}
+[ $# -gt 0 ] && shift
+case $cmd in
+    start)   start "$@" ;;
+    stop)    stop ;;
+    toggle)  if is_recording; then stop; else start "$@"; fi ;;
+    status)  if is_recording; then echo true; else echo false; fi ;;
+    label)   label ;;
+    *)
+        echo "Usage: screen-record start|toggle [screen|region] [--audio] · stop · status · label" >&2
+        exit 2 ;;
+esac

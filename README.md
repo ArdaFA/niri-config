@@ -60,7 +60,8 @@ Waybar, swaync gibi servisler bu modda başlamaz, çünkü onlar oturumun system
 sudo dnf install --setopt=install_weak_deps=False \
     niri xwayland-satellite foot stow brightnessctl playerctl \
     waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
-    network-manager-applet pavucontrol blueman cargo wlsunset
+    network-manager-applet pavucontrol blueman cargo wlsunset \
+    swappy wf-recorder slurp
 
 # 2) wallust — duvar kağıdından renk üretir (resmi repoda yok; crates.io'dan derlenir)
 cargo install --locked wallust          # → ~/.cargo/bin/wallust
@@ -122,6 +123,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `swaync/.config/swaync/style.css` | Bildirimlerin ve panelin görünümü |
 | `mako/.config/mako/config` | Yedek bildirim programı (yalnızca swaync kaldırılırsa çalışır) |
 | `foot/.config/foot/foot.ini` | Terminal: font, iç boşluk, imleç, geçmiş |
+| `swappy/.config/swappy/config` | Ekran görüntüsü düzenleyici: kayıt klasörü, kaydet/kopyala sonrası kapanma, varsayılan araç |
 
 ### Renk sistemi
 
@@ -154,6 +156,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `bin/.local/bin/bar-status` | Waybar'ın gerektiğinde görünen göstergeleri: MIC/CAM/SCR, MIC off, FAIL, CPU/MEM/TEMP, VPN, ECO/PERF |
 | `bin/.local/bin/awake` | Ekranı açık tutar (kafein): boşta kilit ve ekran kapatma durur |
 | `bin/.local/bin/night-light` | Gece ışığını açar/kapatır (`night-light.service`) |
+| `bin/.local/bin/screenshot-edit` | Alan seçtirip görüntüyü swappy'de açar (ya da son görüntüyü) |
+| `bin/.local/bin/screen-record` | Ekran kaydı (wf-recorder): başlat/durdur, Waybar'daki `REC` |
 | `systemd/.config/systemd/user/night-light.service` | Gece ışığı: wlsunset ile sıcak ekran rengi. Oturum açılışında başlamaz. |
 | `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
 | `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)) |
@@ -541,6 +545,38 @@ Görüntü `~/Pictures/Screenshots/` içine kaydedilir ve panoya kopyalanır.
 | `Print` veya `Super+Shift+S` | Alan seç |
 | `Ctrl+Print` | Bütün ekran |
 | `Alt+Print` | Odaktaki pencere |
+| `Shift+Print` veya `Super+Alt+S` | Alan seç, sonra **swappy**'de üstüne çiz |
+| `Super+Print` | Son ekran görüntüsünü swappy'de aç (klasörde yoksa panodakini) |
+
+**swappy** (`screenshot-edit`): dikdörtgen, ok, elips, yazı, fırça, bulanıklaştırma.
+Tuşlar (küçük harf): `r` dikdörtgen · `a` ok · `o` elips · `t` yazı · `b` fırça ·
+`d` bulanıklaştır · `Ctrl+B` renk ve kalınlık paneli · `Ctrl+Z` geri al · `Esc` kapat.
+Büyük `R` / `G` / `B` rengi kırmızı / yeşil / mavi yapar. `Ctrl+S` düzenlenmiş halini aynı klasöre `-edited` ekiyle kaydeder, `Ctrl+C`
+panoya kopyalar; ikisinden sonra pencere kendiliğinden kapanır. Pencere yüzen açılır.
+
+### Ekran kaydı
+
+Kayıtlar `~/Videos/Recordings/` içine (`.mp4`). Kayıt sürerken Waybar'ın sağında kırmızı
+`REC 0:42` görünür; **ona tıklamak kaydı durdurur**. Durunca "Recording saved" bildirimi gelir,
+"Show in folder" klasörü açar.
+
+| Kısayol | İş |
+|---|---|
+| `Super+Alt+R` | Ekranın tamamını kaydet / durdur (odaktaki monitör) |
+| `Super+Alt+Shift+R` | Alan seçip kaydet / durdur (slurp ile sürükle; `Esc` vazgeçer) |
+
+- Ses kaydedilmez. Bilgisayarın sesiyle (mikrofon değil): `screen-record start --audio`
+  (ya da `start region --audio`).
+- Kodlayıcı: önce ekran kartı (`h264_vaapi`, az işlemci ve pil), açılmazsa yazılım (OpenH264),
+  o da olmazsa VP8 (`.webm`). Fedora'nın ffmpeg'inde `libx264` yok, wf-recorder'ın varsayılanı
+  da o olduğu için kodlayıcı hep açıkça seçilir. Hata olursa: `$XDG_RUNTIME_DIR/screen-record.log`.
+  - Bu dizüstünde ekran kartıyla H.264 kodlama yok: Fedora'nın Intel sürücüsü (Kaby Lake,
+    `libva-intel-media-driver`) yalnızca JPEG kodluyor. Kayıt OpenH264 ile yapılır; tam
+    çözünürlükte (3200x1800) bir çekirdeğin ~%80'i (ölçüldü). RPM Fusion'ın sürücüsü kurulursa
+    ekran kartı kendiliğinden kullanılır.
+  - Daha küçük dosya ve ~%25 daha az işlemci için yarı çözünürlük (1600x900): `screen-record`
+    başındaki `SIZE_FILTER="scale=iw/2:ih/2"`.
+- Hızlı ayarlarda da var: `Record screen` (panel kapanınca başlar, kendisi kayda girmez).
 
 ### Bildirimler
 
@@ -570,6 +606,7 @@ Görüntü `~/Pictures/Screenshots/` içine kaydedilir ve panoya kopyalanır.
 | `VPN` | Yalnızca VPN bağlıyken. Üstüne gel: hangi bağlantı |
 | Saat | Tıkla: takvim. Tekrar tıkla, `Esc`'e bas ya da dışarı tıkla: kapanır. Üstüne gel: tam tarih. |
 | `\|<` `>` / `\|\|` `>\|` ♪ başlık | Yalnızca bir çalar açıkken görünür. Önceki · oynat/duraklat · sonraki. Başlığa tıkla: kontrol kutusu (aşağıda), tekerlek: 5 sn ileri / geri, orta tık: önceki, sağ tık: sonraki. |
+| `REC 0:42` (kırmızı) | Ekran kaydı sürerken. Tıkla: durdur |
 | `MIC CAM SCR` (kırmızı) | Mikrofon / kamera / ekran paylaşımı kullanılırken. Üstüne gel: hangi uygulama |
 | `FAIL n` | Bir servis çöktüğünde. Üstüne gel: adları · tıkla: ayrıntılar (terminalde) |
 | `CPU` `MEM` `TEMP` | Yalnızca 15 sn boyunca yüksek kalırsa. Tıkla: GNOME System Monitor |
@@ -645,6 +682,7 @@ Sağ yarı zaten dolu olduğu için modlar solda; orada pencere başlığı gere
 | Gösterge | Ne zaman | Nasıl anlıyor |
 |---|---|---|
 | `AWAKE` | Hızlı ayarlar → Stay awake açıkken | `awake` scripti; swayidle bu sırada kilitlemez, ekranı kapatmaz |
+| `REC 0:42` | Ekran kaydı sürerken | `screen-record`'un durum dosyası ve wf-recorder süreci (saniyede bir; kayıt yokken yalnızca dosya kontrolü) |
 | `NIGHT` | Hızlı ayarlar → Night light açıkken | `night-light.service` (wlsunset) çalışıyor mu |
 | `ECO` / `PERF` | Güç profili balanced değilken | tuned-ppd'nin D-Bus sinyali (anında) |
 | `VPN` | Trafik bir VPN'den geçerken | Cisco (`cscotun*`), NetworkManager VPN/WireGuard, varsayılan rota. **Tailscale** hep açık olduğu için yalnızca exit node kullanılırken sayılır. |
@@ -718,6 +756,9 @@ Panelde yukarıdan aşağıya:
 | Microphone | Mikrofonu sessize al / aç. Sessizken Waybar'da `MIC off`. |
 | Night light | Ekran renklerini sıcak tona çeker (wlsunset, 4000 K). Açıkken gün içinde de sıcak kalır; oturumdan çıkınca kapanır. Waybar'da `NIGHT`. wlsunset kurulu değilse kurulum komutunu bildirimle söyler. |
 | Stay awake | Ekranı açık tutar: boşta kilit ve ekran kapatma durur. Uyku öncesi kilit yine çalışır. Oturumdan çıkınca kapanır. Waybar'da `AWAKE`. |
+| Record screen | Ekran kaydını başlatır (panel kapandıktan sonra) / durdurur. Waybar'da `REC`. |
+| Screenshot | Paneli kapatıp alan seçtirir (`Print` ile aynı) |
+| Edit screenshot | Son ekran görüntüsünü swappy'de açar (`Super+Print` ile aynı) |
 | `VOL`, `LCD` | Ses ve laptop ekranı parlaklığı kaydırıcıları |
 | Medya | Bir çalar açıksa: başlık, önceki · oynat/duraklat · sonraki |
 | Notifications | Bildirim geçmişi. Bildirime tıkla: uygulamasını açar · `×`: kapat · `Clear`: hepsini sil |

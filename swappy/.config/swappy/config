@@ -1,0 +1,17 @@
+# swappy — ekran görüntüsünün üstüne çizmek (screenshot-edit açar).
+# Seçenekler: man swappy (CONFIG bölümü)
+#
+# Ctrl+S: düzenlenmiş halini kaydeder · Ctrl+C: panoya kopyalar · ikisinden sonra kapanır.
+# Kısayollar (küçük harf): b fırça · t yazı · r dikdörtgen · o elips · a ok · d bulanıklaştır
+# Büyük R / G / B: kırmızı / yeşil / mavi renk · Ctrl+B: renk paneli · Ctrl+Z geri al · Esc kapat
+
+[Default]
+save_dir=$HOME/Pictures/Screenshots
+save_filename_format=%Y-%m-%d_%H-%M-%S-edited.png
+early_exit=true
+show_panel=false
+line_size=5
+text_size=20
+text_font=sans-serif
+paint_mode=rectangle
+fill_shape=false

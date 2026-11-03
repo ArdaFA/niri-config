@@ -1,0 +1,65 @@
+#!/bin/sh
+# screenshot-edit — ekran görüntüsü alıp üstüne çizmek (swappy: ok, kutu, yazı, bulanıklaştırma).
+#
+#   screenshot-edit         alan seç (niri'nin ekran görüntüsü arayüzü), sonra swappy'de aç
+#   screenshot-edit last    en son ekran görüntüsünü swappy'de aç (yoksa panodaki resmi)
+#
+# Görüntü önce her zamanki gibi ~/Pictures/Screenshots'a kaydedilir ve panoya kopyalanır.
+# swappy'de: Ctrl+S düzenlenmiş halini aynı klasöre "-edited" ekiyle kaydeder, Ctrl+C panoya
+# kopyalar; ikisinden sonra kendiliğinden kapanır (~/.config/swappy/config).
+# Ekrana yazılanlar İngilizce (arayüz kuralı); açıklamalar Türkçe.
+
+set -u
+
+SHOTS=$(xdg-user-dir PICTURES 2>/dev/null || echo "$HOME/Pictures")/Screenshots   # niri config.kdl → screenshot-path
+WAIT=300    # alan seçmek için en fazla bu kadar saniye beklenir (Esc'e basılırsa da bu kadar)
+
+need_swappy() {
+    command -v swappy >/dev/null 2>&1 && return 0
+    notify-send --app-name="Screenshot" "Editing screenshots needs swappy" \
+        "Install it with: sudo dnf install swappy" 2>/dev/null
+    echo "screenshot-edit: swappy is not installed" >&2
+    exit 1
+}
+
+complete_png() {  # dosya var ve tamamen yazılmış mı: PNG'nin son 12 baytı = uzunluk + "IEND" + CRC
+    # (grep kullanılmaz: o 12 bayttaki boş baytlar yüzünden eşleşmeyi bulamıyor.)
+    [ -s "$1" ] && [ "$(tail -c 8 "$1" | head -c 4)" = IEND ]
+}
+
+new() {
+    need_swappy
+    mkdir -p "$SHOTS"
+    file=$SHOTS/$(date +%Y-%m-%d_%H-%M-%S).png
+    niri msg action screenshot --path "$file" || exit 1
+    # niri dosyayı seçim onaylanınca yazar; o zamana kadar bekle.
+    i=0
+    while ! complete_png "$file"; do
+        i=$((i + 1))
+        [ "$i" -gt $((WAIT * 5)) ] && exit 0
+        sleep 0.2
+    done
+    exec swappy -f "$file"
+}
+
+last() {
+    need_swappy
+    # shellcheck disable=SC2012  # dosya adlarında yeni satır yok (tarih biçimi)
+    file=$(ls -t "$SHOTS"/*.png 2>/dev/null | head -n 1)
+    if [ -n "$file" ]; then
+        exec swappy -f "$file"
+    fi
+    if wl-paste --list-types 2>/dev/null | grep -q '^image/png$'; then
+        wl-paste --type image/png | swappy -f -     # boru içinde exec işe yaramaz: sonra çık
+        exit
+    fi
+    notify-send --app-name="Screenshot" "No screenshot to edit" \
+        "Take one with Print, then try again." 2>/dev/null
+    exit 1
+}
+
+case ${1:-new} in
+    new)   new ;;
+    last)  last ;;
+    *)     echo "Usage: screenshot-edit [last]" >&2; exit 2 ;;
+esac

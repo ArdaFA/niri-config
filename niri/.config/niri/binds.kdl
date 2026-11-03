@@ -144,6 +144,15 @@ binds {
     Mod+Shift+S { screenshot; }
     Ctrl+Print  { screenshot-screen; }
     Alt+Print   { screenshot-window; }
+    // Alan seç, sonra swappy'de üstüne çiz (ok, kutu, yazı). Super+Print: son görüntüyü düzenle.
+    Shift+Print hotkey-overlay-title="Screenshot and edit (swappy)" { spawn-sh "~/.local/bin/screenshot-edit"; }
+    Mod+Alt+S   { spawn-sh "~/.local/bin/screenshot-edit"; }
+    Mod+Print   hotkey-overlay-title="Edit last screenshot" { spawn-sh "~/.local/bin/screenshot-edit last"; }
+
+    // ── Ekran kaydı (wf-recorder, ~/Videos/Recordings) ───────────────────
+    // Bir daha basmak ya da paneldeki kırmızı REC'e tıklamak durdurur.
+    Mod+Alt+R       hotkey-overlay-title="Record screen (start / stop)" { spawn-sh "~/.local/bin/screen-record toggle screen"; }
+    Mod+Alt+Shift+R hotkey-overlay-title="Record an area (start / stop)" { spawn-sh "~/.local/bin/screen-record toggle region"; }
 
     // ── Bildirimler ve hızlı ayarlar (swaync) ────────────────────────────
     // Panel: hızlı ayarlar + bildirim geçmişi. Waybar'da VOL/NET/BAT ya da MSG'ye tıklamak da açar.

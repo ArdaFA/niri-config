@@ -195,6 +195,7 @@ window#waybar.empty #window {
 
 /* ── Gerektiğinde görünen göstergeler ───────────────────────────────── */
 /* Gizliyken yer kaplamazlar; görününce kısa, renkli birer yazı. */
+#custom-rec,
 #custom-privacy,
 #custom-failed,
 #custom-system,
@@ -208,9 +209,14 @@ window#waybar.empty #window {
 }
 
 /* Kayıt ışığı gibi: mikrofon / kamera / ekran paylaşımı. */
-#custom-privacy {
+#custom-privacy,
+#custom-rec {
     color: @bg;
     background: @urgent;
+}
+
+#custom-rec:hover {
+    background: shade(@urgent, 1.12);
 }
 
 #custom-failed {
