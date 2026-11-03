@@ -186,8 +186,9 @@
         // Bar kalabalıklaşınca önce medya başlığı kısalsın (… ile), NET/VOL gibi yazılar değil.
         // 42 = "♪ " + dynamic-len (40): sığdığı sürece hiçbir şey kesilmez.
         "max-length": 42,
-        "tooltip-format": "{title}\n{artist}\nClick: play / pause · Middle: previous · Right: next",
-        "on-click": "playerctl play-pause"
+        "tooltip-format": "{title}\n{artist}\nClick: controls · Middle: previous · Right: next",
+        // Tıkla: başlığın altında küçük kontrol kutusu (media-popup). Tekrar tıkla: kapanır.
+        "on-click": "~/.local/bin/media-popup --at-pointer"
     },
 
     // Etiketler retro metin; <span alpha> etiketi soluk, değeri parlak gösterir.

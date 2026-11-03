@@ -29,3 +29,13 @@ window-rule {
     match app-id=r#"blueman-manager"#
     open-floating true
 }
+
+// Medya kontrol kutusu (media-popup): gölge, köşeleri kutunun CSS'iyle aynı (16 px).
+// Arkadaki saydam katmanın adı farklı (media-popup-backdrop), ona gölge düşmez.
+layer-rule {
+    match namespace="^media-popup$"
+    shadow {
+        on
+    }
+    geometry-corner-radius 16
+}

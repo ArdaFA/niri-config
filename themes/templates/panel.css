@@ -1,10 +1,11 @@
 /* theme scripti tarafından üretildi ({{name}}). Elle düzenleme.
- * Şablon: ~/dotfiles/themes/templates/panel.css — calendar-popup bunu okur. */
+ * Şablon: ~/dotfiles/themes/templates/panel.css — calendar-popup ve media-popup bunu okur. */
 
 @define-color panel_bg      {{bg}};
 @define-color panel_surface {{surface}};
 @define-color panel_overlay {{overlay}};
 @define-color panel_fg      {{fg}};
 @define-color panel_muted   {{muted}};
+@define-color panel_subtle  {{subtle}};
 @define-color panel_accent  {{accent}};
 @define-color panel_border  {{accent}};

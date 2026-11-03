@@ -179,6 +179,7 @@ check "swaylock (theme)"  swaylock_conf "${XDG_STATE_HOME:-$HOME/.local/state}/t
 check "scripts"           scripts
 check "layout planner"    python3 -I "$DOTFILES/bin/.local/bin/layout-mode" selftest
 check "bar status rules"  python3 -I "$DOTFILES/bin/.local/bin/bar-status" selftest
+check "media popup rules" python3 -I "$DOTFILES/bin/.local/bin/media-popup" selftest
 check "presets"           presets
 check "systemd units"     units
 

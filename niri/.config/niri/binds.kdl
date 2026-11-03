@@ -162,4 +162,5 @@ binds {
     XF86AudioPause        allow-when-locked=true { spawn "playerctl" "play-pause"; }
     XF86AudioNext         allow-when-locked=true { spawn "playerctl" "next"; }
     XF86AudioPrev         allow-when-locked=true { spawn "playerctl" "previous"; }
+    Mod+M hotkey-overlay-title="Media controls" { spawn-sh "~/.local/bin/media-popup"; }
 }

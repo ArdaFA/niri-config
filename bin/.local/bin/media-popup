@@ -1,0 +1,734 @@
+#!/usr/bin/env python3
+"""media-popup — small media controls that drop down from the bar.
+
+  media-popup               open (or close, if already open) in the top-right corner
+  media-popup --at-pointer  open under the mouse pointer (Waybar: click on the media title)
+  media-popup selftest      check the helper rules (check.sh)
+
+Keys: Space play/pause · ←/→ seek 5 s · N next · P previous · Esc close.
+"""
+# Waybar'da medya başlığına tıklayınca açılan küçük kontrol kutusu ("ada").
+# Hangi çalar: Waybar'ın medya modülüyle aynısı (playerctld'nin en son kullanılan çaları).
+# Kapanır: dışarı tıklayınca, Esc, tekrar çalıştırınca ya da çalar kapanınca.
+# Dışarı tıklamayı yakalamak için ekranı kaplayan saydam bir katman açılır (calendar-popup gibi);
+# aynı katman fare imlecinin yerini de verir, kutu başlığın altında açılır.
+# GTK3 + gtk-layer-shell; ek paket gerekmez. Renkler ~/.local/state/theme/panel.css'ten.
+# Ekrana yazılan her şey İngilizce (arayüz kuralı); açıklamalar Türkçe.
+
+import hashlib
+import os
+import signal
+import sys
+import threading
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+PID_FILE = RUNTIME / "media-popup.pid"
+CACHE = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "media-popup"
+
+MPRIS = "org.mpris.MediaPlayer2"
+PLAYER_IFACE = MPRIS + ".Player"
+PLAYERCTLD = MPRIS + ".playerctld"
+OBJ_PATH = "/org/mpris/MediaPlayer2"
+
+WIDTH = 340          # kutunun genişliği (piksel)
+ART = 56             # kapak resmi
+MARGIN = 6           # ekran kenarı ve bar ile arası
+SEEK_STEP = 5        # ←/→ kaç saniye sarar
+POINTER_WAIT = 120   # --at-pointer: imlecin yeri için en fazla bu kadar ms beklenir
+ART_MAX_BYTES = 8 * 1024 * 1024
+ART_CACHE_FILES = 50   # indirilen kapaklardan en fazla bu kadarı saklanır
+
+KEYS = {"Escape": "close", "q": "close", "space": "play_pause", "k": "play_pause",
+        "Left": "back", "h": "back", "Right": "forward", "l": "forward",
+        "n": "next", "p": "previous"}
+
+
+# ── Saf yardımcılar (selftest bunları sınar) ──────────────────────────────
+
+def fmt_time(us):
+    """Mikrosaniye → 1:05 ya da 1:02:03."""
+    s = max(0, int((us or 0) // 1_000_000))
+    h, rest = divmod(s, 3600)
+    m, s = divmod(rest, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def choose_player(names, recent, playing):
+    """names: oturumdaki MPRIS adları · recent: playerctld'nin listesi (en yeni başta) ·
+    playing: çalan çalarlar. Waybar'ın modülüyle aynı seçimi yapmak için önce playerctld."""
+    players = [n for n in names if n.startswith(MPRIS + ".") and n != PLAYERCTLD]
+    for name in recent:
+        if name in players:
+            return name
+    for name in players:
+        if name in playing:
+            return name
+    return players[0] if players else None
+
+
+def island_left(pointer_x, width, output_width, margin=MARGIN):
+    """Kutuyu imlecin altına ortalar, ekrandan taşırmaz."""
+    left = int(pointer_x - width / 2)
+    return max(margin, min(left, output_width - width - margin))
+
+
+def art_source(url):
+    """mpris:artUrl → ("file", yol) / ("http", url) / None."""
+    if not url:
+        return None
+    if url.startswith("file://"):
+        return ("file", urllib.parse.unquote(urllib.parse.urlparse(url).path))
+    if url.startswith(("http://", "https://")):
+        return ("http", url)
+    return None
+
+
+def track_info(md):
+    """MPRIS Metadata sözlüğünden gösterilecek alanlar."""
+    md = md or {}
+    artists = md.get("xesam:artist") or []
+    if isinstance(artists, str):
+        artists = [artists]
+    return {
+        "title": md.get("xesam:title") or "Unknown title",
+        "artist": ", ".join(a for a in artists if a) or md.get("xesam:album") or "",
+        "length": int(md.get("mpris:length") or 0),
+        "trackid": md.get("mpris:trackid"),
+        "art": md.get("mpris:artUrl") or "",
+    }
+
+
+def selftest():
+    cases = [
+        (fmt_time(0), "0:00"), (fmt_time(65_000_000), "1:05"), (fmt_time(3_723_000_000), "1:02:03"),
+        (fmt_time(None), "0:00"),
+        (choose_player([PLAYERCTLD, MPRIS + ".a", MPRIS + ".b"], [MPRIS + ".b"], set()), MPRIS + ".b"),
+        (choose_player([MPRIS + ".a", MPRIS + ".b"], [], {MPRIS + ".b"}), MPRIS + ".b"),
+        (choose_player([MPRIS + ".a"], [MPRIS + ".gone"], set()), MPRIS + ".a"),
+        (choose_player([PLAYERCTLD, "org.other"], [], set()), None),
+        (island_left(800, 340, 1600), 630),
+        (island_left(1590, 340, 1600), 1254),
+        (island_left(10, 340, 1600), 6),
+        (art_source("file:///tmp/a%20b.png"), ("file", "/tmp/a b.png")),
+        (art_source("https://x/y.jpg"), ("http", "https://x/y.jpg")),
+        (art_source(""), None), (art_source("data:abc"), None),
+        (track_info({})["title"], "Unknown title"),
+        (track_info({"xesam:artist": ["A", "B"], "mpris:length": 5})["artist"], "A, B"),
+        (track_info({"xesam:artist": "A"})["artist"], "A"),
+        (KEYS["space"], "play_pause"),
+    ]
+    bad = [(i, got, want) for i, (got, want) in enumerate(cases) if got != want]
+    for i, got, want in bad:
+        print(f"case {i}: got {got!r}, want {want!r}", file=sys.stderr)
+    if bad:
+        sys.exit(1)
+    print(f"media-popup: {len(cases)} checks ok")
+
+
+def already_open():
+    """Açık bir kutu varsa kapatır ve True döndürür (aç/kapa davranışı)."""
+    try:
+        pid = int(PID_FILE.read_text())
+        if b"media-popup" in Path(f"/proc/{pid}/cmdline").read_bytes():
+            os.kill(pid, signal.SIGTERM)
+            return True
+    except (OSError, ValueError):
+        pass
+    return False
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] == ["selftest"]:
+        selftest()
+        sys.exit(0)
+    if already_open():
+        sys.exit(0)   # açık kutu kapatıldı; GTK'yı hiç yüklemeden çık
+
+# Katman penceresi yalnızca Wayland'de anlamlı; X11'e düşüp normal pencere açmasın.
+os.environ["GDK_BACKEND"] = "wayland"
+
+import gi  # noqa: E402
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
+gi.require_version("GtkLayerShell", "0.1")
+gi.require_version("Pango", "1.0")
+from gi.repository import Gdk, GdkPixbuf, Gio, GLib, Gtk, GtkLayerShell, Pango  # noqa: E402
+
+THEME_CSS = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "theme/panel.css"
+
+CSS = b"""
+.island * { font-family: "Departure Mono", monospace; font-size: 11px; }
+.backdrop { background: transparent; }
+.island {
+    background: @panel_bg;
+    color: @panel_fg;
+    border: 1px solid @panel_border;
+    border-radius: 16px;
+    padding: 12px 14px 10px 14px;
+}
+.island .source { color: @panel_muted; }
+.island .title { color: @panel_fg; }
+.island .artist { color: @panel_subtle; }
+.island .time { color: @panel_muted; }
+.island .art-placeholder {
+    background: @panel_overlay;
+    color: @panel_accent;
+    border-radius: 10px;
+    font-size: 22px;
+}
+.island button {
+    all: unset;
+    padding: 2px 12px;
+    border-radius: 10px;
+    color: @panel_subtle;
+}
+.island button:hover { background: @panel_overlay; color: @panel_fg; }
+.island button:disabled { color: alpha(@panel_muted, 0.5); }
+.island button.play { background: @panel_accent; color: @panel_bg; padding: 2px 16px; }
+.island button.play:hover { background: shade(@panel_accent, 1.08); }
+.island scale { all: unset; padding: 6px 0; }
+.island scale trough {
+    all: unset;
+    min-height: 4px;
+    border-radius: 2px;
+    background: @panel_overlay;
+}
+.island scale highlight {
+    all: unset;
+    min-height: 4px;
+    border-radius: 2px;
+    background: @panel_accent;
+}
+.island scale slider {
+    all: unset;
+    min-width: 10px;
+    min-height: 10px;
+    margin: -3px -5px;
+    border-radius: 5px;
+    background: @panel_fg;
+}
+.island scale:disabled highlight { background: @panel_muted; }
+.island scale:disabled slider { background: transparent; }
+"""
+
+# panel.css yoksa (ör. theme hiç çalışmadıysa) kullanılacak renkler.
+FALLBACK_COLORS = b"""
+@define-color panel_bg #1d1a21;
+@define-color panel_surface #26222b;
+@define-color panel_overlay #332d39;
+@define-color panel_fg #ede4ea;
+@define-color panel_muted #6f6577;
+@define-color panel_subtle #a397a8;
+@define-color panel_accent #f4a7b9;
+@define-color panel_border #f4a7b9;
+"""
+
+
+def load_css():
+    provider = Gtk.CssProvider()
+    try:
+        colors = THEME_CSS.read_bytes()
+    except OSError:
+        colors = FALLBACK_COLORS
+    if b"panel_subtle" not in colors:            # eski panel.css: theme apply çalışmadan önce
+        colors += b"@define-color panel_subtle @panel_muted;\n"
+    provider.load_from_data(colors + CSS)
+    Gtk.StyleContext.add_provider_for_screen(
+        Gdk.Screen.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+
+# ── MPRIS çaları ──────────────────────────────────────────────────────────
+
+class Player:
+    """Bir MPRIS çaları (D-Bus). Arayüzden bağımsız."""
+
+    def __init__(self, bus, name):
+        self.bus, self.name = bus, name
+        self.proxy = Gio.DBusProxy.new_sync(bus, Gio.DBusProxyFlags.NONE, None,
+                                            name, OBJ_PATH, PLAYER_IFACE, None)
+        identity = self.get(MPRIS, "Identity")
+        self.identity = identity or name[len(MPRIS) + 1:].split(".")[0]
+
+    def get(self, iface, prop, timeout=1000):
+        try:
+            reply = self.bus.call_sync(self.name, OBJ_PATH, "org.freedesktop.DBus.Properties", "Get",
+                                       GLib.Variant("(ss)", (iface, prop)), GLib.VariantType("(v)"),
+                                       Gio.DBusCallFlags.NONE, timeout, None)
+            return reply.unpack()[0]
+        except GLib.Error:
+            return None
+
+    def cached(self, key, default=None):
+        value = self.proxy.get_cached_property(key)
+        return default if value is None else value.unpack()
+
+    def track(self):
+        return track_info(self.cached("Metadata", {}))
+
+    def status(self):
+        return self.cached("PlaybackStatus", "Stopped")
+
+    def position(self):
+        return self.get(PLAYER_IFACE, "Position")
+
+    def call(self, method, args=None):
+        try:
+            self.proxy.call_sync(method, args, Gio.DBusCallFlags.NONE, 2000, None)
+        except GLib.Error:
+            pass
+
+    def play_pause(self):
+        self.call("PlayPause")
+
+    def next(self):
+        self.call("Next")
+
+    def previous(self):
+        self.call("Previous")
+
+    def seek(self, offset_us):
+        self.call("Seek", GLib.Variant("(x)", (int(offset_us),)))
+
+    def set_position(self, us):
+        trackid = self.track()["trackid"]
+        if trackid:
+            self.call("SetPosition", GLib.Variant("(ox)", (trackid, int(us))))
+        else:                                   # trackid vermeyen çalarlar için göreli sarma
+            current = self.position()
+            if current is not None:
+                self.seek(int(us) - current)
+
+
+def find_player(bus):
+    """Waybar'ın medya modülünün gösterdiği çalar (yoksa None)."""
+    try:
+        names = bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus",
+                              "ListNames", None, GLib.VariantType("(as)"),
+                              Gio.DBusCallFlags.NONE, 1000, None).unpack()[0]
+    except GLib.Error:
+        return None
+    recent = []
+    if PLAYERCTLD in names:
+        try:
+            recent = bus.call_sync(PLAYERCTLD, OBJ_PATH, "org.freedesktop.DBus.Properties", "Get",
+                                   GLib.Variant("(ss)", ("com.github.altdesktop.playerctld",
+                                                         "PlayerNames")),
+                                   GLib.VariantType("(v)"), Gio.DBusCallFlags.NONE, 1000,
+                                   None).unpack()[0]
+        except GLib.Error:
+            recent = []
+    candidates = [n for n in names if n.startswith(MPRIS + ".") and n != PLAYERCTLD]
+    playing = set()
+    if not recent:
+        for name in candidates:
+            try:
+                status = bus.call_sync(name, OBJ_PATH, "org.freedesktop.DBus.Properties", "Get",
+                                       GLib.Variant("(ss)", (PLAYER_IFACE, "PlaybackStatus")),
+                                       GLib.VariantType("(v)"), Gio.DBusCallFlags.NONE, 500,
+                                       None).unpack()[0]
+            except GLib.Error:
+                continue
+            if status == "Playing":
+                playing.add(name)
+    name = choose_player(names, recent, playing)
+    return Player(bus, name) if name else None
+
+
+# ── Kapak resmi ───────────────────────────────────────────────────────────
+
+def fetch_art(url):
+    """Kapak resmini yerel bir dosya olarak döndürür (internetteyse önbelleğe indirir)."""
+    source = art_source(url)
+    if source is None:
+        return None
+    kind, where = source
+    if kind == "file":
+        return where if os.path.isfile(where) else None
+    target = CACHE / hashlib.sha1(where.encode()).hexdigest()
+    if target.is_file():
+        return str(target)
+    try:
+        with urllib.request.urlopen(where, timeout=4) as response:
+            data = response.read(ART_MAX_BYTES + 1)
+    except (OSError, ValueError):
+        return None
+    if not data or len(data) > ART_MAX_BYTES:
+        return None
+    CACHE.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(target)
+    old = sorted(CACHE.iterdir(), key=lambda f: f.stat().st_mtime)[:-ART_CACHE_FILES]
+    for f in old:
+        f.unlink(missing_ok=True)
+    return str(target)
+
+
+class Art(Gtk.Stack):
+    """Yuvarlak köşeli kapak; resim yoksa ♪."""
+
+    def __init__(self):
+        super().__init__()
+        self.set_size_request(ART, ART)
+        self.set_valign(Gtk.Align.CENTER)
+        self.pixbuf = None
+        self.url = None
+        self.area = Gtk.DrawingArea()
+        self.area.connect("draw", self.on_draw)
+        placeholder = Gtk.Label(label="♪")
+        placeholder.get_style_context().add_class("art-placeholder")
+        self.add_named(placeholder, "placeholder")
+        self.add_named(self.area, "art")
+        self.set_visible_child_name("placeholder")
+
+    def set_url(self, url):
+        if url == self.url:
+            return
+        self.url = url
+        self.pixbuf = None
+        self.show_placeholder()
+        if url:
+            threading.Thread(target=self.load, args=(url,), daemon=True).start()
+
+    def show_placeholder(self):
+        self.get_child_by_name("placeholder").show()
+        self.set_visible_child_name("placeholder")
+
+    def load(self, url):
+        path = fetch_art(url)
+        GLib.idle_add(self.loaded, url, path)
+
+    def loaded(self, url, path):
+        if url != self.url or not path:
+            return False
+        size = ART * self.get_scale_factor()
+        try:
+            info = GdkPixbuf.Pixbuf.get_file_info(path)
+            w, h = info[1], info[2]
+            if not w or not h:
+                return False
+            scale = size / min(w, h)                   # kareyi tam doldur, taşanı kırp
+            self.pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(
+                path, max(size, round(w * scale)), max(size, round(h * scale)), True)
+        except GLib.Error:
+            return False
+        self.area.show()
+        self.set_visible_child_name("art")
+        self.area.queue_draw()
+        return False
+
+    def on_draw(self, _area, cr):
+        if not self.pixbuf:
+            return False
+        r, s = 10, ART
+        cr.new_sub_path()
+        cr.arc(s - r, r, r, -1.5708, 0)
+        cr.arc(s - r, s - r, r, 0, 1.5708)
+        cr.arc(r, s - r, r, 1.5708, 3.1416)
+        cr.arc(r, r, r, 3.1416, 4.7124)
+        cr.close_path()
+        cr.clip()
+        sf = self.get_scale_factor()
+        cr.scale(1 / sf, 1 / sf)
+        x = (ART * sf - self.pixbuf.get_width()) / 2
+        y = (ART * sf - self.pixbuf.get_height()) / 2
+        Gdk.cairo_set_source_pixbuf(cr, self.pixbuf, x, y)
+        cr.paint()
+        return False
+
+
+# ── Pencere ───────────────────────────────────────────────────────────────
+
+def layer_window(namespace, layer, keyboard):
+    win = Gtk.Window()
+    GtkLayerShell.init_for_window(win)
+    GtkLayerShell.set_namespace(win, namespace)
+    GtkLayerShell.set_layer(win, layer)
+    GtkLayerShell.set_keyboard_mode(win, keyboard)
+    visual = win.get_screen().get_rgba_visual()
+    if visual:
+        win.set_visual(visual)
+    win.set_app_paintable(True)
+    return win
+
+
+def label(css, ellipsize=False):
+    widget = Gtk.Label(xalign=0)
+    widget.get_style_context().add_class(css)
+    if ellipsize:
+        widget.set_ellipsize(Pango.EllipsizeMode.END)
+        widget.set_max_width_chars(1)      # genişliği kutu belirlesin, yazı değil
+        widget.set_hexpand(True)
+    return widget
+
+
+class Island:
+    def __init__(self, player, at_pointer):
+        self.player = player
+        self.at_pointer = at_pointer
+        self.pointer_x = None
+        self.seeking_until = 0       # kullanıcı çubuğu sürüklerken konum güncellemesi bekler
+        self.seek_timer = None
+        self.length = 0
+
+        # Ekranı kaplayan saydam katman: dışarı tıklayınca kapanır, imlecin yerini verir.
+        self.backdrop = layer_window("media-popup-backdrop", GtkLayerShell.Layer.TOP,
+                                     GtkLayerShell.KeyboardMode.NONE)
+        for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM,
+                     GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
+            GtkLayerShell.set_anchor(self.backdrop, edge, True)
+        GtkLayerShell.set_exclusive_zone(self.backdrop, -1)        # paneli de kapla
+        self.backdrop.get_style_context().add_class("backdrop")
+        self.backdrop.add_events(Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.POINTER_MOTION_MASK)
+        self.backdrop.connect("button-press-event", lambda *_: self.quit())
+        self.backdrop.connect("enter-notify-event", self.on_pointer)
+        self.backdrop.connect("motion-notify-event", self.on_pointer)
+
+        # Kutu: barın hemen altında (barın ayırdığı alana göre yerleşir).
+        self.win = layer_window("media-popup", GtkLayerShell.Layer.OVERLAY,
+                                GtkLayerShell.KeyboardMode.EXCLUSIVE)
+        self.win.connect("key-press-event", self.on_key)
+        # Açılırken kutu bardan aşağı kayar. Pencere baştan tam boyda açılır ve boyu hiç
+        # değişmez: niri, büyüyen bir katman penceresine yeni kare vermiyor (animasyon donuyor).
+        self.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.SLIDE_DOWN,
+                                     transition_duration=180, valign=Gtk.Align.START)
+        self.revealer.add(self.build())
+        self.holder = Gtk.Box()
+        self.holder.add(self.revealer)
+        self.win.add(self.holder)
+
+    def build(self):
+        card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        card.get_style_context().add_class("island")
+        card.set_size_request(WIDTH, -1)
+
+        top = Gtk.Box(spacing=12)
+        self.art = Art()
+        info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, valign=Gtk.Align.CENTER)
+        self.source = label("source", ellipsize=True)
+        self.title = label("title", ellipsize=True)
+        self.artist = label("artist", ellipsize=True)
+        for widget in (self.source, self.title, self.artist):
+            info.add(widget)
+        top.add(self.art)
+        top.pack_start(info, True, True, 0)
+
+        self.progress = Gtk.Box(spacing=8)
+        self.elapsed = label("time")
+        self.total = label("time")
+        self.elapsed.set_width_chars(5)
+        self.elapsed.set_xalign(1)
+        self.total.set_width_chars(5)
+        self.scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, draw_value=False)
+        self.scale.set_hexpand(True)
+        self.scale.set_can_focus(False)
+        self.scale.set_range(0, 1)
+        self.scale.connect("change-value", self.on_scrub)
+        self.progress.add(self.elapsed)
+        self.progress.pack_start(self.scale, True, True, 0)
+        self.progress.add(self.total)
+
+        controls = Gtk.Box(spacing=6, halign=Gtk.Align.CENTER)
+        self.prev_btn = self.button("|<", self.player.previous, "Previous (P)")
+        self.play_btn = self.button("||", self.player.play_pause, "Play / pause (Space)")
+        self.play_btn.get_style_context().add_class("play")
+        self.next_btn = self.button(">|", self.player.next, "Next (N)")
+        for widget in (self.prev_btn, self.play_btn, self.next_btn):
+            controls.add(widget)
+
+        for widget in (top, self.progress, controls):
+            card.add(widget)
+        return card
+
+    @staticmethod
+    def button(text, action, tooltip):
+        btn = Gtk.Button(label=text)
+        btn.set_can_focus(False)
+        btn.set_tooltip_text(tooltip)
+        btn.connect("clicked", lambda *_: action())
+        return btn
+
+    # ── Konum ve açılış ──
+
+    def start(self):
+        self.backdrop.show_all()
+        if self.at_pointer:
+            # İmlecin yeri, saydam katman açılınca gelen ilk "enter" olayından okunur.
+            GLib.timeout_add(POINTER_WAIT, self.open)
+        else:
+            self.open()
+
+    def output_width(self):
+        """Saydam katmanın açıldığı ekranın genişliği."""
+        window = self.backdrop.get_window()
+        monitor = window and Gdk.Display.get_default().get_monitor_at_window(window)
+        return monitor.get_geometry().width if monitor else self.backdrop.get_allocated_width()
+
+    def on_pointer(self, _widget, event):
+        first = self.pointer_x is None
+        self.pointer_x = event.x
+        if first and self.at_pointer and not self.win.get_visible():
+            GLib.idle_add(self.open)
+        return False
+
+    def open(self):
+        if self.win.get_visible():
+            return False
+        GtkLayerShell.set_anchor(self.win, GtkLayerShell.Edge.TOP, True)
+        GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.TOP, MARGIN)
+        output_width = self.output_width()
+        if self.at_pointer and self.pointer_x is not None:
+            GtkLayerShell.set_anchor(self.win, GtkLayerShell.Edge.LEFT, True)
+            left = island_left(self.pointer_x, WIDTH, output_width)
+            GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.LEFT, left)
+        else:   # klavyeden ya da imleç bilinmiyorsa: hızlı ayarlar paneli gibi sağ üstte
+            GtkLayerShell.set_anchor(self.win, GtkLayerShell.Edge.RIGHT, True)
+            GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.RIGHT, MARGIN)
+        if os.environ.get("MEDIA_POPUP_DEBUG"):
+            print(f"media-popup: pointer_x={self.pointer_x} output_width={output_width}",
+                  file=sys.stderr)
+        self.refresh()
+        card = self.revealer.get_child()
+        card.show_all()
+        height = card.get_preferred_height_for_width(WIDTH)[1]
+        self.holder.set_size_request(WIDTH, height)
+        self.win.show_all()
+        GLib.idle_add(self.revealer.set_reveal_child, True)
+
+        self.player.proxy.connect("g-properties-changed", lambda *_: self.refresh())
+        self.player.proxy.connect("g-signal", self.on_signal)
+        self.player.proxy.connect("notify::g-name-owner", self.on_owner)
+        self.poll()
+        GLib.timeout_add(500, self.poll)
+        return False
+
+    # ── Güncelleme ──
+
+    def refresh(self):
+        track = self.player.track()
+        self.source.set_text(self.player.identity.upper())
+        self.title.set_text(track["title"])
+        self.artist.set_text(track["artist"] or " ")    # boş da olsa satır yerinde kalsın
+        self.art.set_url(track["art"])
+        playing = self.player.status() == "Playing"
+        self.play_btn.set_label("||" if playing else ">")
+        self.prev_btn.set_sensitive(self.player.cached("CanGoPrevious", True))
+        self.next_btn.set_sensitive(self.player.cached("CanGoNext", True))
+        self.length = track["length"]
+        can_seek = self.player.cached("CanSeek", False) and self.length > 0
+        self.scale.set_sensitive(can_seek)
+        self.scale.set_range(0, max(self.length / 1e6, 1))
+        self.total.set_text(fmt_time(self.length) if self.length else "--:--")
+        return False
+
+    def poll(self):
+        if GLib.get_monotonic_time() < self.seeking_until:
+            return True
+        self.player.proxy.call("org.freedesktop.DBus.Properties.Get",
+                               GLib.Variant("(ss)", (PLAYER_IFACE, "Position")),
+                               Gio.DBusCallFlags.NONE, 1000, None, self.on_position)
+        return True
+
+    def on_position(self, proxy, result):
+        try:
+            us = proxy.call_finish(result).unpack()[0]
+        except GLib.Error:
+            self.elapsed.set_text("")
+            return
+        if GLib.get_monotonic_time() < self.seeking_until:
+            return
+        self.elapsed.set_text(fmt_time(us))
+        self.scale.set_value(us / 1e6)
+
+    def on_signal(self, _proxy, _sender, signal_name, _params):
+        if signal_name == "Seeked":
+            self.poll()
+
+    def on_owner(self, proxy, _pspec):
+        if proxy.get_name_owner() is None:      # çalar kapandı
+            self.quit()
+
+    # ── Kullanıcı ──
+
+    def on_scrub(self, _scale, _scroll, value):
+        value = max(0.0, min(value, self.length / 1e6))
+        self.seeking_until = GLib.get_monotonic_time() + 700_000
+        self.elapsed.set_text(fmt_time(value * 1e6))
+        if self.seek_timer:
+            GLib.source_remove(self.seek_timer)
+        self.seek_timer = GLib.timeout_add(150, self.apply_seek, value)
+        return False
+
+    def apply_seek(self, value):
+        self.seek_timer = None
+        self.player.set_position(value * 1e6)
+        return False
+
+    def on_key(self, _widget, event):
+        action = KEYS.get(Gdk.keyval_name(event.keyval) or "")
+        if action == "close":
+            self.quit()
+        elif action == "play_pause":
+            self.player.play_pause()
+        elif action in ("back", "forward"):
+            self.player.seek((SEEK_STEP if action == "forward" else -SEEK_STEP) * 1_000_000)
+            GLib.timeout_add(100, self.poll)
+        elif action == "next":
+            self.player.next()
+        elif action == "previous":
+            self.player.previous()
+        return action is not None
+
+    @staticmethod
+    def quit(*_):
+        Gtk.main_quit()
+
+
+class Notice:
+    """Çalan bir şey yoksa: kısa bir "Nothing playing" kutusu, 1,5 sn sonra kapanır."""
+
+    def __init__(self):
+        self.win = layer_window("media-popup", GtkLayerShell.Layer.OVERLAY,
+                                GtkLayerShell.KeyboardMode.NONE)
+        GtkLayerShell.set_anchor(self.win, GtkLayerShell.Edge.TOP, True)
+        GtkLayerShell.set_anchor(self.win, GtkLayerShell.Edge.RIGHT, True)
+        GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.TOP, MARGIN)
+        GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.RIGHT, MARGIN)
+        box = Gtk.Box()
+        box.get_style_context().add_class("island")
+        text = label("source")
+        text.set_text("Nothing playing")
+        box.add(text)
+        self.win.add(box)
+
+    def start(self):
+        self.win.show_all()
+        GLib.timeout_add(1500, Island.quit)
+
+
+def main():
+    PID_FILE.write_text(str(os.getpid()))
+    try:
+        load_css()
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+        player = find_player(bus)
+        ui = Island(player, "--at-pointer" in sys.argv[1:]) if player else Notice()
+        ui.start()
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGTERM, Island.quit)
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGINT, Island.quit)
+        Gtk.main()
+    finally:
+        try:
+            if PID_FILE.read_text() == str(os.getpid()):
+                PID_FILE.unlink()
+        except OSError:
+            pass
+
+
+if __name__ == "__main__":
+    sys.exit(main())

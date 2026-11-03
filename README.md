@@ -149,6 +149,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `bin/.local/bin/lock-screen` | Ekranı kilitler (zaten kilitliyse bir şey yapmaz) |
 | `bin/.local/bin/layout-mode` | Otomatik ızgara düzeni (AUTO) ve elle düzen (FREE), bkz. [Otomatik düzen](#otomatik-düzen-auto--free) |
 | `bin/.local/bin/calendar-popup` | Saate tıklayınca açılan takvim (GTK3 + gtk-layer-shell) |
+| `bin/.local/bin/media-popup` | Medya başlığına tıklayınca açılan küçük kontrol kutusu (GTK3 + gtk-layer-shell) |
 | `bin/.local/bin/quick-settings` | Hızlı ayarlar panelindeki düğmelerin komutları (Wi-Fi, Bluetooth, güç profili, oturum…) |
 | `bin/.local/bin/bar-status` | Waybar'ın gerektiğinde görünen göstergeleri: MIC/CAM/SCR, MIC off, FAIL, CPU/MEM/TEMP, VPN, ECO/PERF |
 | `bin/.local/bin/awake` | Ekranı açık tutar (kafein): boşta kilit ve ekran kapatma durur |
@@ -545,6 +546,7 @@ Görüntü `~/Pictures/Screenshots/` içine kaydedilir ve panoya kopyalanır.
 | `Super+N` | Hızlı ayarlar ve bildirim paneli (aç/kapa) |
 | `Super+Shift+N` | Açık bildirimleri gizle (panelde kalırlar) |
 | `Super+Ctrl+N` | Rahatsız Etme aç/kapa |
+| `Super+M` | Medya kontrol kutusu (aç/kapa; sağ üstte açılır) |
 
 ### Medya tuşları (kilit ekranında da çalışır)
 
@@ -564,7 +566,7 @@ Görüntü `~/Pictures/Screenshots/` içine kaydedilir ve panoya kopyalanır.
 | `AWAKE` · `NIGHT` · `ECO` / `PERF` | Yalnızca açıkken görünür. Tıkla: kapat (ECO/PERF → balanced) |
 | `VPN` | Yalnızca VPN bağlıyken. Üstüne gel: hangi bağlantı |
 | Saat | Tıkla: takvim. Tekrar tıkla, `Esc`'e bas ya da dışarı tıkla: kapanır. Üstüne gel: tam tarih. |
-| `\|<` `>` / `\|\|` `>\|` ♪ başlık | Yalnızca bir çalar açıkken görünür. Önceki · oynat/duraklat · sonraki. Başlığa tıkla: oynat/duraklat, orta tık: önceki, sağ tık: sonraki. |
+| `\|<` `>` / `\|\|` `>\|` ♪ başlık | Yalnızca bir çalar açıkken görünür. Önceki · oynat/duraklat · sonraki. Başlığa tıkla: kontrol kutusu (aşağıda), orta tık: önceki, sağ tık: sonraki. |
 | `MIC CAM SCR` (kırmızı) | Mikrofon / kamera / ekran paylaşımı kullanılırken. Üstüne gel: hangi uygulama |
 | `FAIL n` | Bir servis çöktüğünde. Üstüne gel: adları · tıkla: ayrıntılar (terminalde) |
 | `CPU` `MEM` `TEMP` | Yalnızca 15 sn boyunca yüksek kalırsa. Tıkla: GNOME System Monitor |
@@ -610,6 +612,19 @@ bir çizgi var (`style.css` → `window#waybar`).
     playerctl da playerctld çalışırken aynı çaları seçer.
   - Panelin fontunda medya simgeleri olmadığı için düz metin kullanılıyor (`|<`, `>`, `||`, `>|`).
   - Bar kalabalıklaşınca önce başlık kısalır (`…`), NET/VOL gibi yazılar değil (`max-length`).
+- **Medya kutusu** (`mpris` → `on-click`, ya da `Super+M`): `media-popup` başlığın hemen altında
+  küçük, yuvarlak bir kutu açar (Dynamic Island benzeri): kapak, başlık, sanatçı, çalar adı,
+  sürüklenebilir ilerleme çubuğu, önceki · oynat/duraklat · sonraki.
+  - Klavye: `Space` oynat/duraklat, `←` `→` 5 sn sar, `N` sonraki, `P` önceki, `Esc` kapat.
+  - Kapanır: dışarı tıklayınca, `Esc`, aynı yere tekrar tıklayınca, ya da çalar kapanınca.
+    Çalan bir şey yoksa sağ üstte kısa bir "Nothing playing" yazısı çıkar.
+  - Barla aynı çaları gösterir (playerctld'nin en son kullanılanı).
+  - Kapak: yerel dosya doğrudan okunur; internetteki kapak `~/.cache/media-popup`'a indirilir
+    (en fazla 50 dosya tutulur). Kapak yoksa `♪`.
+  - `--at-pointer`: imlecin altına ortalar (Waybar böyle çağırır); onsuz sağ üstte açılır.
+  - Gölgeyi niri çizer (`rules.kdl` → `layer-rule`, `media-popup`). Renkler `panel.css`'ten.
+  - Açılırken bardan aşağı kayar. Pencere baştan tam boyda açılır: niri, büyüyen bir katman
+    penceresine yeni kare vermediği için boyu değişen pencerede animasyon donuyordu.
 
 ### Gerektiğinde görünen göstergeler
 
