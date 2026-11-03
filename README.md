@@ -569,7 +569,7 @@ Görüntü `~/Pictures/Screenshots/` içine kaydedilir ve panoya kopyalanır.
 | `AWAKE` · `NIGHT` · `ECO` / `PERF` | Yalnızca açıkken görünür. Tıkla: kapat (ECO/PERF → balanced) |
 | `VPN` | Yalnızca VPN bağlıyken. Üstüne gel: hangi bağlantı |
 | Saat | Tıkla: takvim. Tekrar tıkla, `Esc`'e bas ya da dışarı tıkla: kapanır. Üstüne gel: tam tarih. |
-| `\|<` `>` / `\|\|` `>\|` ♪ başlık | Yalnızca bir çalar açıkken görünür. Önceki · oynat/duraklat · sonraki. Başlığa tıkla: kontrol kutusu (aşağıda), orta tık: önceki, sağ tık: sonraki. |
+| `\|<` `>` / `\|\|` `>\|` ♪ başlık | Yalnızca bir çalar açıkken görünür. Önceki · oynat/duraklat · sonraki. Başlığa tıkla: kontrol kutusu (aşağıda), tekerlek: 5 sn ileri / geri, orta tık: önceki, sağ tık: sonraki. |
 | `MIC CAM SCR` (kırmızı) | Mikrofon / kamera / ekran paylaşımı kullanılırken. Üstüne gel: hangi uygulama |
 | `FAIL n` | Bir servis çöktüğünde. Üstüne gel: adları · tıkla: ayrıntılar (terminalde) |
 | `CPU` `MEM` `TEMP` | Yalnızca 15 sn boyunca yüksek kalırsa. Tıkla: GNOME System Monitor |
@@ -618,7 +618,14 @@ bir çizgi var (`style.css` → `window#waybar`).
 - **Medya kutusu** (`mpris` → `on-click`, ya da `Super+M`): `media-popup` başlığın hemen altında
   küçük, yuvarlak bir kutu açar (Dynamic Island benzeri): kapak, başlık, sanatçı, çalar adı,
   sürüklenebilir ilerleme çubuğu, önceki · oynat/duraklat · sonraki.
-  - Klavye: `Space` oynat/duraklat, `←` `→` 5 sn sar, `N` sonraki, `P` önceki, `Esc` kapat.
+  - Klavye: `Space` oynat/duraklat, `←` `→` 5 sn sar, `N` sonraki, `P` önceki,
+    `Enter` çaların penceresine git, `Esc` kapat.
+  - **Çaların penceresine gitmek:** üst satırdaki çalar adına (`BRAVE ↗`) tıkla ya da `Enter`.
+    Pencere şu sırayla aranır: çaların kendi süreci (ya da içinde çaldığı terminal) → aynı
+    uygulama (D-Bus adı, `DesktopEntry`, `Identity` ile niri'deki `app_id`) → başlığında parça
+    adı geçen pencere (tarayıcıda o sekme açıksa). Eşitlikte en son kullanılan. Bulunamazsa
+    çalardan kendini öne getirmesi istenir (MPRIS `Raise`); o da yoksa `↗` görünmez.
+    Flatpak uygulamalarında (ör. Brave) süreç eşleşmez, uygulama adı eşleşir.
   - Kapanır: dışarı tıklayınca, `Esc`, aynı yere tekrar tıklayınca, ya da çalar kapanınca.
     Çalan bir şey yoksa sağ üstte kısa bir "Nothing playing" yazısı çıkar.
   - Barla aynı çaları gösterir (playerctld'nin en son kullanılanı).

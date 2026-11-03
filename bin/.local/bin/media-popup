@@ -5,19 +5,25 @@
   media-popup --at-pointer  open under the mouse pointer (Waybar: click on the media title)
   media-popup selftest      check the helper rules (check.sh)
 
-Keys: Space play/pause · ←/→ seek 5 s · N next · P previous · Esc close.
+Keys: Space play/pause · ←/→ seek 5 s · N next · P previous · Enter go to the player · Esc close.
+Click the player name (top line, ↗) to go to the player's window.
 """
 # Waybar'da medya başlığına tıklayınca açılan küçük kontrol kutusu ("ada").
 # Hangi çalar: Waybar'ın medya modülüyle aynısı (playerctld'nin en son kullanılan çaları).
 # Kapanır: dışarı tıklayınca, Esc, tekrar çalıştırınca ya da çalar kapanınca.
 # Dışarı tıklamayı yakalamak için ekranı kaplayan saydam bir katman açılır (calendar-popup gibi);
 # aynı katman fare imlecinin yerini de verir, kutu başlığın altında açılır.
+# Çaların adına (↗) tıklamak ya da Enter, çaların penceresine gider (niri focus-window);
+# pencere bulunamazsa çalardan kendini öne getirmesi istenir (MPRIS Raise).
 # GTK3 + gtk-layer-shell; ek paket gerekmez. Renkler ~/.local/state/theme/panel.css'ten.
 # Ekrana yazılan her şey İngilizce (arayüz kuralı); açıklamalar Türkçe.
 
 import hashlib
+import json
 import os
+import re
 import signal
+import subprocess
 import sys
 import threading
 import urllib.parse
@@ -43,7 +49,7 @@ ART_CACHE_FILES = 50   # indirilen kapaklardan en fazla bu kadarı saklanır
 
 KEYS = {"Escape": "close", "q": "close", "space": "play_pause", "k": "play_pause",
         "Left": "back", "h": "back", "Right": "forward", "l": "forward",
-        "n": "next", "p": "previous"}
+        "n": "next", "p": "previous", "Return": "go", "KP_Enter": "go"}
 
 
 # ── Saf yardımcılar (selftest bunları sınar) ──────────────────────────────
@@ -101,6 +107,42 @@ def track_info(md):
     }
 
 
+def norm(text):
+    """Karşılaştırma için: küçük harf, yalnızca harf ve rakam."""
+    return re.sub(r"[^a-z0-9]", "", (text or "").lower())
+
+
+def app_keys(bus_name, desktop_entry, identity):
+    """Çaları tanıtan adlar. org.mpris.MediaPlayer2.brave.instance7 → brave;
+    DesktopEntry (ör. com.brave.Browser) ve Identity (ör. Brave) da eklenir."""
+    keys = {norm(desktop_entry), norm(identity)}
+    if bus_name.startswith(MPRIS + "."):
+        keys.add(norm(bus_name[len(MPRIS) + 1:].split(".")[0]))
+    return {k for k in keys if len(k) >= 3}
+
+
+def window_score(window, pids, keys, title):
+    """pids: {pid: puan} (çaların kendisi ve üst süreçleri) · keys: app_keys · title: parça adı.
+    Aynı süreç > aynı uygulama > pencere başlığında parça adı (tarayıcı sekmesi)."""
+    score = pids.get(window.get("pid"), 0)
+    app = norm(window.get("app_id"))
+    if app and any(k == app or k in app or (len(app) >= 4 and app in k) for k in keys):
+        score += 10
+    song = norm(title)
+    if len(song) >= 4 and song in norm(window.get("title")):
+        score += 5
+    return score
+
+
+def pick_window(windows, pids, keys, title):
+    """En uygun niri penceresinin kimliği; eşitlikte en son odaklanan. Hiçbiri uymazsa None."""
+    def rank(w):
+        ts = w.get("focus_timestamp") or {}
+        return (window_score(w, pids, keys, title), ts.get("secs", 0), ts.get("nanos", 0))
+    best = max(windows, key=rank, default=None)
+    return best["id"] if best and rank(best)[0] > 0 else None
+
+
 def selftest():
     cases = [
         (fmt_time(0), "0:00"), (fmt_time(65_000_000), "1:05"), (fmt_time(3_723_000_000), "1:02:03"),
@@ -118,7 +160,33 @@ def selftest():
         (track_info({})["title"], "Unknown title"),
         (track_info({"xesam:artist": ["A", "B"], "mpris:length": 5})["artist"], "A, B"),
         (track_info({"xesam:artist": "A"})["artist"], "A"),
-        (KEYS["space"], "play_pause"),
+        (KEYS["space"], "play_pause"), (KEYS["Return"], "go"),
+        (app_keys(MPRIS + ".brave.instance7", "com.brave.Browser", "Brave"),
+         {"brave", "combravebrowser"}),
+        (app_keys(MPRIS + ".mpv", "", ""), {"mpv"}),
+        (app_keys(MPRIS + ".firefox.instance_1_2", "firefox", "Mozilla Firefox"),
+         {"firefox", "mozillafirefox"}),
+    ]
+    w = [{"id": 1, "pid": 10, "app_id": "foot", "title": "zsh",
+          "focus_timestamp": {"secs": 9, "nanos": 0}},
+         {"id": 2, "pid": 20, "app_id": "brave-browser", "title": "Docs - Brave",
+          "focus_timestamp": {"secs": 8, "nanos": 0}},
+         {"id": 3, "pid": 21, "app_id": "brave-browser", "title": "Lofi Beats - YouTube - Brave",
+          "focus_timestamp": {"secs": 5, "nanos": 0}},
+         {"id": 4, "pid": 30, "app_id": "mpv", "title": "song.flac - mpv", "focus_timestamp": None},
+         {"id": 5, "pid": 40, "app_id": "org.mozilla.firefox", "title": "Firefox",
+          "focus_timestamp": None}]
+    brave = app_keys(MPRIS + ".brave.instance7", "com.brave.Browser", "Brave")
+    cases += [
+        (pick_window(w, {}, brave, "Lofi Beats"), 3),          # sekmesi açık olan pencere
+        (pick_window(w, {}, brave, "Other Song"), 2),          # yoksa en son odaklanan Brave
+        (pick_window(w, {30: 100, 10: 59}, {"mpv"}, "song"), 4),   # kendi penceresi, terminal değil
+        (pick_window(w, {}, {"mpv"}, "x"), 4),                     # uygulama adı da yeter
+        (pick_window(w, {77: 100, 10: 59}, {"mpv"}, "x"), 1),      # pencere başka mpv'nin: terminal
+        (pick_window(w, {77: 100, 10: 59}, {"cmus"}, "x"), 1),     # terminalde çalan çalar
+        (pick_window(w, {}, {"firefox", "mozillafirefox"}, "x"), 5),
+        (pick_window(w, {}, {"spotify"}, "x"), None),
+        (pick_window([], {}, {"mpv"}, "x"), None),
     ]
     bad = [(i, got, want) for i, (got, want) in enumerate(cases) if got != want]
     for i, got, want in bad:
@@ -172,6 +240,9 @@ CSS = b"""
     padding: 12px 14px 10px 14px;
 }
 .island .source { color: @panel_muted; }
+.island button.source { padding: 0; border-radius: 0; background: transparent; color: @panel_muted; }
+.island button.source:hover { color: @panel_accent; background: transparent; }
+.island button.source:disabled { color: @panel_muted; }
 .island .title { color: @panel_fg; }
 .island .artist { color: @panel_subtle; }
 .island .time { color: @panel_muted; }
@@ -253,6 +324,8 @@ class Player:
                                             name, OBJ_PATH, PLAYER_IFACE, None)
         identity = self.get(MPRIS, "Identity")
         self.identity = identity or name[len(MPRIS) + 1:].split(".")[0]
+        self.desktop_entry = self.get(MPRIS, "DesktopEntry") or ""
+        self.can_raise = bool(self.get(MPRIS, "CanRaise"))
 
     def get(self, iface, prop, timeout=1000):
         try:
@@ -302,6 +375,50 @@ class Player:
             current = self.position()
             if current is not None:
                 self.seek(int(us) - current)
+
+
+    def raise_window(self):
+        try:
+            self.bus.call_sync(self.name, OBJ_PATH, MPRIS, "Raise", None, None,
+                               Gio.DBusCallFlags.NONE, 2000, None)
+        except GLib.Error:
+            pass
+
+    def pids(self):
+        """{pid: puan}: D-Bus bağlantısının süreci 100, üst süreçleri (ör. içinde çaldığı
+        terminal) 59, 58, … Flatpak uygulamalarında süreç D-Bus vekilidir, eşleşmez; orada
+        uygulama adı işe yarar."""
+        try:
+            pid = self.bus.call_sync("org.freedesktop.DBus", "/org/freedesktop/DBus",
+                                     "org.freedesktop.DBus", "GetConnectionUnixProcessID",
+                                     GLib.Variant("(s)", (self.name,)), GLib.VariantType("(u)"),
+                                     Gio.DBusCallFlags.NONE, 1000, None).unpack()[0]
+        except GLib.Error:
+            return {}
+        result = {pid: 100}
+        for depth in range(1, 6):
+            try:
+                stat = Path(f"/proc/{pid}/stat").read_text()
+                pid = int(stat.rsplit(")", 1)[1].split()[1])      # 4. alan: üst süreç
+            except (OSError, ValueError, IndexError):
+                break
+            if pid <= 1:
+                break
+            result[pid] = 60 - depth
+        return result
+
+    def window(self):
+        """Çaların niri penceresi (kimlik) ya da None."""
+        try:
+            out = subprocess.run(["niri", "msg", "--json", "windows"], capture_output=True,
+                                 text=True, timeout=2).stdout
+            windows = json.loads(out)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return None
+        if not isinstance(windows, list):
+            return None
+        keys = app_keys(self.name, self.desktop_entry, self.identity)
+        return pick_window(windows, self.pids(), keys, self.track()["title"])
 
 
 def find_player(bus):
@@ -475,6 +592,7 @@ class Island:
         self.seeking_until = 0       # kullanıcı çubuğu sürüklerken konum güncellemesi bekler
         self.seek_timer = None
         self.length = 0
+        self.window_id = player.window()
 
         # Ekranı kaplayan saydam katman: dışarı tıklayınca kapanır, imlecin yerini verir.
         self.backdrop = layer_window("media-popup-backdrop", GtkLayerShell.Layer.TOP,
@@ -510,7 +628,11 @@ class Island:
         top = Gtk.Box(spacing=12)
         self.art = Art()
         info = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, valign=Gtk.Align.CENTER)
-        self.source = label("source", ellipsize=True)
+        # Çaların adı: tıklayınca çaların penceresine gider (↗). Gidecek yer yoksa düz yazı.
+        self.source = Gtk.Button(halign=Gtk.Align.START)
+        self.source.get_style_context().add_class("source")
+        self.source.set_can_focus(False)
+        self.source.connect("clicked", lambda *_: self.go_to_player())
         self.title = label("title", ellipsize=True)
         self.artist = label("artist", ellipsize=True)
         for widget in (self.source, self.title, self.artist):
@@ -611,7 +733,10 @@ class Island:
 
     def refresh(self):
         track = self.player.track()
-        self.source.set_text(self.player.identity.upper())
+        reachable = self.player.can_raise or self.window_id is not None
+        self.source.set_label(self.player.identity.upper() + (" ↗" if reachable else ""))
+        self.source.set_sensitive(reachable)
+        self.source.set_tooltip_text("Go to the player (Enter)" if reachable else None)
         self.title.set_text(track["title"])
         self.artist.set_text(track["artist"] or " ")    # boş da olsa satır yerinde kalsın
         self.art.set_url(track["art"])
@@ -682,7 +807,21 @@ class Island:
             self.player.next()
         elif action == "previous":
             self.player.previous()
+        elif action == "go":
+            self.go_to_player()
         return action is not None
+
+    def go_to_player(self):
+        """Çaların penceresine geç (bulunamazsa çalardan öne gelmesini iste) ve kapan."""
+        target = self.player.window()
+        if target is not None:
+            subprocess.run(["niri", "msg", "action", "focus-window", "--id", str(target)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+        elif self.player.can_raise:
+            self.player.raise_window()
+        else:
+            return
+        self.quit()
 
     @staticmethod
     def quit(*_):
