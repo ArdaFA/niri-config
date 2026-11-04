@@ -16,6 +16,7 @@ sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü.
 ## İçindekiler
 
 1. [Hızlı başlangıç](#hızlı-başlangıç)
+   - [Yenilikler (5 Kasım 2026)](#yenilikler-5-kasım-2026)
 2. [Ayarlar uygulaması](#ayarlar-uygulaması)
 3. [Arama (Super+D)](#arama-superd)
 4. [Kurulum (sıfırdan)](#kurulum-sıfırdan)
@@ -46,7 +47,7 @@ GDM son seçilen oturumu hatırlar. KDE'ye dönmek için aynı menüden **Plasma
 | Kısayol | İş |
 |---|---|
 | `Super+Enter` | terminal (foot) |
-| `Super+D` | arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji |
+| `Super+D` | arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji, renk, zamanlayıcı, `>` komut, Bluetooth/Wi-Fi/ses |
 | `Super+Ctrl+V` | pano geçmişi: son kopyaladığın 50 metin |
 | `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, kilit süresi, varsayılan uygulamalar |
 | `Super+Q` | pencereyi kapat |
@@ -55,6 +56,28 @@ GDM son seçilen oturumu hatırlar. KDE'ye dönmek için aynı menüden **Plasma
 
 **KDE içinde pencere olarak denemek:** Konsole'da `niri` yaz. Bu modda Mod tuşu **Alt**'tır.
 Waybar, swaync gibi servisler bu modda başlamaz, çünkü onlar oturumun systemd servisine bağlı.
+
+### Yenilikler (5 Kasım 2026)
+
+Bir gecede eklenenler. Hepsi niri oturumunda çalışıyor, KDE'ye dokunmuyor, yeni paket istemiyor.
+Ayrıntılar ilgili bölümlerde.
+
+| Ne | Nasıl kullanılır | Bölüm |
+|---|---|---|
+| **Super+D düzeltmesi** | Tuşu basılı tutunca pencere art arda açılıp kapanıyordu (tuş tekrarı). Artık tek basış = tek aç/kapa. | [Arama](#arama-superd) |
+| **Pano geçmişi** | `Super+Ctrl+V`: son 50 kopyalama, yazarak ara, `Enter` tekrar kopyalar. RAM'de durur, parola yöneticisi kopyaları kaydedilmez. | [Pano geçmişi](#pano-geçmişi-superctrlv) |
+| **Varsayılan uygulamalar** | `Super+S` → **Default apps**: tarayıcı, dosya yöneticisi, resim, PDF, video, müzik, arşiv, e-posta. Yalnızca niri'de geçerli. | [Ayarlar](#ayarlar-uygulaması) |
+| **Aramada renk** | `#f4a7b9` / `rgb(…)` / `hsl(…)` yaz: örnek + üç biçim. `pick color`: ekrandan renk al. | [Arama](#arama-superd) |
+| **Aramada komut** | `> komut`: terminalde çalıştırır (`Ctrl+Enter` arka planda); yalnızca `>` son komutlar. | [Arama](#arama-superd) |
+| **Zamanlayıcı** | `timer 10m tea`, `remind me in 20 min to stretch`. Süre dolunca sesli bildirim; panelde `TMR 4:32` geri sayım. | [Arama](#arama-superd) |
+| **Cihazlar aramada** | `bluetooth` / kulaklığın adı → bağlan; `wifi` / ağın adı → bağlan; `sound` → ses çıkışını seç. | [Arama](#arama-superd) |
+| **Pencere kapatma** | Aramada bir pencere seçiliyken `Ctrl+Enter` onu kapatır. | [Arama](#arama-superd) |
+| **Pil uyarıları** | %20'de "Battery low", %5'te kalıcı "critically low"; şarja takınca kaybolur. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
+| **USB disk bildirimi** | Disk takılınca **Open** / **Eject** düğmeli bildirim; aramada `eject`. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
+| **Ekran paylaşırken** | Açılır bildirimler bekletilir (panelde `QUIET`); parola yöneticisi, arama penceresi ve bildirimler yayında siyah görünür. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
+| **Güncellemeler** | Panelde `UPD 47`: tıkla → terminalde dnf + Flatpak güncellemesi (onayı sen verirsin). | [Waybar modülleri](#waybar-modülleri) |
+| **Auto açık/koyu renkler** | `Super+S` → Appearance → Wallpaper colors → **Auto**: 07:00 açık, 19:00 koyu. Varsayılan kapalı. | [Renkler](#renkler-theme-komutu) |
+| **Video PiP** | Tarayıcıdaki resim-içinde-resim videosu sağ altta küçük yüzen pencere olarak açılır. | [Hangi dosya…](#hangi-dosya-neyi-kontrol-ediyor) |
 
 ---
 
