@@ -49,7 +49,7 @@ GDM son seçilen oturumu hatırlar. KDE'ye dönmek için aynı menüden **Plasma
 | `Super+Enter` | terminal (foot) |
 | `Super+D` | arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji, renk, zamanlayıcı, `>` komut, Bluetooth/Wi-Fi/ses |
 | `Super+Ctrl+V` | pano geçmişi: son kopyaladığın 50 metin |
-| `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, kilit süresi, varsayılan uygulamalar |
+| `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, klavye (Türkçe harfler), kilit süresi, varsayılan uygulamalar |
 | `Super+Q` | pencereyi kapat |
 | `Super+Shift+ß` (yani `Super+?`) | ekranda kısayol listesi |
 | `Super+Shift+E` | oturumu kapat |
@@ -76,6 +76,7 @@ Ayrıntılar ilgili bölümlerde.
 | **USB disk bildirimi** | Disk takılınca **Open** / **Eject** düğmeli bildirim; aramada `eject`. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
 | **Ekran paylaşırken** | Açılır bildirimler bekletilir (panelde `QUIET`); parola yöneticisi, arama penceresi ve bildirimler yayında siyah görünür. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
 | **Güncellemeler** | Panelde `UPD 47`: tıkla → terminalde dnf + Flatpak güncellemesi (onayı sen verirsin). | [Waybar modülleri](#waybar-modülleri) |
+| **Türkçe harfler** | `Super+S` → **Keyboard** → *Turkish letters*: Alman klavyede `AltGr+S/G/I/C` → ş ğ ı ç (`Shift` ile Ş Ğ İ Ç). Başka hiçbir tuş değişmez. Varsayılan kapalı. | [Ayarlar](#ayarlar-uygulaması) |
 | **Otomatik gece ışığı** | `Super+S` → Displays → **Turn on automatically**: 19:00'da açılır, 07:00'de kapanır. Varsayılan kapalı. | [Hızlı ayarlar](#hızlı-ayarlar-ve-bildirimler) |
 | **Auto açık/koyu renkler** | `Super+S` → Appearance → Wallpaper colors → **Auto**: 07:00 açık, 19:00 koyu. Varsayılan kapalı. | [Renkler](#renkler-theme-komutu) |
 | **Video PiP** | Tarayıcıdaki resim-içinde-resim videosu sağ altta küçük yüzen pencere olarak açılır. | [Hangi dosya…](#hangi-dosya-neyi-kontrol-ediyor) |
@@ -93,6 +94,7 @@ All settings. Her değişiklik anında uygulanır, "Apply" düğmesi yok. `Esc` 
 | **Appearance** | Duvar kağıdı (küçük resimlerle; *Add…* kendi resmini `wallpapers/`'a kopyalar), renkler (bir preset ya da *From wallpaper*; duvar kağıdından gelen renklerin açık/koyu hali ya da *Auto*: gündüz açık, akşam koyu), terminal saydamlığı |
 | **Displays** | Harici monitörün laptopa göre yeri (`Super+P` ile aynı, her monitör hatırlanır), gece ışığı, sıcaklığı ve **Turn on automatically** (19:00'da açılır, 07:00'de kapanır) |
 | **Touchpad** | Dokunarak tıklama, doğal kaydırma, imleç hızı |
+| **Keyboard** | **Turkish letters**: Almanca düzen aynen kalır, ek olarak `AltGr+S` → ş, `AltGr+G` → ğ, `AltGr+I` → ı, `AltGr+C` → ç; `Shift` eklersen Ş Ğ İ Ç. Hemen yanında deneme kutusu. Tuş tekrarı: bekleme süresi ve hızı. |
 | **Screen lock** | Kaç dakika boşta kalınca kilitlensin (ekran 30 sn sonra kapanır) |
 | **Default apps** | Hangi uygulama açsın: web bağlantıları, klasörler, metin, resim, PDF, video, müzik, arşiv, e-posta. Liste o türü açabilen kurulu uygulamalardan gelir. |
 
@@ -105,7 +107,7 @@ değiştirilebiliyor:
 | Monitörün yeri | `displays` komutu (bkz. [Ekranlar](#ekranlar)) |
 | Gece ışığı aç/kapa | `night-light` komutu |
 | Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir) |
-| Touchpad | `~/.local/state/settings/niri.kdl`. `config.kdl` bunu `input.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
+| Touchpad, klavye | `~/.local/state/settings/niri.kdl`. Klavye bloğu yalnızca varsayılandan farklıysa yazılır (`layout "de"` + `variant "tr"`, yani xkb'deki hazır *Turkish (Germany)* düzeni). Yalnızca niri'de geçerli; KDE ve giriş ekranı kendi ayarında kalır. `config.kdl` bunu `input.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
 | Kilit süresi, gece ışığının sıcaklığı ve otomatiği | `~/.local/state/settings/services.env`. `swayidle.service` ve `night-light.service` okur; dosya yoksa servis dosyalarındaki varsayılanlar geçerli (5 dk, 4000 K). |
 | Varsayılan uygulamalar | `~/.config/niri-mimeapps.list`. XDG kuralı: `XDG_CURRENT_DESKTOP=niri` olan oturum bu dosyayı `mimeapps.list`'ten önce okur, KDE hiç okumaz. Yani KDE'deki seçimlerin değişmez; niri'de seçmediğin türler KDE'deki gibi kalır. Bir kategori seçilince o uygulamanın desteklediği bütün türleri yazılır (ör. Images → png, jpeg, webp…). Elle de düzenlenebilir; silersen niri yine KDE'nin seçimlerine döner. |
 
@@ -322,7 +324,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 |---|---|
 | `~/.local/state/theme/` | `theme` komutunun ürettiği renk dosyaları, kayıtlı seçim, duvar kağıdı bağlantısı |
 | `~/.local/state/displays/` | `displays` komutunun hatırladığı monitör yerleri (`state.json`) ve niri'nin okuduğu `niri.kdl` |
-| `~/.local/state/settings/` | Ayarlar uygulamasının yazdıkları: touchpad (`niri.kdl`), kilit süresi ve gece ışığı sıcaklığı (`services.env`) |
+| `~/.local/state/settings/` | Ayarlar uygulamasının yazdıkları: touchpad ve klavye (`niri.kdl`), kilit süresi ve gece ışığı (`services.env`) |
 | `~/.cache/settings/` | Duvar kağıtlarının küçük resimleri (silinebilir, yeniden üretilir) |
 | `~/.config/niri-mimeapps.list` | Ayarlar → Default apps'in yazdığı, yalnızca niri oturumunun okuduğu varsayılan uygulamalar |
 | `~/.local/state/launcher/` | Arama penceresinin hatırladığı sık kullanılan uygulamalar, emojiler ve `>` komutları |

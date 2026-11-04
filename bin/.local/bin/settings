@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """settings — the settings window of this niri desktop (Super+S).
 
-  settings [appearance|displays|touchpad|lock|apps]   open the window (on that page)
+  settings [appearance|displays|touchpad|keyboard|lock|apps]   open the window (on that page)
   settings selftest                                   check the file writers (check.sh)
 
   Appearance   wallpaper, colors (a preset or taken from the wallpaper), terminal opacity
   Displays     where the external monitor sits, night light and its warmth
   Touchpad     tap to click, natural scrolling, pointer speed
+  Keyboard     Turkish letters on the German layout (AltGr), key repeat
   Screen lock  how long the computer may stay idle before it locks
   Default apps which app opens web links, folders, images, PDFs, videos… in this session
 
@@ -19,8 +20,9 @@ Every change applies at once; there is no Apply button.
 #   monitörün yeri         → `displays` komutu (~/.local/state/displays)
 #   gece ışığı aç/kapa      → `night-light` komutu
 #   terminal saydamlığı    → foot.ini'deki `alpha=` satırı (repo'daki dosya)
-#   touchpad, kilit süresi, gece ışığının sıcaklığı → ~/.local/state/settings:
-#       niri.kdl       touchpad bloğu; config.kdl input.kdl'den sonra okur, niri anında uygular
+#   touchpad, klavye, kilit süresi, gece ışığı → ~/.local/state/settings:
+#       niri.kdl       touchpad ve klavye blokları; config.kdl input.kdl'den sonra okur, niri
+#                      anında uygular (yalnızca niri; KDE ve giriş ekranı kendi ayarında kalır)
 #       services.env   swayidle.service ve night-light.service okur (EnvironmentFile)
 #       settings.json  bu pencerenin hatırladığı değerler
 #   varsayılan uygulamalar → ~/.config/niri-mimeapps.list: XDG kuralı gereği yalnızca
@@ -70,11 +72,18 @@ THEME_STATE = STATE_HOME / "theme"
 FOOT_INI = CONFIG_HOME / "foot" / "foot.ini"
 THUMBS = CACHE_HOME / "settings" / "thumbnails"
 
-PAGES = (("appearance", "Appearance"), ("displays", "Displays"),
-         ("touchpad", "Touchpad"), ("lock", "Screen lock"), ("apps", "Default apps"))
+PAGES = (("appearance", "Appearance"), ("displays", "Displays"), ("touchpad", "Touchpad"),
+         ("keyboard", "Keyboard"), ("lock", "Screen lock"), ("apps", "Default apps"))
 DEFAULTS = {"tap": True, "natural_scroll": False, "pointer_speed": 0.0,
-            "lock_after": 300, "night_temp": 4000, "night_auto": False}
+            "lock_after": 300, "night_temp": 4000, "night_auto": False,
+            "turkish_letters": False, "repeat_delay": 600, "repeat_rate": 25}
 TOUCHPAD_KEYS = ("tap", "natural_scroll", "pointer_speed")
+KEYBOARD_KEYS = ("turkish_letters", "repeat_delay", "repeat_rate")
+# input.kdl'deki düzen. "tr" varyantı Almanca düzene AltGr ile ş ğ ı ç ekler (xkb: de(tr)),
+# başka hiçbir tuşu değiştirmez.
+KEYBOARD_LAYOUT = "de"
+REPEAT_DELAY = (200, 1000)      # ms
+REPEAT_RATE = (10, 60)          # karakter/sn
 LOCK_CHOICES = ((60, "1 min"), (120, "2 min"), (300, "5 min"), (600, "10 min"),
                 (900, "15 min"), (1800, "30 min"), (3600, "1 hour"))
 SCREEN_OFF_DELAY = 30           # kilitten bu kadar saniye sonra ekran kapanır
@@ -153,6 +162,8 @@ def load_settings():
             s[key] = type(default)(value)
     s["pointer_speed"] = round(min(1.0, max(-1.0, s["pointer_speed"])), 2)
     s["night_temp"] = min(NIGHT_MAX, max(NIGHT_MIN, s["night_temp"]))
+    s["repeat_delay"] = min(REPEAT_DELAY[1], max(REPEAT_DELAY[0], s["repeat_delay"]))
+    s["repeat_rate"] = min(REPEAT_RATE[1], max(REPEAT_RATE[0], s["repeat_rate"]))
     if s["lock_after"] not in dict(LOCK_CHOICES):
         s["lock_after"] = DEFAULTS["lock_after"]
     return s
@@ -161,11 +172,21 @@ def load_settings():
 def render_niri(s):
     # niri'de touchpad bölümü include'lar arasında birleşmez: bu blok input.kdl'dekinin
     # tamamen yerine geçer, o yüzden dwt de burada yazılı.
-    lines = ["// Settings uygulamasının ürettiği dosya (Settings → Touchpad); elle düzenleme.",
-             "// input.kdl'deki touchpad bloğunun yerine geçer.",
+    lines = ["// Settings uygulamasının ürettiği dosya (Settings → Touchpad, Keyboard); elle düzenleme.",
+             "// input.kdl'deki touchpad bloğunun yerine geçer; klavye bloğu (varsa) onunkini ezer.",
              "",
-             "input {",
-             "    touchpad {"]
+             "input {"]
+    if any(s[k] != DEFAULTS[k] for k in KEYBOARD_KEYS):
+        lines += ["    keyboard {",
+                  "        xkb {",
+                  f'            layout "{KEYBOARD_LAYOUT}"']
+        if s["turkish_letters"]:
+            lines.append('            variant "tr"     // AltGr + s g i c → ş ğ ı ç')
+        lines += ["        }",
+                  f"        repeat-delay {s['repeat_delay']}",
+                  f"        repeat-rate {s['repeat_rate']}",
+                  "    }"]
+    lines.append("    touchpad {")
     if s["tap"]:
         lines.append("        tap")
     lines.append("        dwt")
@@ -192,7 +213,7 @@ def save_settings(s):
     write_atomic(STATE / "services.env", render_env(s))
     # Touchpad'e hiç dokunulmadıysa input.kdl geçerli kalsın.
     niri = STATE / "niri.kdl"
-    if niri.exists() or any(s[k] != DEFAULTS[k] for k in TOUCHPAD_KEYS):
+    if niri.exists() or any(s[k] != DEFAULTS[k] for k in TOUCHPAD_KEYS + KEYBOARD_KEYS):
         write_atomic(niri, render_niri(s))
 
 
@@ -760,6 +781,13 @@ CSS = b"""
 .settings flowboxchild:selected label { color: @panel_fg; }
 .settings flowboxchild:disabled label { color: @panel_muted; }
 
+.settings entry {
+    background-color: @panel_surface; color: @panel_fg; background-image: none;
+    border: 1px solid @panel_overlay; border-radius: 8px; padding: 5px 10px;
+    box-shadow: none; caret-color: @panel_accent;
+}
+.settings entry:focus { border-color: @panel_accent; }
+.settings entry selection { background-color: @panel_accent; color: @panel_bg; }
 .settings .app-button { padding: 4px 10px; min-width: 200px; }
 .settings .app-button label { padding-right: 6px; }
 .settings popover.apps {
@@ -1232,6 +1260,32 @@ class Window(Gtk.ApplicationWindow):
         self.natural.set(self.settings["natural_scroll"])
         self.speed.set(self.settings["pointer_speed"])
 
+    # ── Keyboard ──
+
+    def page_keyboard(self, title):
+        page = self.page(title)
+        self.turkish = Switch(lambda on: self.save("turkish_letters", on))
+        page.add(row("Turkish letters", self.turkish,
+                     "AltGr + S, G, I, C types ş ğ ı ç; with Shift: Ş Ğ İ Ç. "
+                     "Every other key stays the same"))
+        self.try_entry = Gtk.Entry(placeholder_text="Type here to try", width_chars=24)
+        page.add(row("Try it", self.try_entry))
+        page.add(label("Key repeat", "heading"))
+        self.repeat_delay = Slider(*REPEAT_DELAY, 50, lambda v: f"{v:.0f} ms",
+                                   self.later(300, lambda v: self.save("repeat_delay", int(v))))
+        self.repeat_rate = Slider(*REPEAT_RATE, 1, lambda v: f"{v:.0f} / s",
+                                  self.later(300, lambda v: self.save("repeat_rate", int(v))))
+        page.add(row("Delay", self.repeat_delay, "How long to hold a key before it repeats"))
+        page.add(row("Speed", self.repeat_rate, "Characters per second while you hold it"))
+        page.add(note("These apply to the niri session only. KDE and the login screen keep "
+                      "their own keyboard settings."))
+        return page, self.refresh_keyboard
+
+    def refresh_keyboard(self):
+        self.turkish.set(self.settings["turkish_letters"])
+        self.repeat_delay.set(self.settings["repeat_delay"])
+        self.repeat_rate.set(self.settings["repeat_rate"])
+
     # ── Screen lock ──
 
     def page_lock(self, title):
@@ -1354,7 +1408,17 @@ def selftest():
             save_settings(s)
             kdl = (STATE / "niri.kdl").read_text()
             assert "        tap\n" in kdl and "natural" not in kdl and "accel" not in kdl, kdl
+            assert "keyboard" not in kdl, kdl          # varsayılan klavye: input.kdl geçerli
             assert load_settings() == s
+            s.update(turkish_letters=True, repeat_rate=40)
+            save_settings(s)
+            kdl = (STATE / "niri.kdl").read_text()
+            assert 'layout "de"' in kdl and 'variant "tr"' in kdl, kdl
+            assert "repeat-delay 600" in kdl and "repeat-rate 40" in kdl, kdl
+            assert load_settings() == s
+            (STATE / "settings.json").write_text(json.dumps(dict(s, repeat_delay=5, repeat_rate=900)))
+            assert load_settings()["repeat_delay"] == REPEAT_DELAY[0]
+            assert load_settings()["repeat_rate"] == REPEAT_RATE[1]
             if shutil.which("niri"):
                 out = subprocess.run(["niri", "validate", "-c", str(STATE / "niri.kdl")],
                                      capture_output=True, text=True)

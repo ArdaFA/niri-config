@@ -1675,6 +1675,7 @@ class Launcher:
                 ("appearance", "Appearance", "wallpaper background colors theme opacity transparency terminal look"),
                 ("displays", "Displays", "monitor screen external position arrange night light warmth"),
                 ("touchpad", "Touchpad", "mouse trackpad tap click natural scrolling pointer speed"),
+                ("keyboard", "Keyboard", "keys layout turkish letters altgr typing repeat delay speed"),
                 ("lock", "Screen lock", "idle timeout lock after minutes screensaver"),
                 ("apps", "Default apps", "default applications open with browser file manager "
                  "image viewer pdf video music player text editor email mime")):
