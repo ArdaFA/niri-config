@@ -66,7 +66,7 @@ All settings. Her değişiklik anında uygulanır, "Apply" düğmesi yok. `Esc` 
 
 | Sayfa | İçinde |
 |---|---|
-| **Appearance** | Duvar kağıdı (küçük resimlerle; *Add…* kendi resmini `wallpapers/`'a kopyalar), renkler (bir preset ya da *From wallpaper*; duvar kağıdından gelen renklerin açık/koyu hali), terminal saydamlığı |
+| **Appearance** | Duvar kağıdı (küçük resimlerle; *Add…* kendi resmini `wallpapers/`'a kopyalar), renkler (bir preset ya da *From wallpaper*; duvar kağıdından gelen renklerin açık/koyu hali ya da *Auto*: gündüz açık, akşam koyu), terminal saydamlığı |
 | **Displays** | Harici monitörün laptopa göre yeri (`Super+P` ile aynı, her monitör hatırlanır), gece ışığı ve sıcaklığı |
 | **Touchpad** | Dokunarak tıklama, doğal kaydırma, imleç hızı |
 | **Screen lock** | Kaç dakika boşta kalınca kilitlensin (ekran 30 sn sonra kapanır) |
@@ -330,6 +330,7 @@ theme wallpaper sakura-gece.jpg     # duvar kağıdını değiştir + renkleri o
 theme wallpaper foto.png --light    # açık tema zorla (ya da --dark)
 theme wallpaper foto.png --keep-colors   # yalnızca duvar kağıdı, renkler aynı
 theme wallpaper none                # duvar kağıdını kaldır (düz renk)
+theme auto on                       # duvar kağıdı renkleri gündüz açık, akşam koyu (off: kapat)
 theme list                          # presetler (* = geçerli)
 theme pick                          # menüden seç: preset ya da duvar kağıdı (fuzzel) — Super+Shift+T
 theme current                       # geçerli seçim
@@ -340,6 +341,12 @@ Gelen presetler: **sakura** (varsayılan), kanagawa, rose-pine, rose-pine-dawn, 
 catppuccin-latte, gruvbox, tokyo-night, nord, everforest.
 
 **Seçim kalıcıdır** (`~/.local/state/theme/state.json`). Her oturum açılışında yeniden uygulanır.
+
+**Otomatik açık/koyu (Auto):** renkler duvar kağıdından geliyorsa Settings → Appearance →
+Wallpaper colors → **Auto** (ya da `theme auto on`). 07:00'de açık, 19:00'da koyu renklere
+geçer (`theme-auto.timer`); bilgisayar uykudaysa uyanınca, kapalıysa oturum açılışında yetişir.
+Elle **Light** ya da **Dark** seçmek otomatiği kapatır. Presetlerde etkisi yok (onların tek bir
+hali var). Saatler: `bin/.local/bin/theme` → `DAY_START` / `NIGHT_START` ve timer dosyası.
 
 ### Ne anında güncellenir?
 

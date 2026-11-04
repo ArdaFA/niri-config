@@ -1,0 +1,13 @@
+# Duvar kağıdı renkleri "Auto" ise 07:00'de açık, 19:00'da koyu renklere geçer (theme auto check).
+# Auto kapalıyken çalışsa da hiçbir şey yapmaz. Uyku sırasında kaçan geçiş uyanınca yapılır;
+# oturum açılışında doğru renkleri theme-apply.service seçer. Ayrıntı: README → Renkler
+# Saatleri değiştirmek: buradaki iki satır + bin/.local/bin/theme → DAY_START / NIGHT_START.
+
+[Unit]
+Description=Switch wallpaper colors between light and dark (niri session)
+PartOf=graphical-session.target
+
+[Timer]
+OnCalendar=*-*-* 07:00:00
+OnCalendar=*-*-* 19:00:00
+AccuracySec=1min

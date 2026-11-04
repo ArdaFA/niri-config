@@ -1,0 +1,9 @@
+# theme-auto.timer'ın çalıştırdığı iş: Auto açıksa saate göre açık/koyu renkleri uygular.
+
+[Unit]
+Description=Switch wallpaper colors between light and dark if it is time
+Requisite=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/theme auto check

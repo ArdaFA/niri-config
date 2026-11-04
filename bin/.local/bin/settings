@@ -921,9 +921,10 @@ class Window(Gtk.ApplicationWindow):
         page.add(label("Colors", "heading"))
         self.colors = flowbox(self.on_colors)
         page.add(self.colors)
-        self.variant = Choice((("light", "Light"), ("dark", "Dark")), self.on_variant)
+        self.variant = Choice((("light", "Light"), ("dark", "Dark"), ("auto", "Auto")), self.on_variant)
         self.variant_row = row("Wallpaper colors", self.variant,
-                               "Light or dark colors, taken from the wallpaper")
+                               "Light or dark colors, taken from the wallpaper. "
+                               "Auto: light from 07:00, dark from 19:00")
         page.add(self.variant_row)
         page.add(label("Terminal", "heading"))
         self.opacity = Slider(50, 100, 5, lambda v: f"{v:.0f} %",
@@ -1007,7 +1008,7 @@ class Window(Gtk.ApplicationWindow):
             self.from_wallpaper.path, self.from_wallpaper.image = wallpaper, None
             if wallpaper:
                 thumbnails_later([(self.from_wallpaper, Path(wallpaper))], self.scale)
-        self.variant.set(self.theme.get("variant", "dark"))
+        self.variant.set("auto" if self.theme.get("auto") else self.theme.get("variant", "dark"))
         self.variant_row.set_visible(from_wallpaper and bool(wallpaper))
         for box in (self.walls, self.colors):
             for tile in box.get_children():
@@ -1095,8 +1096,13 @@ class Window(Gtk.ApplicationWindow):
 
     def on_variant(self, variant):
         wallpaper = self.theme.get("wallpaper")
-        if wallpaper and variant != self.theme.get("variant"):
-            self.variant.set(variant)
+        current = "auto" if self.theme.get("auto") else self.theme.get("variant")
+        if not wallpaper or variant == current:
+            return
+        self.variant.set(variant)
+        if variant == "auto":
+            self.run_theme(["auto", "on"])
+        else:                                       # elle seçmek otomatiği kapatır
             self.run_theme(["wallpaper", wallpaper, f"--{variant}"])
 
     def set_opacity(self, percent):

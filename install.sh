@@ -25,6 +25,7 @@ NIRI_SERVICES=(
     launcher.service
     clipboard-history.service
     device-notify.service
+    theme-auto.timer
 )
 
 WANTS_DIR="$HOME/.config/systemd/user/niri.service.wants"

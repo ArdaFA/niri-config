@@ -6,6 +6,8 @@
         --keep-colors              keep the current colors, only change the wallpaper
         --dark | --light           force a dark/light theme (default: from image brightness)
   theme wallpaper none             remove the wallpaper (solid color), keep the colors
+  theme auto on|off                wallpaper colors: light by day (07–19), dark in the evening
+  theme auto check                 switch light/dark if it is time (theme-auto.timer, login)
   theme list                       list presets (* = current)
   theme pick                       choose a preset or a wallpaper from a menu (fuzzel; Super+Shift+T)
   theme current                    show the current selection
@@ -44,6 +46,7 @@ SWAYBG_RUNNING = STATE / "swaybg.args"   # çalışan swaybg'nin argümanları
 WALLUST_OUT = Path.home() / ".local" / "state" / "theme" / "wallust.json"
 
 DEFAULT_PRESET = "sakura"
+DAY_START, NIGHT_START = 7, 19          # auto: bu saatler arasında açık, dışında koyu renkler
 
 UI_KEYS = ("bg", "surface", "overlay", "muted", "subtle", "fg",
            "accent", "accent2", "urgent", "warn", "ok")
@@ -383,15 +386,60 @@ def cmd_wallpaper(args):
     if args.keep_colors:
         palette = palette_for_state(state)
     else:
-        variant = args.variant or guess_variant(image)
+        if args.variant:
+            state.pop("auto", None)        # elle açık/koyu seçmek otomatiği kapatır
+        variant = args.variant or (auto_variant(now_hour()) if state.get("auto")
+                                   else guess_variant(image))
         palette = palette_from_wallpaper(image, variant)
         state.update(source="wallpaper", variant=variant)
     apply(palette, state)
 
 
+def auto_variant(hour):
+    return "light" if DAY_START <= hour < NIGHT_START else "dark"
+
+
+def auto_due(state, hour):
+    """auto açıksa ve duvar kağıdı renkleri yanlış varyanttaysa olması gereken varyant; yoksa None."""
+    if not state.get("auto") or state.get("source") != "wallpaper":
+        return None
+    wallpaper = state.get("wallpaper")
+    if not wallpaper or not Path(wallpaper).is_file():
+        return None
+    want = auto_variant(hour)
+    return want if state.get("variant", "dark") != want else None
+
+
+def now_hour():
+    import time
+    return time.localtime().tm_hour
+
+
 def cmd_apply(args):
     state = load_state()
+    want = auto_due(state, now_hour())
+    if want:                                # oturum açılışı: gece kapatıldıysa sabah açık başlasın
+        state["variant"] = want
+        apply(palette_from_wallpaper(state["wallpaper"], want), state, reload=not args.no_reload)
+        return
     apply(palette_for_state(state), state, reload=not args.no_reload)
+
+
+def cmd_auto(args):
+    state = load_state()
+    if args.action == "off":
+        state.pop("auto", None)
+        write_atomic(STATE_FILE, json.dumps(state, indent=2) + "\n")
+        print("theme: auto light/dark off")
+        return
+    if args.action == "on":
+        state["auto"] = True
+        write_atomic(STATE_FILE, json.dumps(state, indent=2) + "\n")
+        print(f"theme: auto light/dark on (light {DAY_START:02d}:00–{NIGHT_START:02d}:00)")
+    want = auto_due(state, now_hour())
+    if want:
+        state["variant"] = want
+        apply(palette_from_wallpaper(state["wallpaper"], want), state)
 
 
 def cmd_list(args):
@@ -476,7 +524,8 @@ def cmd_pick(args):
 def cmd_current(args):
     state = load_state()
     if state.get("source") == "wallpaper":
-        print(f"source:     wallpaper ({state.get('variant', 'dark')})")
+        auto = ", auto" if state.get("auto") else ""
+        print(f"source:     wallpaper ({state.get('variant', 'dark')}{auto})")
     else:
         print(f"source:     preset {state.get('preset', DEFAULT_PRESET)}")
     print(f"wallpaper:  {state.get('wallpaper', '(none, solid color)')}")
@@ -523,6 +572,10 @@ def main():
     p = sub.add_parser("apply", help="re-apply the saved selection")
     p.add_argument("--no-reload", action="store_true", help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_apply)
+
+    p = sub.add_parser("auto", help="wallpaper colors: light by day, dark in the evening")
+    p.add_argument("action", choices=("on", "off", "check"))
+    p.set_defaults(func=cmd_auto)
 
     sub.add_parser("list", help="list presets").set_defaults(func=cmd_list)
     sub.add_parser("pick", help="choose a preset or a wallpaper from a menu (fuzzel)").set_defaults(func=cmd_pick)
