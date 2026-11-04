@@ -11,6 +11,7 @@
 #       record: ekran kaydı (screen-record; panel kapanınca başlar, kendisi kayda girmesin).
 #   quick-settings screenshot | edit-shot      paneli kapatıp alan seçtirir / son görüntüyü düzenler
 #   quick-settings open <program> [argüman…]     paneli kapatıp programı niri üzerinden açar
+#   quick-settings displays                     paneli kapatıp monitör yerleşimi menüsünü açar
 #   quick-settings lock | logout | reboot | poweroff
 #       Oturum. Çıkış / yeniden başlat / kapat önce fuzzel ile onay ister.
 #
@@ -107,6 +108,11 @@ case "$item ${1:-}" in
         close_panel
         "$BIN/screenshot-edit" last ;;
 
+    "displays ")
+        close_panel
+        sleep 0.3
+        "$BIN/displays" pick ;;
+
     "open "*)
         close_panel
         niri msg action spawn -- "$@" ;;
@@ -126,6 +132,6 @@ case "$item ${1:-}" in
 
     *)
         echo "Usage: quick-settings wifi|bluetooth|dnd|layout|power-saver|performance|mic|night|awake|record [status]" >&2
-        echo "       quick-settings screenshot · edit-shot · open <program> · lock · logout · reboot · poweroff" >&2
+        echo "       quick-settings screenshot · edit-shot · displays · open <program> · lock · logout · reboot · poweroff" >&2
         exit 1 ;;
 esac

@@ -180,6 +180,7 @@ check "scripts"           scripts
 check "layout planner"    python3 -I "$DOTFILES/bin/.local/bin/layout-mode" selftest
 check "bar status rules"  python3 -I "$DOTFILES/bin/.local/bin/bar-status" selftest
 check "media popup rules" python3 -I "$DOTFILES/bin/.local/bin/media-popup" selftest
+check "monitor placement" python3 -I "$DOTFILES/bin/.local/bin/displays" selftest
 check "presets"           presets
 check "systemd units"     units
 

@@ -2,8 +2,10 @@
 //
 // Nasıl çalışıyor:
 // - Laptop ekranı (eDP-1) açıkça (0,0) konumuna yerleşir.
-// - Konumu yazılmamış her ekranı (harici monitörler) niri otomatik olarak
-//   laptopun SAĞINA dizer. Monitör her takılıp çıkarıldığında düzen baştan hesaplanır.
+// - Harici monitörün laptopa göre yerini (üstte, solda…) `displays` komutu ayarlar:
+//   Super+P ya da hızlı ayarlar → Settings → Displays. Seçim o monitörün marka-model-seri
+//   adıyla ~/.local/state/displays/niri.kdl'ye yazılır; monitör her takıldığında kendi
+//   yerine geçer. Kayıtlı olmayan monitörü niri otomatik olarak laptopun SAĞINA dizer.
 // - Kapak kapanınca niri iç ekranı kendisi kapatır; açılınca geri açar.
 //   Harici monitör bağlıyken logind uykuya geçmez, bağlı değilken uyur (sistem varsayılanı).
 
@@ -14,10 +16,13 @@ output "eDP-1" {
     position x=0 y=0
 }
 
-// Belirli bir harici monitöre özel ayar gerekirse (mod, ölçek, konum),
-// `niri msg outputs` çıktısındaki "Marka Model Seri" adıyla ekle. Örnek:
+// Belirli bir harici monitöre özel ayar gerekirse (mod, ölçek), `niri msg outputs`
+// çıktısındaki "Marka Model Seri" adıyla ekle. Örnek:
 //
 // output "Dell Inc. DELL U2415 XXXXXXXX" {
-//     mode "1920x1200@59.950"
+//     mode "1920x1080@120.000"
 //     scale 1
 // }
+//
+// Dikkat: `displays` ile yerini ayarladığın bir monitörü burada da tanımlarsan niri iki
+// bloğu birleştirmez, yalnızca birini kullanır. O monitörün konumunu ya da modunu kaybedersin.

@@ -26,6 +26,7 @@ NIRI_SERVICES=(
 
 WANTS_DIR="$HOME/.config/systemd/user/niri.service.wants"
 THEME_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/theme"
+DISPLAYS_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/displays"
 
 # Brave (Flatpak) şifre/çerez anahtarını niri'de de KDE'deki gibi KWallet'te arasın.
 # Flatpak sandbox'ı ~/dotfiles'ı göremez; bu yüzden symlink değil kopya.
@@ -69,11 +70,13 @@ do_uninstall() {
     systemctl --user daemon-reload
     # theme komutunun ürettiği dosyalar (yalnızca üretilmiş veriler).
     rm -rf "$THEME_STATE"
+    # displays komutunun monitör kayıtları (config.kdl onu isteğe bağlı okur).
+    rm -rf "$DISPLAYS_STATE"
     # Brave flags dosyası yalnızca bizim kopyamızsa silinir.
     if cmp -s "$BRAVE_FLAGS_SRC" "$BRAVE_FLAGS_DST" 2>/dev/null; then
         rm -f "$BRAVE_FLAGS_DST"
     fi
-    echo "Removed links and generated theme files. The repo is still at: $DOTFILES"
+    echo "Removed links, generated theme files and saved monitor positions. The repo is still at: $DOTFILES"
 }
 
 case "${1:-install}" in

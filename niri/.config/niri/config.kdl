@@ -5,6 +5,7 @@
 //
 //   input.kdl    klavye düzeni, touchpad
 //   outputs.kdl  ekranlar: ölçek, konum, harici monitör
+//   ~/.local/state/displays/niri.kdl  harici monitörlerin yeri — `displays` komutu üretir (Super+P)
 //   layout.kdl   boşluklar, sütun genişlikleri, odak halkası
 //   binds.kdl    kısayollar
 //   rules.kdl    pencere kuralları (köşeler, gölgeler, yüzen pencereler)
@@ -15,6 +16,7 @@
 
 include "input.kdl"
 include "outputs.kdl"
+include optional=true "~/.local/state/displays/niri.kdl"
 include "layout.kdl"
 include "binds.kdl"
 include "rules.kdl"

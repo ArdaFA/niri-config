@@ -18,6 +18,8 @@ binds {
     Mod+O repeat=false hotkey-overlay-title="Overview" { toggle-overview; }
     Mod+Shift+E hotkey-overlay-title="Log out" { quit; }
     Mod+Shift+P hotkey-overlay-title="Turn off monitors" { power-off-monitors; }
+    // Harici monitör laptopun neresinde (üst/alt/sol/sağ). Windows'taki "Project" kısayoluyla aynı tuş.
+    Mod+P hotkey-overlay-title="Arrange monitors" { spawn-sh "~/.local/bin/displays pick"; }
     // Tam ekran bir uygulama (ör. sanal makine) kısayolları yakalarsa geri almak için.
     Mod+Escape allow-inhibiting=false { toggle-keyboard-shortcuts-inhibit; }
 

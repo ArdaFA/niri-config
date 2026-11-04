@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""displays — where the external monitor sits relative to the laptop screen.
+
+  displays pick                       choose from a menu (fuzzel; Super+P)
+  displays above|below|left|right     place the connected monitor there
+  displays auto                       forget this monitor (niri default: right of the laptop)
+  displays list                       remembered monitors (* = connected now)
+  displays apply                      rewrite the niri file from the saved choices
+
+Every monitor is remembered by make, model and serial, so each one keeps its
+own place: set it once per monitor and niri arranges it whenever it is plugged in.
+"""
+# Not: Kullanıcıya görünen metinler İngilizce; yorumlar Türkçe.
+#
+# Nasıl çalışıyor: seçimler state.json'da tutulur, niri.kdl ondan üretilir.
+# config.kdl bu dosyayı `include optional=true` ile okur; niri dosyayı izlediği için
+# yazıldığı anda yeni düzen uygulanır. Kalıcıdır (yeniden başlatınca da geçerli).
+# Hiç kaydı olmayan monitörü niri kendisi laptopun sağına koyar.
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+STATE = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "displays"
+STATE_FILE = STATE / "state.json"
+NIRI_FILE = STATE / "niri.kdl"
+
+PLACES = ("above", "below", "left", "right")
+LABELS = {
+    "above": "Above the laptop",
+    "below": "Below the laptop",
+    "left": "Left of the laptop",
+    "right": "Right of the laptop",
+    "auto": "Automatic (right)",
+}
+LAPTOP_PREFIXES = ("eDP", "LVDS", "DSI")
+
+
+class Error(Exception):
+    pass
+
+
+# ── niri ──────────────────────────────────────────────────────────────────
+
+def niri_json(*args):
+    try:
+        out = subprocess.run(["niri", "msg", "--json", *args],
+                             capture_output=True, text=True, timeout=5)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        raise Error("cannot reach niri")
+    if out.returncode != 0:
+        raise Error("cannot reach niri (is this a niri session?)")
+    return json.loads(out.stdout)
+
+
+def monitor_id(o):
+    """niri'nin config'te eşleştirdiği ad: "Marka Model Seri" (seri yoksa Unknown)."""
+    return " ".join(o.get(k) or "Unknown" for k in ("make", "model", "serial"))
+
+
+def is_laptop(o):
+    return o["name"].startswith(LAPTOP_PREFIXES)
+
+
+def find_screens(outputs, focused=None):
+    """→ (laptop, harici). Birden fazla harici varsa odaktaki, yoksa ada göre ilk."""
+    on = [o for o in outputs.values() if o.get("logical")]
+    laptop = next((o for o in on if is_laptop(o)), None)
+    external = sorted((o for o in on if not is_laptop(o)), key=lambda o: o["name"])
+    if laptop is None:
+        if any(is_laptop(o) for o in outputs.values()):
+            raise Error("the laptop screen is off (lid closed?)")
+        raise Error("no laptop screen found")
+    if not external:
+        raise Error("no external monitor connected")
+    target = next((o for o in external if o["name"] == focused), external[0])
+    return laptop, target
+
+
+def position(place, laptop, monitor):
+    """Mantıksal piksellerle monitörün sol üst köşesi. Üst/alt: ortalı; sol/sağ: üstler hizalı
+    (niri'nin otomatik yerleşimiyle aynı)."""
+    lx, ly = laptop["x"], laptop["y"]
+    lw, lh = laptop["width"], laptop["height"]
+    mw, mh = monitor["width"], monitor["height"]
+    centered = lx + (lw - mw) // 2
+    return {
+        "above": (centered, ly - mh),
+        "below": (centered, ly + lh),
+        "left": (lx - mw, ly),
+        "right": (lx + lw, ly),
+    }[place]
+
+
+# ── Kayıt ve niri dosyası ─────────────────────────────────────────────────
+
+def load_state():
+    try:
+        data = json.loads(STATE_FILE.read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_atomic(path, text):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text)
+    tmp.replace(path)
+
+
+def kdl_string(s):
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def render(state):
+    lines = [
+        "// `displays` komutunun ürettiği dosya; elle düzenleme, `displays pick` (Super+P) kullan.",
+        "// Her monitör marka-model-seri adıyla tanınır, takıldığında kendi yerine geçer.",
+        "",
+    ]
+    for name in sorted(state):
+        entry = state[name]
+        lines += [
+            f"// {entry['place']}",
+            f"output {kdl_string(name)} {{",
+            f"    position x={int(entry['x'])} y={int(entry['y'])}",
+            "}",
+            "",
+        ]
+    return "\n".join(lines)
+
+
+def save(state):
+    write_atomic(STATE_FILE, json.dumps(state, indent=2, sort_keys=True) + "\n")
+    write_atomic(NIRI_FILE, render(state))
+
+
+# ── Komutlar ──────────────────────────────────────────────────────────────
+
+def current_screens():
+    outputs = niri_json("outputs")
+    try:
+        focused = (niri_json("focused-output") or {}).get("name")
+    except Error:
+        focused = None
+    laptop, target = find_screens(outputs, focused)
+    return laptop, target
+
+
+def place(where):
+    laptop, target = current_screens()
+    name = monitor_id(target)
+    state = load_state()
+    if where == "auto":
+        if state.pop(name, None) is None:
+            return f"{target['model'] or target['name']}: already automatic (right of the laptop)"
+    else:
+        x, y = position(where, laptop["logical"], target["logical"])
+        state[name] = {"place": where, "x": x, "y": y}
+    save(state)
+    return f"{target['model'] or target['name']}: {LABELS[where].lower()}"
+
+
+def notify(msg):
+    subprocess.run(["notify-send", "-a", "Displays", "-t", "3000", "Displays", msg],
+                   stderr=subprocess.DEVNULL, check=False)
+
+
+def cmd_pick():
+    """fuzzel menüsü; şu anki yer seçili gelir. Esc: hiçbir şey değişmez."""
+    try:
+        laptop, target = current_screens()
+    except Error as e:
+        notify(str(e).capitalize())
+        raise
+    current = load_state().get(monitor_id(target), {}).get("place", "auto")
+    keys = list(PLACES) + ["auto"]
+    rows = [LABELS[k] + ("   ·" if k == current else "") for k in keys]
+    model = target["model"] or target["name"]
+    try:
+        result = subprocess.run(
+            ["fuzzel", "--dmenu", "--index", "--no-sort", f"--lines={len(rows)}", "--width=30",
+             f"--select-index={keys.index(current)}", "--prompt=monitor ❯ ",
+             f"--placeholder={model}"],
+            input="\n".join(rows) + "\n", capture_output=True, text=True)
+    except FileNotFoundError:
+        raise Error("fuzzel is not installed")
+    choice = result.stdout.strip()
+    if result.returncode != 0 or not choice.isdigit() or int(choice) >= len(keys):
+        return
+    if keys[int(choice)] != current:
+        print(place(keys[int(choice)]))
+
+
+def cmd_list():
+    state = load_state()
+    try:
+        connected = {monitor_id(o) for o in niri_json("outputs").values() if o.get("logical")}
+    except Error:
+        connected = set()
+    if not state:
+        print("No monitors remembered; every external monitor goes right of the laptop.")
+        return
+    width = max(len(n) for n in state)
+    for name in sorted(state):
+        mark = "*" if name in connected else " "
+        print(f"{mark} {name:<{width}}  {state[name]['place']}")
+
+
+def selftest():
+    laptop = {"x": 0, "y": 0, "width": 1600, "height": 900}
+    monitor = {"x": 1600, "y": 0, "width": 1920, "height": 1080}
+    assert position("above", laptop, monitor) == (-160, -1080)
+    assert position("below", laptop, monitor) == (-160, 900)
+    assert position("left", laptop, monitor) == (-1920, 0)
+    assert position("right", laptop, monitor) == (1600, 0)
+
+    def out(name, make, serial, logical):
+        return {"name": name, "make": make, "model": "M", "serial": serial,
+                "logical": logical and dict(logical)}
+    outputs = {"eDP-1": out("eDP-1", "Sharp", None, laptop),
+               "DP-1": out("DP-1", "Dell Inc.", "A1", monitor),
+               "HDMI-A-1": out("HDMI-A-1", "LG", "B2", monitor)}
+    assert monitor_id(outputs["eDP-1"]) == "Sharp M Unknown"
+    assert find_screens(outputs, "HDMI-A-1")[1]["name"] == "HDMI-A-1"
+    assert find_screens(outputs, "eDP-1")[1]["name"] == "DP-1"
+    for broken, err in ((dict(outputs, **{"eDP-1": out("eDP-1", "Sharp", None, None)}), "off"),
+                        ({"eDP-1": outputs["eDP-1"]}, "no external")):
+        try:
+            find_screens(broken)
+            raise AssertionError("expected an error")
+        except Error as e:
+            assert err in str(e), e
+    text = render({'Odd "Name" X': {"place": "above", "x": -160, "y": -1080}})
+    assert 'output "Odd \\"Name\\" X" {' in text and "position x=-160 y=-1080" in text
+    print("ok")
+
+
+def main():
+    args = sys.argv[1:]
+    cmd = args[0] if args else "pick"
+    try:
+        if cmd in PLACES or cmd == "auto":
+            print(place(cmd))
+        elif cmd == "pick":
+            cmd_pick()
+        elif cmd == "list":
+            cmd_list()
+        elif cmd == "apply":
+            save(load_state())
+        elif cmd == "selftest":
+            selftest()
+        elif cmd in ("-h", "--help", "help"):
+            print(__doc__.strip())
+        else:
+            print(__doc__.strip(), file=sys.stderr)
+            sys.exit(2)
+    except Error as e:
+        print(f"displays: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

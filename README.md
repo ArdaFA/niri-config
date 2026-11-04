@@ -158,6 +158,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `bin/.local/bin/night-light` | Gece ışığını açar/kapatır (`night-light.service`) |
 | `bin/.local/bin/screenshot-edit` | Alan seçtirip görüntüyü swappy'de açar (ya da son görüntüyü) |
 | `bin/.local/bin/screen-record` | Ekran kaydı (wf-recorder): başlat/durdur, Waybar'daki `REC` |
+| `bin/.local/bin/displays` | Harici monitörün laptopa göre yeri (üst/alt/sol/sağ), her monitör için ayrı hatırlanır, bkz. [Ekranlar](#ekranlar) |
 | `systemd/.config/systemd/user/night-light.service` | Gece ışığı: wlsunset ile sıcak ekran rengi. Oturum açılışında başlamaz. |
 | `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
 | `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)) |
@@ -170,6 +171,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | Yol | Nedir |
 |---|---|
 | `~/.local/state/theme/` | `theme` komutunun ürettiği renk dosyaları, kayıtlı seçim, duvar kağıdı bağlantısı |
+| `~/.local/state/displays/` | `displays` komutunun hatırladığı monitör yerleri (`state.json`) ve niri'nin okuduğu `niri.kdl` |
 | `~/.config/systemd/user/niri.service.wants/` | `install.sh`'nin oluşturduğu servis bağlantıları |
 | `~/.local/share/fonts/DepartureMono/` | Font |
 | `~/.cargo/bin/wallust` | wallust |
@@ -452,6 +454,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 | `Super+Shift+ß` | Kısayol listesi |
 | `Super+Alt+L` | Ekranı kilitle |
 | `Super+Shift+P` | Ekranları kapat (fare/klavye ile açılır) |
+| `Super+P` | Harici monitör laptopun neresinde: üstte, altta, solda, sağda (bkz. [Ekranlar](#ekranlar)) |
 | `Super+Shift+E` | Oturumu kapat (onay ister) |
 | `Super+Escape` | Bir uygulama (ör. sanal makine) kısayolları yakaladıysa geri al |
 | `Super+T` | Düzen modu: AUTO (ızgara) ↔ FREE (elle), bkz. [Otomatik düzen](#otomatik-düzen-auto--free) |
@@ -502,6 +505,7 @@ tutamak olmaz. Bu yüzden `Super` + sağ tık her pencerede aynı çalışan yol
 |---|---|
 | `Super+Shift+←/→/↑/↓` veya `Super+Shift+H/L/K/J` | O yöndeki monitöre odaklan |
 | `Super+Shift+Ctrl+←/→/↑/↓` veya `Super+Shift+Ctrl+H/L/K/J` | Sütunu o yöndeki monitöre taşı |
+| `Super+P` | Monitörün yerini seç (üst/alt/sol/sağ), bkz. [Ekranlar](#ekranlar) |
 
 ### Workspace'ler (her monitörde dikey dizilir)
 
@@ -745,7 +749,7 @@ Panelde yukarıdan aşağıya:
 
 | Bölüm | Ne yapar |
 |---|---|
-| `Settings ▼` | Sound (pavucontrol) · Network (nm-connection-editor) · Bluetooth (blueman-manager) |
+| `Settings ▼` | Sound (pavucontrol) · Network (nm-connection-editor) · Bluetooth (blueman-manager) · Displays (monitörün yeri, `Super+P` ile aynı menü) |
 | `Lock` | Ekranı kilitler |
 | `Power ▼` | Log out · Restart · Shut down. fuzzel'de onay ister; listede ilk sıradaki `Cancel`, yani Enter'a hemen basmak iptal eder. |
 | Wi-Fi | Aç/kapa (`nmcli radio wifi`) |
@@ -872,7 +876,18 @@ Terminalin zemini yarı saydamdır. Arkada duvar kağıdı bulanık görünür, 
 Dosya: `niri/.config/niri/outputs.kdl`. Bağlı ekranları görmek için: `niri msg outputs`.
 
 - **Laptop ekranı (`eDP-1`):** Ölçek **2**, mantıksal 1600×900. Daha fazla alan için `scale 1.85` yaz (KDE'deki değer); piksel font o zaman biraz yumuşar.
-- **Harici monitör:** Konumu yazılmadığı için niri onu otomatik olarak laptopun **sağına** koyar. Takıp çıkarınca düzen yeniden kurulur.
+- **Harici monitörün yeri:** `Super+P` (ya da hızlı ayarlar → `Settings ▼` → Displays) bir menü açar:
+  *Above / Below / Left of / Right of the laptop* ve *Automatic (right)*. Seçtiğin anda uygulanır.
+  - **Her monitör kendi yerini hatırlar.** niri monitörleri marka, model ve seri numarasıyla
+    tanıdığı için seçim o monitöre bağlanır. Bir kez ayarlarsın, sonra takınca kendiliğinden
+    yerine geçer. Evde ve okulda ayrı monitörler varsa ikisi için de bir şey yapmana gerek kalmaz.
+  - **Hiç ayarlanmamış monitör** otomatik olarak laptopun **sağına**, üstler hizalı gelir.
+  - **Üstte/altta** seçeneği monitörü laptopa göre ortalar, **solda/sağda** üst kenarları hizalar.
+  - **Komut satırından:** `displays above|below|left|right`, unutturmak için `displays auto`,
+    kayıtlıları görmek için `displays list` (`*` = şu an bağlı).
+  - Birden fazla harici monitör bağlıysa ayar odaktaki monitöre uygulanır (o an farenin/odağın olduğu).
+  - Seçimler `~/.local/state/displays/` içinde, repo'da değil; `config.kdl` oradaki `niri.kdl`'yi okur.
+    Fare bir ekrandan ötekine yalnızca birbirine değen kenarlardan geçer.
 - **Kapak kapalıyken:** niri iç ekranı kendisi kapatır, harici monitörü (0,0)'a alır ve laptop
   ekranındaki workspace'leri harici monitöre taşır. Kapak açılınca geri getirir. Harici monitör
   bağlıysa sistem uykuya geçmez, bağlı değilse uyur (logind varsayılanı). Kontrol etmek için
@@ -884,7 +899,7 @@ Dosya: `niri/.config/niri/outputs.kdl`. Bağlı ekranları görmek için: `niri 
   servis sütunları ekrana sığdırır; FREE modunda ya da servis kapalıyken şerit niri'nin
   bildiği gibi çalışır. Gezinmek için `Super+H/L`, `Super+Home/End` ya da `Super+O` (genel bakış). Pencere sürüklerken ekran kenarında görünümün kayması kapalı
   (`input.kdl` → `dnd-edge-view-scroll`, `trigger-width 0`). niri varsayılanına dönmek için o bloğu sil.
-- **Belirli bir monitöre özel ayar** (ör. 120 Hz modu, farklı konum): `niri msg outputs` çıktısındaki marka-model-seri adıyla ekle:
+- **Belirli bir monitöre özel ayar** (ör. 120 Hz modu): `outputs.kdl`'ye `niri msg outputs` çıktısındaki marka-model-seri adıyla ekle:
 
   ```kdl
   output "Dell Inc. DELL XXXX ABC123" {
@@ -892,6 +907,9 @@ Dosya: `niri/.config/niri/outputs.kdl`. Bağlı ekranları görmek için: `niri 
       scale 1
   }
   ```
+
+  Dikkat: yerini `displays` ile ayarladığın bir monitörü buraya da yazarsan niri iki bloğu
+  birleştirmez, yalnızca birini kullanır; o monitörün ya konumu ya modu kaybolur.
 
 Klavye düzeni ve touchpad: `niri/.config/niri/input.kdl`. Doğal kaydırma için `natural-scroll`
 satırının başındaki `//` işaretini sil.
