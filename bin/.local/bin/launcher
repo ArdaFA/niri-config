@@ -23,6 +23,8 @@
 #   hesap makinesi basit işlemler (2*(3+4)) Python'la anında; birim, kur, yüzde, fonksiyon
 #                  (5 km to mi, 100 usd to eur, sqrt(2)) qalc ile. "=" ile başlamak zorlar.
 #   emoji          ":smile" — IBus'un emoji listesi; seçilen kopyalanır
+#   renk           "#f4a7b9", "rgb(…)", "hsl(…)": örnek + hex/rgb/hsl; "Pick color" ekrandan alır
+#   komut          "> komut": terminalde çalıştırır (Ctrl+Enter: arka planda); geçmiş hatırlanır
 #   pano geçmişi   Super+Ctrl+V (SIGUSR2) pencereyi pano modunda açar; kayıtları `clipboard`
 #                  tutar (clipboard-history.service, RAM'de)
 #   web            her sorgunun en altında; alan adı yazılırsa doğrudan açar
@@ -32,6 +34,7 @@
 # Ekrana yazılan her şey İngilizce (arayüz kuralı); açıklamalar Türkçe.
 
 import ast
+import colorsys
 import json
 import math
 import operator
@@ -257,6 +260,49 @@ def rank_files(paths, words, recent, home, limit):
     return ranked[:limit]
 
 
+def parse_color(text):
+    """'#f4a7b9', '#fab', 'rgb(244 167 185)', 'hsl(346, 79%, 81%)' → (r, g, b) ya da None."""
+    s = text.strip().lower()
+    m = re.fullmatch(r"#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})", s)
+    if m:
+        h = m.group(1)
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+    num = r"(-?[\d.]+%?)"
+    m = re.fullmatch(rf"(rgb|hsl)a?\(\s*{num}[\s,]+{num}[\s,]+{num}(?:\s*[,/]\s*[\d.]+%?)?\s*\)", s)
+    if not m:
+        return None
+    kind, *parts = m.groups()
+    try:
+        values = [float(p.rstrip("%")) for p in parts]
+    except ValueError:
+        return None
+    if kind == "rgb":
+        rgb = [v * 255 / 100 if p.endswith("%") else v for v, p in zip(values, parts)]
+    else:
+        h, sat, light = values[0] % 360 / 360, values[1] / 100, values[2] / 100
+        if not (0 <= sat <= 1 and 0 <= light <= 1):
+            return None
+        rgb = [c * 255 for c in colorsys.hls_to_rgb(h, light, sat)]
+    if any(c < 0 or c > 255.5 for c in rgb):
+        return None
+    return tuple(int(c + 0.5) for c in rgb)
+
+
+def color_formats(rgb):
+    r, g, b = rgb
+    h, light, sat = colorsys.rgb_to_hls(r / 255, g / 255, b / 255)
+    return [f"#{r:02x}{g:02x}{b:02x}", f"rgb({r}, {g}, {b})",
+            f"hsl({round(h * 360) % 360}, {round(sat * 100)}%, {round(light * 100)}%)"]
+
+
+def picked_color(output):
+    """`niri msg pick-color` çıktısından (r, g, b); iptal edildiyse None."""
+    m = re.search(r"#[0-9a-fA-F]{6}\b", output or "")
+    return parse_color(m.group(0)) if m else None
+
+
 def window_app_keys(app_id):
     """niri app_id'sinden .desktop eşleştirme anahtarları."""
     a = (app_id or "").lower()
@@ -311,6 +357,17 @@ def selftest():
         ("files recent first", rank_files(["/h/a/notes.md", "/h/b/notes.md"], ["notes"],
                                           {"/h/b/notes.md"}, "/h", 5)[0][1], "/h/b/notes.md"),
         ("window keys", window_app_keys("org.kde.dolphin"), ["org.kde.dolphin", "org.kde.dolphin", "dolphin"]),
+        ("color hex", parse_color("#F4A7B9"), (244, 167, 185)),
+        ("color short", parse_color("#fab"), (255, 170, 187)),
+        ("color rgb", parse_color("rgb(0 128 255)"), (0, 128, 255)),
+        ("color rgba %", parse_color("rgba(100%, 0%, 50%, 0.5)"), (255, 0, 128)),
+        ("color hsl", parse_color("hsl(120, 100%, 25%)"), (0, 128, 0)),
+        ("color bad", (parse_color("#ggg"), parse_color("rgb(300,0,0)"), parse_color("deface")),
+         (None, None, None)),
+        ("color formats", color_formats((255, 0, 0)), ["#ff0000", "rgb(255, 0, 0)", "hsl(0, 100%, 50%)"]),
+        ("color hsl roundtrip", all(abs(a - b) <= 3 for a, b in zip(parse_color(color_formats((244, 167, 185))[2]), (244, 167, 185))), True),
+        ("picked", picked_color("Picked color: rgb(0.957, 0.655, 0.725)\nHex: #f4a7b9\n"), (244, 167, 185)),
+        ("pick cancelled", picked_color("No color was picked.\n"), None),
     ]
     failed = [(name, got, want) for name, got, want in cases if got != want]
     for name, got, want in failed:
@@ -344,6 +401,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("GtkLayerShell", "0.1")
 gi.require_version("Pango", "1.0")
+import cairo  # noqa: E402
 from gi.repository import Gdk, Gio, GLib, Gtk, GtkLayerShell, Pango  # noqa: E402
 
 try:                                    # GLib 2.86+: Gio.DesktopAppInfo'nun yeni yeri
@@ -377,9 +435,11 @@ SHADOW = 18             # kutunun çevresinde gölgeye ayrılan boşluk
 MARGIN_TOP = 110        # ekranın (panelin) üstünden uzaklık
 DEBOUNCE = 110          # qalc ve plocate yazmayı bu kadar ms bekler
 ACTION_DELAY = 180      # eylemlerden önce pencere kapansın (ekran görüntüsüne girmesin)
-LIMITS = {"calc": 1, "apps": 6, "windows": 5, "actions": 6, "files": 7, "web": 2, "emoji": 60}
+LIMITS = {"calc": 1, "apps": 6, "windows": 5, "actions": 6, "files": 7, "web": 2, "emoji": 60,
+          "color": 3, "commands": 8}
 TITLES = {"calc": "Calculator", "apps": "Applications", "windows": "Windows",
-          "actions": "Settings & actions", "files": "Files", "web": "Web", "emoji": "Emoji"}
+          "actions": "Settings & actions", "files": "Files", "web": "Web", "emoji": "Emoji",
+          "color": "Color", "commands": "Run a command"}
 
 CSS = b"""
 .launcher-win, .backdrop { background: transparent; }
@@ -518,6 +578,25 @@ def themed(*names):
         if theme.has_icon(name):
             return Gio.ThemedIcon.new(name)
     return None
+
+
+def swatch(rgb, size=40):
+    """Yuvarlak köşeli renk örneği (GIcon olarak: satırdaki simge yerine)."""
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, size, size)
+    cr = cairo.Context(surface)
+    r, inset = size * 0.22, 2
+    w = size - 2 * inset
+    cr.new_sub_path()
+    for cx, cy, a in ((inset + w - r, inset + r, -math.pi / 2), (inset + w - r, inset + w - r, 0),
+                      (inset + r, inset + w - r, math.pi / 2), (inset + r, inset + r, math.pi)):
+        cr.arc(cx, cy, r, a, a + math.pi / 2)
+    cr.close_path()
+    cr.set_source_rgb(*(c / 255 for c in rgb))
+    cr.fill_preserve()
+    cr.set_source_rgba(1, 1, 1, 0.25)                # koyu temada siyah görünsün diye ince kenar
+    cr.set_line_width(2)
+    cr.stroke()
+    return Gdk.pixbuf_get_from_surface(surface, 0, 0, size, size)
 
 
 def parse_bool(out):
@@ -841,7 +920,8 @@ class Launcher:
         query = self.entry.get_text()
         self.local = self.search_local(query)
         self.render()
-        if self.mode == "search" and query.strip() and not query.startswith(":"):
+        if (self.mode == "search" and query.strip() and query[0] not in ":>"
+                and not parse_color(query)):
             self.timer = GLib.timeout_add(DEBOUNCE, self.search_async, self.gen, query)
 
     def cancel_async(self):
@@ -857,6 +937,11 @@ class Launcher:
             return {"": self.search_clipboard(fold(query).split())}
         if query.startswith(":"):
             return {"emoji": self.search_emoji(fold(query[1:]).split())}
+        if query.startswith(">"):
+            return {"commands": self.search_commands(query[1:].strip())}
+        rgb = parse_color(query)
+        if rgb:
+            return {"color": self.color_items(rgb)}
         words = fold(query).split()
         if not words:
             return {"": self.all_apps()}
@@ -960,7 +1045,7 @@ class Launcher:
             self.tip.set_text("Kept in memory until you log out" if shown or self.entry.get_text()
                               else "Clipboard history is empty")
         elif not self.entry.get_text():
-            self.tip.set_text(":emoji   =calculate")
+            self.tip.set_text(":emoji   =calculate   >command")
         else:
             self.tip.set_text("" if shown else "No results")
         self.footer.set_visible(shown or bool(self.entry.get_text()))
@@ -1172,6 +1257,52 @@ class Launcher:
                     themed("accessories-calculator-symbolic", "accessories-calculator"),
                     hint="Copy", run=lambda: copy(value))
 
+    def color_items(self, rgb):
+        icon = swatch(rgb)
+        return [Item("color", ("color", n), text, sub, icon, hint="Copy", run=lambda text=text: copy(text))
+                for n, (text, sub) in enumerate(zip(color_formats(rgb), ("Hex", "RGB", "HSL")))]
+
+    def pick_color(self):
+        def done(out):
+            rgb = picked_color(out)
+            if rgb:
+                hexa, rgb_text, _ = color_formats(rgb)
+                copy(hexa)
+                run_async(["notify-send", "-a", "Color picker", "-i", "color-select-symbolic",
+                           "-h", "string:x-canonical-private-synchronous:color-picker",
+                           f"Copied {hexa}", rgb_text])
+        # Uzun bekleyebilir: niri imleci seçici yapar, tıklayınca (ya da Esc) döner.
+        run_async(["niri", "msg", "pick-color"], done, timeout=120_000)
+
+    def search_commands(self, text):
+        shell = os.environ.get("SHELL") or "/bin/sh"
+        items = []
+
+        def item(cmd, sub):
+            return Item("commands", ("cmd", cmd), cmd, sub,
+                        themed("utilities-terminal-symbolic", "utilities-terminal"), hint="Run in terminal",
+                        run=lambda: self.run_command(cmd, shell, True),
+                        alt=lambda: self.run_command(cmd, shell, False), alt_hint="run in background")
+        if text:
+            items.append(item(text, os.path.basename(shell)))
+        now = time.time()
+        past = self.history.data.get("cmd", {})
+        ranked = sorted(past, key=lambda c: -frecency(self.history.get("cmd", c), now))
+        items += [item(c, "Recent") for c in ranked if c != text and (not text or c.startswith(text))]
+        if not items:
+            items.append(Item("commands", ("cmd-help",), "Type a command after >",
+                              "Runs in a terminal; Ctrl+Enter runs it in the background", hint=""))
+        return items
+
+    def run_command(self, cmd, shell, terminal):
+        self.history.bump("cmd", cmd)
+        if terminal:
+            # Komut kullanıcının kabuğuyla çalışır; bitince terminal açık kalır (çıktı okunsun,
+            # devam edilebilsin).
+            spawn(TERMINAL, "sh", "-c", '"$0" -c "$1"; exec "$0"', shell, cmd)
+        else:
+            spawn(shell, "-c", cmd)
+
     def web_items(self, query):
         q = query.strip()
         items = []
@@ -1269,6 +1400,9 @@ class Launcher:
             stay=True)
         add("Clear clipboard history", "Tools", ("edit-clear-all-symbolic", "edit-clear-symbolic"),
             "clipboard paste copy history delete forget", lambda: spawn(BIN / "clipboard", "clear"))
+
+        add("Pick color", "Tools", ("color-select-symbolic", "color-picker", "applications-graphics-symbolic"),
+            "color colour picker eyedropper hex rgb screen pipette", self.pick_color)
 
         niri = ["niri", "msg", "action"]
         add("Screenshot", "Tools", ("camera-photo-symbolic", "applets-screenshooter-symbolic"),

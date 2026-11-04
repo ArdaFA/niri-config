@@ -111,6 +111,9 @@ gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
 | dosya ya da klasör adının bir parçası (en az 3 harf) | **Files**: önce son açtıkların, sonra ev klasöründeki her şey | açar; `Ctrl+Enter` klasöründe gösterir |
 | `2*(3+4)`, `5 km to mi`, `100 usd to eur`, `20% of 80`, `sqrt(2)` | **Calculator**: sonuç en üstte | sonucu kopyalar |
 | `:` ile başlayan kelime (`:smile`, `:heart`) | **Emoji** | kopyalar (`Ctrl+V` ile yapıştır) |
+| renk: `#f4a7b9`, `#fab`, `rgb(244 167 185)`, `hsl(346, 78%, 81%)` | **Color**: renk örneği ve hex / rgb / hsl hali | seçilen biçimi kopyalar |
+| `pick color` | **Pick color** eylemi: imleç seçiciye döner, ekranda bir yere tıkla (`Esc` vazgeçer) | rengin hex'ini kopyalar, bildirimde gösterir |
+| `>` ile başlayan komut (`> sudo dnf upgrade`, `> htop`) | **Run a command**; yalnızca `>` yazınca son çalıştırdıkların | terminalde (foot) senin kabuğunla çalıştırır, bitince terminal açık kalır; `Ctrl+Enter` arka planda, pencere açmadan |
 | `github.com` gibi bir adres | **Web**: adresi açar | |
 | herhangi bir şey | **Web**: en altta *Search the web* | tarayıcıda arar |
 
@@ -128,8 +131,9 @@ gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
 - **Hafif ve hızlı:** pencere arka planda hazır bekler (`launcher.service`), `Super+D` ona yalnızca
   bir sinyal gönderir; bu yüzden basar basmaz açılır. Beklerken yaklaşık 45 MB bellek kullanır,
   işlemci kullanmaz. Servis çalışmıyorsa `Super+D` eskisi gibi fuzzel'i açar.
-- Sık kullanılan uygulama ve emoji kayıtları: `~/.local/state/launcher/history.json`. Silersen
-  sıralama sıfırlanır.
+- Sık kullanılan uygulama, emoji ve `>` komut kayıtları: `~/.local/state/launcher/history.json`.
+  Silersen sıralama sıfırlanır. (Komut geçmişi kabuk geçmişi gibidir: içine parola yazdığın
+  bir komutu `>` ile çalıştırma.)
 
 ### Pano geçmişi (Super+Ctrl+V)
 
@@ -280,7 +284,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `~/.local/state/settings/` | Ayarlar uygulamasının yazdıkları: touchpad (`niri.kdl`), kilit süresi ve gece ışığı sıcaklığı (`services.env`) |
 | `~/.cache/settings/` | Duvar kağıtlarının küçük resimleri (silinebilir, yeniden üretilir) |
 | `~/.config/niri-mimeapps.list` | Ayarlar → Default apps'in yazdığı, yalnızca niri oturumunun okuduğu varsayılan uygulamalar |
-| `~/.local/state/launcher/` | Arama penceresinin hatırladığı sık kullanılan uygulamalar ve emojiler |
+| `~/.local/state/launcher/` | Arama penceresinin hatırladığı sık kullanılan uygulamalar, emojiler ve `>` komutları |
 | `$XDG_RUNTIME_DIR/clipboard/` | Pano geçmişi (RAM'de, oturum kapanınca silinir) |
 | `~/.config/systemd/user/niri.service.wants/` | `install.sh`'nin oluşturduğu servis bağlantıları |
 | `~/.local/share/fonts/DepartureMono/` | Font |
