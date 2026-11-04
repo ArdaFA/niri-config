@@ -1201,7 +1201,9 @@ class Launcher:
                 ("appearance", "Appearance", "wallpaper background colors theme opacity transparency terminal look"),
                 ("displays", "Displays", "monitor screen external position arrange night light warmth"),
                 ("touchpad", "Touchpad", "mouse trackpad tap click natural scrolling pointer speed"),
-                ("lock", "Screen lock", "idle timeout lock after minutes screensaver")):
+                ("lock", "Screen lock", "idle timeout lock after minutes screensaver"),
+                ("apps", "Default apps", "default applications open with browser file manager "
+                 "image viewer pdf video music player text editor email mime")):
             add(title, "Settings", ("preferences-system-symbolic", "preferences-system"),
                 keywords, lambda page=page: spawn(settings, page), "Open")
 

@@ -78,13 +78,18 @@ do_uninstall() {
     rm -rf "$DISPLAYS_STATE"
     # Settings uygulamasının yazdıkları: touchpad, kilit süresi, gece ışığı sıcaklığı.
     rm -rf "$SETTINGS_STATE" "${XDG_CACHE_HOME:-$HOME/.cache}/settings"
+    # Ayarlar → Default apps: yalnızca bizim yazdığımız dosyaysa (ilk satırı bizim başlığımız).
+    NIRI_MIMEAPPS="${XDG_CONFIG_HOME:-$HOME/.config}/niri-mimeapps.list"
+    if head -1 "$NIRI_MIMEAPPS" 2>/dev/null | grep -q "^# niri oturumunun varsayılan uygulamaları"; then
+        rm -f "$NIRI_MIMEAPPS"
+    fi
     # Arama penceresinin hatırladığı sık kullanılan uygulamalar ve emojiler.
     rm -rf "$LAUNCHER_STATE"
     # Brave flags dosyası yalnızca bizim kopyamızsa silinir.
     if cmp -s "$BRAVE_FLAGS_SRC" "$BRAVE_FLAGS_DST" 2>/dev/null; then
         rm -f "$BRAVE_FLAGS_DST"
     fi
-    echo "Removed links, generated theme files, saved monitor positions, settings and launcher history. The repo is still at: $DOTFILES"
+    echo "Removed links, generated theme files, saved monitor positions, settings, default apps and launcher history. The repo is still at: $DOTFILES"
 }
 
 case "${1:-install}" in

@@ -48,7 +48,7 @@ GDM son seçilen oturumu hatırlar. KDE'ye dönmek için aynı menüden **Plasma
 | `Super+Enter` | terminal (foot) |
 | `Super+D` | arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji |
 | `Super+Ctrl+V` | pano geçmişi: son kopyaladığın 50 metin |
-| `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, kilit süresi |
+| `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, kilit süresi, varsayılan uygulamalar |
 | `Super+Q` | pencereyi kapat |
 | `Super+Shift+ß` (yani `Super+?`) | ekranda kısayol listesi |
 | `Super+Shift+E` | oturumu kapat |
@@ -70,6 +70,7 @@ All settings. Her değişiklik anında uygulanır, "Apply" düğmesi yok. `Esc` 
 | **Displays** | Harici monitörün laptopa göre yeri (`Super+P` ile aynı, her monitör hatırlanır), gece ışığı ve sıcaklığı |
 | **Touchpad** | Dokunarak tıklama, doğal kaydırma, imleç hızı |
 | **Screen lock** | Kaç dakika boşta kalınca kilitlensin (ekran 30 sn sonra kapanır) |
+| **Default apps** | Hangi uygulama açsın: web bağlantıları, klasörler, metin, resim, PDF, video, müzik, arşiv, e-posta. Liste o türü açabilen kurulu uygulamalardan gelir. |
 
 Uygulama yalnızca bir ön yüz. Ayarlar yine aynı yerlerde duruyor ve komut satırından da
 değiştirilebiliyor:
@@ -82,6 +83,7 @@ değiştirilebiliyor:
 | Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir) |
 | Touchpad | `~/.local/state/settings/niri.kdl`. `config.kdl` bunu `input.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
 | Kilit süresi, gece ışığının sıcaklığı | `~/.local/state/settings/services.env`. `swayidle.service` ve `night-light.service` okur; dosya yoksa servis dosyalarındaki varsayılanlar geçerli (5 dk, 4000 K). |
+| Varsayılan uygulamalar | `~/.config/niri-mimeapps.list`. XDG kuralı: `XDG_CURRENT_DESKTOP=niri` olan oturum bu dosyayı `mimeapps.list`'ten önce okur, KDE hiç okumaz. Yani KDE'deki seçimlerin değişmez; niri'de seçmediğin türler KDE'deki gibi kalır. Bir kategori seçilince o uygulamanın desteklediği bütün türleri yazılır (ör. Images → png, jpeg, webp…). Elle de düzenlenebilir; silersen niri yine KDE'nin seçimlerine döner. |
 
 - **Hafif:** tek dosya (`bin/.local/bin/settings`, Python + GTK3, yeni paket gerektirmez).
   Yarım saniyede açılır, açıkken ~90 MB (boş bir GTK3 penceresi zaten ~67 MB), kapalıyken hiç
@@ -90,7 +92,7 @@ değiştirilebiliyor:
 - **Temayla birlikte değişir:** renkleri temanın paletinden alır; tema değişince kendisi de
   anında yeni renklere geçer.
 - **Komut satırından belli bir sayfa:** `settings displays` (ya da `appearance`, `touchpad`,
-  `lock`). Pencere zaten açıksa yenisi açılmaz, o sayfaya geçer.
+  `lock`, `apps`). Pencere zaten açıksa yenisi açılmaz, o sayfaya geçer.
 - Bilerek olmayanlar: Wi-Fi, Bluetooth, ses (hızlı ayarlar ve kendi pencereleri var), klavye
   düzeni, kısayollar. Bunlar için dosyalar: [Hangi dosya neyi kontrol ediyor](#hangi-dosya-neyi-kontrol-ediyor).
 
@@ -276,6 +278,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `~/.local/state/displays/` | `displays` komutunun hatırladığı monitör yerleri (`state.json`) ve niri'nin okuduğu `niri.kdl` |
 | `~/.local/state/settings/` | Ayarlar uygulamasının yazdıkları: touchpad (`niri.kdl`), kilit süresi ve gece ışığı sıcaklığı (`services.env`) |
 | `~/.cache/settings/` | Duvar kağıtlarının küçük resimleri (silinebilir, yeniden üretilir) |
+| `~/.config/niri-mimeapps.list` | Ayarlar → Default apps'in yazdığı, yalnızca niri oturumunun okuduğu varsayılan uygulamalar |
 | `~/.local/state/launcher/` | Arama penceresinin hatırladığı sık kullanılan uygulamalar ve emojiler |
 | `$XDG_RUNTIME_DIR/clipboard/` | Pano geçmişi (RAM'de, oturum kapanınca silinir) |
 | `~/.config/systemd/user/niri.service.wants/` | `install.sh`'nin oluşturduğu servis bağlantıları |

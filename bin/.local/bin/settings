@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """settings — the settings window of this niri desktop (Super+S).
 
-  settings [appearance|displays|touchpad|lock]   open the window (on that page)
-  settings selftest                              check the file writers (check.sh)
+  settings [appearance|displays|touchpad|lock|apps]   open the window (on that page)
+  settings selftest                                   check the file writers (check.sh)
 
   Appearance   wallpaper, colors (a preset or taken from the wallpaper), terminal opacity
   Displays     where the external monitor sits, night light and its warmth
   Touchpad     tap to click, natural scrolling, pointer speed
   Screen lock  how long the computer may stay idle before it locks
+  Default apps which app opens web links, folders, images, PDFs, videos… in this session
 
 Every change applies at once; there is no Apply button.
 """
@@ -22,6 +23,9 @@ Every change applies at once; there is no Apply button.
 #       niri.kdl       touchpad bloğu; config.kdl input.kdl'den sonra okur, niri anında uygular
 #       services.env   swayidle.service ve night-light.service okur (EnvironmentFile)
 #       settings.json  bu pencerenin hatırladığı değerler
+#   varsayılan uygulamalar → ~/.config/niri-mimeapps.list: XDG kuralı gereği yalnızca
+#       XDG_CURRENT_DESKTOP=niri olan oturum okur ve mimeapps.list'ten önce gelir; KDE'nin
+#       seçimleri (mimeapps.list) değişmez
 #
 # Hafif tutmak için: GTK3 (media-popup ile aynı), tek dosya, animasyon yok; duvar kağıdı
 # küçük resimleri arka planda üretilip ~/.cache/settings'te saklanır.
@@ -67,7 +71,7 @@ FOOT_INI = CONFIG_HOME / "foot" / "foot.ini"
 THUMBS = CACHE_HOME / "settings" / "thumbnails"
 
 PAGES = (("appearance", "Appearance"), ("displays", "Displays"),
-         ("touchpad", "Touchpad"), ("lock", "Screen lock"))
+         ("touchpad", "Touchpad"), ("lock", "Screen lock"), ("apps", "Default apps"))
 DEFAULTS = {"tap": True, "natural_scroll": False, "pointer_speed": 0.0,
             "lock_after": 300, "night_temp": 4000}
 TOUCHPAD_KEYS = ("tap", "natural_scroll", "pointer_speed")
@@ -77,6 +81,38 @@ SCREEN_OFF_DELAY = 30           # kilitten bu kadar saniye sonra ekran kapanır
 NIGHT_MIN, NIGHT_MAX = 2500, 5500
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 THUMB_W, THUMB_H = 124, 70      # mantıksal piksel (16:9)
+
+# Varsayılan uygulamalar: (anahtar, başlık, açıklama, MIME türleri). İlk tür, şu anki seçimi
+# göstermek ve adayları bulmak için kullanılır; seçilen uygulama listedeki türlerden
+# desteklediği her birinin varsayılanı olur.
+MIMEAPPS = CONFIG_HOME / "niri-mimeapps.list"
+APP_CATEGORIES = (
+    ("browser", "Web browser", "Links and web pages",
+     ("x-scheme-handler/https", "x-scheme-handler/http", "text/html", "application/xhtml+xml",
+      "x-scheme-handler/about", "x-scheme-handler/unknown")),
+    ("files", "Files", "Folders", ("inode/directory",)),
+    ("text", "Text editor", "Plain text, Markdown, code",
+     ("text/plain", "text/markdown", "application/json", "application/x-shellscript",
+      "text/x-python", "application/toml", "application/x-yaml", "text/x-log")),
+    ("images", "Images", None,
+     ("image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/heif",
+      "image/bmp", "image/tiff", "image/svg+xml", "image/jxl")),
+    ("pdf", "PDF documents", None, ("application/pdf",)),
+    ("video", "Videos", None,
+     ("video/mp4", "video/webm", "video/x-matroska", "video/quicktime", "video/mpeg",
+      "video/x-msvideo", "video/ogg", "video/3gpp")),
+    ("music", "Music", None,
+     ("audio/mpeg", "audio/flac", "audio/x-flac", "audio/ogg", "audio/x-vorbis+ogg",
+      "audio/opus", "audio/wav", "audio/x-wav", "audio/mp4", "audio/aac")),
+    ("archives", "Archives", "zip, tar, 7z…",
+     ("application/zip", "application/x-tar", "application/x-compressed-tar",
+      "application/x-xz-compressed-tar", "application/x-zstd-compressed-tar",
+      "application/x-bzip2-compressed-tar", "application/gzip", "application/x-7z-compressed",
+      "application/vnd.rar", "application/x-rar")),
+    ("mail", "Email", "mailto: links", ("x-scheme-handler/mailto",)),
+)
+MIMEAPPS_HEADER = ("# niri oturumunun varsayılan uygulamaları. Ayarlar → Default apps yazar; elle de\n"
+                   "# düzenlenebilir. KDE bu dosyayı okumaz (o ~/.config/mimeapps.list'e bakar).\n")
 
 
 # ── Ayar dosyaları (arayüzden bağımsız; selftest bunları sınar) ───────────
@@ -214,6 +250,54 @@ def copy_wallpaper(src):
         dest, n = WALLPAPERS / f"{src.stem}-{n}{src.suffix}", n + 1
     shutil.copy2(src, dest)
     return dest.resolve()
+
+
+def parse_mimeapps(text):
+    """{bölüm: {anahtar: değer}}; sıra korunur, yorumlar atılır."""
+    sections, current = {}, None
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            current = sections.setdefault(line[1:-1], {})
+        elif current is not None and "=" in line:
+            key, _, value = line.partition("=")
+            current[key.strip()] = value.strip()
+    return sections
+
+
+def render_mimeapps(text, defaults):
+    """Var olan dosyaya {MIME türü: masaüstü dosyası ya da None (kaldır)} uygular."""
+    sections = parse_mimeapps(text)
+    section = sections.setdefault("Default Applications", {})
+    for mime, desktop in defaults.items():
+        if desktop:
+            section[mime] = desktop + ";"
+        else:
+            section.pop(mime, None)
+    out = [MIMEAPPS_HEADER]
+    for name, values in sections.items():
+        if not values:
+            continue
+        out.append(f"\n[{name}]\n")
+        out.extend(f"{key}={value}\n" for key, value in values.items())
+    return "".join(out)
+
+
+def category_defaults(app_id, types, supported):
+    """Seçilen uygulamanın desteklediği türler → {tür: uygulama}. Desteklemediklerine dokunulmaz;
+    ilk tür (kategoriyi temsil eden) her zaman yazılır."""
+    return {mime: app_id for n, mime in enumerate(types) if n == 0 or mime in supported}
+
+
+def set_default_app(app_id, types, supported, path=None):
+    path = path or MIMEAPPS
+    try:
+        text = path.read_text()
+    except OSError:
+        text = ""
+    write_atomic(path, render_mimeapps(text, category_defaults(app_id, types, supported)))
 
 
 def load_displays():
@@ -432,6 +516,79 @@ class Choice(Gtk.Box):
             (ctx.add_class if v == value else ctx.remove_class)("selected")
 
 
+ICON_PX = 24                    # bazı simge temaları 24 px'lik boy vermiyor; hepsi aynı boyda olsun
+
+
+def app_icon(app):
+    return app.get_icon() or Gio.ThemedIcon.new("application-x-executable")
+
+
+class AppButton(Gtk.MenuButton):
+    """Seçili uygulamanın simgesi ve adı; tıklayınca o türü açabilen uygulamaların listesi."""
+
+    def __init__(self, on_pick):
+        super().__init__()
+        self.on_pick = on_pick
+        self.get_style_context().add_class("app-button")
+        box = Gtk.Box(spacing=8)
+        self.icon = Gtk.Image(pixel_size=ICON_PX)
+        self.name = label("", ellipsize=Pango.EllipsizeMode.END, max_width_chars=22)
+        box.add(self.icon)
+        box.add(self.name)
+        box.pack_end(Gtk.Image.new_from_icon_name("pan-down-symbolic", Gtk.IconSize.MENU), False, False, 0)
+        self.add(box)
+        self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+        self.list.connect("row-activated", self.picked)
+        scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                      propagate_natural_height=True, max_content_height=360)
+        scroller.add(self.list)
+        scroller.show_all()
+        self.popover = Gtk.Popover()
+        self.popover.get_style_context().add_class("apps")
+        self.popover.add(scroller)
+        self.set_popover(self.popover)
+
+    def load(self, mime):
+        current = Gio.AppInfo.get_default_for_type(mime, False)
+        self.show_app(current)
+        apps, seen = [], set()
+        for app in ([current] if current else []) + list(Gio.AppInfo.get_all_for_type(mime)):
+            if app.get_id() in seen or not (app.should_show() or app is current):
+                continue
+            seen.add(app.get_id())
+            apps.append(app)
+        for child in self.list.get_children():
+            child.destroy()
+        for app in sorted(apps, key=lambda a: a.get_display_name().lower()):
+            item = Gtk.ListBoxRow()
+            item.app = app
+            box = Gtk.Box(spacing=10)
+            box.add(Gtk.Image(gicon=app_icon(app), pixel_size=ICON_PX))
+            box.add(label(app.get_display_name()))
+            if current and app.get_id() == current.get_id():
+                item.get_style_context().add_class("current")
+            item.add(box)
+            item.show_all()
+            self.list.add(item)
+        self.set_sensitive(bool(apps))
+
+    def show_app(self, app):
+        if app is None:
+            self.icon.clear()
+            self.name.set_text("None")
+            return
+        self.icon.set_from_gicon(app_icon(app), Gtk.IconSize.LARGE_TOOLBAR)
+        self.name.set_text(app.get_display_name())
+
+    def picked(self, _list, item):
+        self.popover.popdown()
+        self.show_app(item.app)
+        for child in self.list.get_children():
+            ctx = child.get_style_context()
+            (ctx.add_class if child is item else ctx.remove_class)("current")
+        self.on_pick(item.app)
+
+
 class Switch(Gtk.Switch):
     def __init__(self, on_toggle):
         super().__init__()
@@ -600,6 +757,17 @@ CSS = b"""
 .settings flowboxchild label { color: @panel_subtle; }
 .settings flowboxchild:selected label { color: @panel_fg; }
 .settings flowboxchild:disabled label { color: @panel_muted; }
+
+.settings .app-button { padding: 4px 10px; min-width: 200px; }
+.settings .app-button label { padding-right: 6px; }
+.settings popover.apps {
+    background-color: @panel_surface; border: 1px solid @panel_overlay; border-radius: 10px;
+    box-shadow: none; padding: 6px;
+}
+.settings popover.apps list { background: transparent; }
+.settings popover.apps row { padding: 6px 10px; border-radius: 6px; color: @panel_fg; outline: none; }
+.settings popover.apps row:hover { background-color: @panel_overlay; }
+.settings popover.apps row.current { color: @panel_accent; }
 
 .settings scrollbar { background: transparent; border: none; }
 .settings scrollbar slider { background-color: @panel_overlay; border: none; border-radius: 4px; min-width: 6px; }
@@ -1059,6 +1227,30 @@ class Window(Gtk.ApplicationWindow):
         if self.save("lock_after", seconds):
             run(["systemctl", "--user", "try-restart", "swayidle.service"], self.failed("Screen lock"))
 
+    # ── Default apps ──
+
+    def page_apps(self, title):
+        page = self.page(title)
+        page.add(note("Used only in this niri session; KDE keeps its own choices."))
+        self.app_buttons = {}
+        for key, name, hint, types in APP_CATEGORIES:
+            button = AppButton(lambda app, types=types, name=name: self.set_app(name, types, app))
+            self.app_buttons[key] = (button, types)
+            page.add(row(name, button, hint))
+        return page, self.refresh_apps
+
+    def refresh_apps(self):
+        for button, types in self.app_buttons.values():
+            button.load(types[0])
+
+    def set_app(self, name, types, app):
+        try:
+            set_default_app(app.get_id(), types, set(app.get_supported_types() or ()))
+        except OSError as e:
+            self.status(f"Could not save: {e.strerror}", error=True)
+            return
+        self.status(f"{name}: {app.get_display_name()}")
+
     def raise_to_front(self):
         """Pencere zaten açıkken yeniden çağrılınca: niri'den bu pencereye odaklanmasını iste."""
         try:
@@ -1152,6 +1344,33 @@ def selftest():
     assert with_foot_alpha("[main]\nfont=x\n", 0.5) == "[main]\nfont=x\n\n[colors]\nalpha=0.5\n"
     assert "alpha = 0.6  " in with_foot_alpha("alpha = 0.9  \n", 0.6)
     assert presets() and all(len(p) == 3 for p in presets())
+
+    # Varsayılan uygulamalar: yalnızca desteklenen türler; başka bölümler ve anahtarlar korunur.
+    types = ("image/png", "image/jpeg", "image/jxl")
+    assert category_defaults("v.desktop", types, {"image/jpeg"}) == \
+        {"image/png": "v.desktop", "image/jpeg": "v.desktop"}
+    old = "# yorum\n[Added Associations]\ntext/x-c=a.desktop;\n\n[Default Applications]\nimage/png=x.desktop;\nimage/jxl=z.desktop;\n"
+    new = render_mimeapps(old, {"image/png": "v.desktop", "image/jpeg": "v.desktop"})
+    parsed = parse_mimeapps(new)
+    assert parsed == {"Added Associations": {"text/x-c": "a.desktop;"},
+                      "Default Applications": {"image/png": "v.desktop;", "image/jxl": "z.desktop;",
+                                               "image/jpeg": "v.desktop;"}}, parsed
+    assert new.startswith("# niri") and "# yorum" not in new
+    assert "image/png" not in parse_mimeapps(render_mimeapps(new, {"image/png": None}))["Default Applications"]
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "niri-mimeapps.list"
+        set_default_app("b.desktop", APP_CATEGORIES[0][3], {"x-scheme-handler/http", "text/html"}, path)
+        got = parse_mimeapps(path.read_text())["Default Applications"]
+        assert got == {"x-scheme-handler/https": "b.desktop;", "x-scheme-handler/http": "b.desktop;",
+                       "text/html": "b.desktop;"}, got
+        apps = Path(tmp) / "applications"            # GLib var olmayan uygulamayı yok sayar
+        apps.mkdir()
+        (apps / "b.desktop").write_text("[Desktop Entry]\nType=Application\nName=B\nExec=true %u\n"
+                                        "MimeType=text/html;\n")
+        env = dict(os.environ, XDG_CONFIG_HOME=tmp, XDG_DATA_HOME=tmp, XDG_CURRENT_DESKTOP="niri")
+        if shutil.which("gio"):
+            out = subprocess.run(["gio", "mime", "text/html"], env=env, capture_output=True, text=True)
+            assert "b.desktop" in out.stdout.splitlines()[0], out.stdout
     print("ok")
 
 
