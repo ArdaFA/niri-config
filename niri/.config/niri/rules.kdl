@@ -52,3 +52,35 @@ window-rule {
     }
     draw-border-with-background false
 }
+
+// Resim içinde resim (tarayıcıda video PiP): sağ altta küçük yüzen pencere. Brave/Chromium
+// başlığı "Picture in picture", Firefox'unki "Picture-in-Picture".
+window-rule {
+    match title=r#"^Picture[- ]in[- ][Pp]icture$"#
+    open-floating true
+    open-focused false
+    default-floating-position x=24 y=24 relative-to="bottom-right"
+}
+
+// Renk seçici Eyedropper küçük bir araç: yüzen açılsın.
+window-rule {
+    match app-id=r#"^com\.github\.finefindus\.eyedropper$"#
+    open-floating true
+}
+
+// Ekran paylaşırken (toplantı, yayın) parola yöneticileri izleyenlere siyah görünür; ekranında
+// sen normal görürsün. Ekran görüntüsünü (Print) etkilemez, yalnızca yayını.
+window-rule {
+    match app-id=r#"(?i)^(proton[- ]pass|org\.keepassxc\.keepassxc|bitwarden)$"#
+    block-out-from "screencast"
+}
+
+// Aynı şekilde yayında gizli: arama penceresi (pano geçmişi, dosya adları, açık pencereler
+// görünebilir), bildirimler ve bildirim paneli (mesaj içerikleri). Ekran paylaşılırken
+// açılır bildirimler zaten bekletiliyor (bar-status privacy → QUIET).
+layer-rule {
+    match namespace="^launcher$"
+    match namespace="^swaync-notification-window$"
+    match namespace="^swaync-control-center$"
+    block-out-from "screencast"
+}

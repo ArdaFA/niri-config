@@ -216,7 +216,7 @@ Repo'daki her üst klasör bir **stow paketidir**: içindeki yol `~` altına ayn
 | `niri/.config/niri/outputs.kdl` | Ekranlar: ölçek, konum, harici monitör |
 | `niri/.config/niri/layout.kdl` | Boşluklar, sütun genişlikleri, odak halkası kalınlığı, gölge, yedek renkler |
 | `niri/.config/niri/binds.kdl` | Bütün kısayollar |
-| `niri/.config/niri/rules.kdl` | Pencere kuralları: yuvarlak köşeler, yüzen pencerelere gölge, hangi pencereler yüzen açılır |
+| `niri/.config/niri/rules.kdl` | Pencere kuralları: yuvarlak köşeler, yüzen pencerelere gölge, hangi pencereler yüzen açılır, video PiP sağ altta, ekran paylaşırken gizlenenler |
 | `niri/.config/niri/animations.kdl` | Animasyonlar |
 
 niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
@@ -909,6 +909,11 @@ Panelde yukarıdan aşağıya:
 `SCR`) açılır bildirimler gösterilmez, panelde birikir; paneldeki `MSG` bu sürede `QUIET` olur.
 Paylaşım bitince her şey eskisi gibi. (`bar-status privacy` swaync'e `screen-sharing` adlı bir
 engelleyici ekler/kaldırır; elle: `swaync-client -In`.)
+
+**Ekran paylaşırken gizlenenler:** yayını izleyenler şunları siyah bir kutu olarak görür (sen
+ekranında normal görürsün; `Print` ile ekran görüntüsü etkilenmez): parola yöneticileri (Proton
+Pass, KeePassXC, Bitwarden), arama penceresi (pano geçmişi, dosya adları), bildirimler ve
+bildirim paneli. Kural: `niri/.config/niri/rules.kdl` → `block-out-from "screencast"`.
 
 **Pil ve USB disk bildirimleri** (`device-notify.service`; KDE'de bunları Plasma yapıyordu,
 niri'de yapan yoktu):
