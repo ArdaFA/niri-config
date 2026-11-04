@@ -16,22 +16,24 @@ sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü.
 ## İçindekiler
 
 1. [Hızlı başlangıç](#hızlı-başlangıç)
-2. [Kurulum (sıfırdan)](#kurulum-sıfırdan)
-3. [Hangi dosya neyi kontrol ediyor](#hangi-dosya-neyi-kontrol-ediyor)
-4. [Oturum nasıl başlıyor](#oturum-nasıl-başlıyor)
-5. [Renkler: `theme` komutu](#renkler-theme-komutu)
-6. [Yeni preset eklemek](#yeni-preset-eklemek)
-7. [Duvar kağıdı](#duvar-kağıdı)
-8. [Otomatik düzen: AUTO / FREE](#otomatik-düzen-auto--free)
-9. [Kısayollar](#kısayollar)
-10. [Waybar modülleri](#waybar-modülleri)
-11. [Hızlı ayarlar ve bildirimler](#hızlı-ayarlar-ve-bildirimler)
-12. [Font](#font)
-13. [Ekranlar](#ekranlar)
-14. [Kilit ve boşta kalma](#kilit-ve-boşta-kalma)
-15. [Bir şey bozulursa](#bir-şey-bozulursa)
-16. [Her şeyi tamamen kaldırmak](#her-şeyi-tamamen-kaldırmak)
-17. [Notlar](#notlar)
+2. [Ayarlar uygulaması](#ayarlar-uygulaması)
+3. [Kurulum (sıfırdan)](#kurulum-sıfırdan)
+4. [Hangi dosya neyi kontrol ediyor](#hangi-dosya-neyi-kontrol-ediyor)
+5. [Oturum nasıl başlıyor](#oturum-nasıl-başlıyor)
+6. [Renkler: `theme` komutu](#renkler-theme-komutu)
+7. [Yeni preset eklemek](#yeni-preset-eklemek)
+8. [Duvar kağıdı](#duvar-kağıdı)
+9. [Otomatik düzen: AUTO / FREE](#otomatik-düzen-auto--free)
+10. [Kısayollar](#kısayollar)
+11. [Waybar modülleri](#waybar-modülleri)
+12. [Hızlı ayarlar ve bildirimler](#hızlı-ayarlar-ve-bildirimler)
+13. [Font](#font)
+14. [Terminal saydamlığı](#terminal-saydamlığı)
+15. [Ekranlar](#ekranlar)
+16. [Kilit ve boşta kalma](#kilit-ve-boşta-kalma)
+17. [Bir şey bozulursa](#bir-şey-bozulursa)
+18. [Her şeyi tamamen kaldırmak](#her-şeyi-tamamen-kaldırmak)
+19. [Notlar](#notlar)
 
 ---
 
@@ -44,12 +46,51 @@ GDM son seçilen oturumu hatırlar. KDE'ye dönmek için aynı menüden **Plasma
 |---|---|
 | `Super+Enter` | terminal (foot) |
 | `Super+D` | uygulama başlatıcı (fuzzel) |
+| `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, kilit süresi |
 | `Super+Q` | pencereyi kapat |
 | `Super+Shift+ß` (yani `Super+?`) | ekranda kısayol listesi |
 | `Super+Shift+E` | oturumu kapat |
 
 **KDE içinde pencere olarak denemek:** Konsole'da `niri` yaz. Bu modda Mod tuşu **Alt**'tır.
 Waybar, swaync gibi servisler bu modda başlamaz, çünkü onlar oturumun systemd servisine bağlı.
+
+---
+
+## Ayarlar uygulaması
+
+Sık değiştirilen ayarlar için kısayol ya da dosya ezberlemek gerekmesin diye küçük bir pencere.
+Açmak için: **`Super+S`**, uygulama başlatıcıda **Settings** ya da hızlı ayarlar → `Settings ▼` →
+All settings. Her değişiklik anında uygulanır, "Apply" düğmesi yok. `Esc` kapatır.
+
+| Sayfa | İçinde |
+|---|---|
+| **Appearance** | Duvar kağıdı (küçük resimlerle; *Add…* kendi resmini `wallpapers/`'a kopyalar), renkler (bir preset ya da *From wallpaper*; duvar kağıdından gelen renklerin açık/koyu hali), terminal saydamlığı |
+| **Displays** | Harici monitörün laptopa göre yeri (`Super+P` ile aynı, her monitör hatırlanır), gece ışığı ve sıcaklığı |
+| **Touchpad** | Dokunarak tıklama, doğal kaydırma, imleç hızı |
+| **Screen lock** | Kaç dakika boşta kalınca kilitlensin (ekran 30 sn sonra kapanır) |
+
+Uygulama yalnızca bir ön yüz. Ayarlar yine aynı yerlerde duruyor ve komut satırından da
+değiştirilebiliyor:
+
+| Ayar | Nereye yazılır |
+|---|---|
+| Duvar kağıdı, renkler | `theme` komutu (bkz. [Renkler](#renkler-theme-komutu)) |
+| Monitörün yeri | `displays` komutu (bkz. [Ekranlar](#ekranlar)) |
+| Gece ışığı aç/kapa | `night-light` komutu |
+| Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir) |
+| Touchpad | `~/.local/state/settings/niri.kdl`. `config.kdl` bunu `input.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
+| Kilit süresi, gece ışığının sıcaklığı | `~/.local/state/settings/services.env`. `swayidle.service` ve `night-light.service` okur; dosya yoksa servis dosyalarındaki varsayılanlar geçerli (5 dk, 4000 K). |
+
+- **Hafif:** tek dosya (`bin/.local/bin/settings`, Python + GTK3, yeni paket gerektirmez).
+  Yarım saniyede açılır, açıkken ~90 MB (boş bir GTK3 penceresi zaten ~67 MB), kapalıyken hiç
+  çalışmaz. Duvar kağıtlarının küçük resimleri ilk açılışta arka planda üretilir,
+  `~/.cache/settings/`'te saklanır.
+- **Temayla birlikte değişir:** renkleri temanın paletinden alır; tema değişince kendisi de
+  anında yeni renklere geçer.
+- **Komut satırından belli bir sayfa:** `settings displays` (ya da `appearance`, `touchpad`,
+  `lock`). Pencere zaten açıksa yenisi açılmaz, o sayfaya geçer.
+- Bilerek olmayanlar: Wi-Fi, Bluetooth, ses (hızlı ayarlar ve kendi pencereleri var), klavye
+  düzeni, kısayollar. Bunlar için dosyalar: [Hangi dosya neyi kontrol ediyor](#hangi-dosya-neyi-kontrol-ediyor).
 
 ---
 
@@ -141,7 +182,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `systemd/.config/systemd/user/niri-polkit.service` | KDE'nin polkit (yönetici şifresi) penceresi, yalnızca niri'de |
 | `systemd/.config/systemd/user/theme-apply.service` | Oturum açılışında kayıtlı temayı uygular |
 | `systemd/.config/systemd/user/swaybg.service` | Duvar kağıdı |
-| `systemd/.config/systemd/user/swayidle.service` | Boşta kalınca kilit ve ekran kapatma süreleri |
+| `systemd/.config/systemd/user/swayidle.service` | Boşta kalınca kilit ve ekran kapatma (süre: Settings → Screen lock) |
 | `systemd/.config/systemd/user/swaync.service.d/niri-only.conf` | swaync'in KDE/GNOME'da başlamasını engeller |
 | `systemd/.config/systemd/user/mako.service.d/niri-only.conf` | mako'yu yalnızca niri'de ve yalnızca swaync kurulu değilse başlatır |
 | `systemd/.config/systemd/user/app-…@autostart.service.d/not-in-niri.conf` | KDE'den gelen bazı autostart programlarının niri'de **başlamaması** (bkz. [Notlar](#notlar)) |
@@ -158,6 +199,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `bin/.local/bin/night-light` | Gece ışığını açar/kapatır (`night-light.service`) |
 | `bin/.local/bin/screenshot-edit` | Alan seçtirip görüntüyü swappy'de açar (ya da son görüntüyü) |
 | `bin/.local/bin/screen-record` | Ekran kaydı (wf-recorder): başlat/durdur, Waybar'daki `REC` |
+| `bin/.local/bin/settings` | Ayarlar penceresi (`Super+S`), bkz. [Ayarlar uygulaması](#ayarlar-uygulaması) |
+| `bin/.local/share/applications/dotfiles.settings.desktop` | Ayarlar penceresinin başlatıcıdaki kaydı (KDE menüsünde gizli) |
 | `bin/.local/bin/displays` | Harici monitörün laptopa göre yeri (üst/alt/sol/sağ), her monitör için ayrı hatırlanır, bkz. [Ekranlar](#ekranlar) |
 | `systemd/.config/systemd/user/night-light.service` | Gece ışığı: wlsunset ile sıcak ekran rengi. Oturum açılışında başlamaz. |
 | `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
@@ -172,6 +215,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 |---|---|
 | `~/.local/state/theme/` | `theme` komutunun ürettiği renk dosyaları, kayıtlı seçim, duvar kağıdı bağlantısı |
 | `~/.local/state/displays/` | `displays` komutunun hatırladığı monitör yerleri (`state.json`) ve niri'nin okuduğu `niri.kdl` |
+| `~/.local/state/settings/` | Ayarlar uygulamasının yazdıkları: touchpad (`niri.kdl`), kilit süresi ve gece ışığı sıcaklığı (`services.env`) |
+| `~/.cache/settings/` | Duvar kağıtlarının küçük resimleri (silinebilir, yeniden üretilir) |
 | `~/.config/systemd/user/niri.service.wants/` | `install.sh`'nin oluşturduğu servis bağlantıları |
 | `~/.local/share/fonts/DepartureMono/` | Font |
 | `~/.cargo/bin/wallust` | wallust |
@@ -447,6 +492,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 |---|---|
 | `Super+Enter` | Terminal (foot) |
 | `Super+D` / `Super+Space` | Uygulama başlatıcı (fuzzel) |
+| `Super+S` | Ayarlar penceresi (bkz. [Ayarlar uygulaması](#ayarlar-uygulaması)) |
 | `Super+Shift+T` | Renk teması seç: presetler ve `wallpapers/` içindeki resimler (resim seçilirse renkler ondan üretilir). Yazarak ara, ör. `light` ya da `wallpaper`. |
 | `Alt+Tab` / `Alt+Shift+Tab` | Son kullanılan pencereler arasında geçiş (niri). Seçili pencerenin vurgusu temanın rengini alır. `` Alt+` `` aynı uygulamanın pencereleri. |
 | `Super+Q` | Pencereyi kapat |
@@ -749,7 +795,7 @@ Panelde yukarıdan aşağıya:
 
 | Bölüm | Ne yapar |
 |---|---|
-| `Settings ▼` | Sound (pavucontrol) · Network (nm-connection-editor) · Bluetooth (blueman-manager) · Displays (monitörün yeri, `Super+P` ile aynı menü) |
+| `Settings ▼` | All settings (ayarlar penceresi) · Displays (ayarlar penceresinin Displays sayfası) · Sound (pavucontrol) · Network (nm-connection-editor) · Bluetooth (blueman-manager) |
 | `Lock` | Ekranı kilitler |
 | `Power ▼` | Log out · Restart · Shut down. fuzzel'de onay ister; listede ilk sıradaki `Cancel`, yani Enter'a hemen basmak iptal eder. |
 | Wi-Fi | Aç/kapa (`nmcli radio wifi`) |
@@ -788,9 +834,8 @@ Panelde yukarıdan aşağıya:
 - Parlaklık kaydırıcısı yalnızca laptop ekranını (`intel_backlight`) ayarlar; harici monitörler
   değişmez. Ses kaydırıcısı varsayılan çıkışı ayarlar; çıkış seçmek için `Settings ▼` → Sound.
 - Paneldeki düğme yazıları düz metin, çünkü panelin fontunda simge yok.
-- Night light'ın sıcaklığı `night-light.service` içinde (`-t 4000`). Daha sıcak için düşür
-  (ör. 3500); `-T` her zaman bir fazlası olsun. Sonra `systemctl --user daemon-reload` ve
-  düğmeyi kapatıp aç.
+- Night light'ın sıcaklığı: Settings → Displays → Warmth (sağa doğru daha sıcak; açıksa anında
+  uygulanır). Varsayılan 4000 K, `night-light.service` içinde.
 
 **Ayar dosyaları:**
 
@@ -857,9 +902,9 @@ Başka bir fonta geçersen:
 
 Terminalin zemini yarı saydamdır. Arkada duvar kağıdı bulanık görünür, yazı opak kalır.
 
-- **Ne kadar saydam:** `foot/.config/foot/foot.ini` → `[colors]` → `alpha=0.8`. 1.0 opak, daha
-  küçük sayı daha saydam (0.8 belirgin, 0.95 hafif). Değişiklik yeni açılan terminallerde
-  geçerli olur.
+- **Ne kadar saydam:** Settings → Appearance → Terminal → Opacity, ya da elle
+  `foot/.config/foot/foot.ini` → `[colors]` → `alpha=0.8`. 1.0 opak, daha küçük sayı daha
+  saydam (0.8 belirgin, 0.95 hafif). Değişiklik yeni açılan terminallerde geçerli olur.
 - **Bulanıklık:** niri yapar (`niri/.config/niri/rules.kdl` → foot kuralı → `background-effect`).
   Arkada yalnızca duvar kağıdı görünür, altta kalan başka pencereler görünmez.
   - Bulanıklık olmasın, düz saydam olsun: o kuraldaki `blur true` satırını sil.
@@ -876,7 +921,7 @@ Terminalin zemini yarı saydamdır. Arkada duvar kağıdı bulanık görünür, 
 Dosya: `niri/.config/niri/outputs.kdl`. Bağlı ekranları görmek için: `niri msg outputs`.
 
 - **Laptop ekranı (`eDP-1`):** Ölçek **2**, mantıksal 1600×900. Daha fazla alan için `scale 1.85` yaz (KDE'deki değer); piksel font o zaman biraz yumuşar.
-- **Harici monitörün yeri:** `Super+P` (ya da hızlı ayarlar → `Settings ▼` → Displays) bir menü açar:
+- **Harici monitörün yeri:** Settings → Displays (`Super+S`) ya da `Super+P` ile açılan menü:
   *Above / Below / Left of / Right of the laptop* ve *Automatic (right)*. Seçtiğin anda uygulanır.
   - **Her monitör kendi yerini hatırlar.** niri monitörleri marka, model ve seri numarasıyla
     tanıdığı için seçim o monitöre bağlanır. Bir kez ayarlarsın, sonra takınca kendiliğinden
@@ -911,24 +956,21 @@ Dosya: `niri/.config/niri/outputs.kdl`. Bağlı ekranları görmek için: `niri 
   Dikkat: yerini `displays` ile ayarladığın bir monitörü buraya da yazarsan niri iki bloğu
   birleştirmez, yalnızca birini kullanır; o monitörün ya konumu ya modu kaybolur.
 
-Klavye düzeni ve touchpad: `niri/.config/niri/input.kdl`. Doğal kaydırma için `natural-scroll`
-satırının başındaki `//` işaretini sil.
+Touchpad (dokunarak tıklama, doğal kaydırma, imleç hızı): Settings → Touchpad. Klavye düzeni ve
+touchpad'in varsayılanları: `niri/.config/niri/input.kdl`.
 
 ---
 
 ## Kilit ve boşta kalma
 
 - **Elle kilit:** `Super+Alt+L`.
-- **Süreler:** `systemd/.config/systemd/user/swayidle.service` dosyasında:
+- **Süreler:** Settings → Screen lock (1 dk … 1 saat). Varsayılan:
   - 5 dakika boşta → kilit
-  - 5,5 dakika → ekranlar kapanır
-  - Uykudan önce → kilit
+  - 30 saniye sonra → ekranlar kapanır
+  - Uykudan önce → kilit (her zaman)
 
-  Değiştirdikten sonra:
-
-  ```bash
-  systemctl --user daemon-reload && systemctl --user restart swayidle
-  ```
+  Varsayılanlar `systemd/.config/systemd/user/swayidle.service` içinde; uygulamanın seçtiği süre
+  `~/.local/state/settings/services.env`'e yazılır ve swayidle hemen yeniden başlatılır.
 - **Kilit ekranının görünümü:** `themes/templates/swaylock.conf`, ardından `theme apply`.
 - Video izlerken tarayıcılar ve oynatıcılar boşta kalmayı kendileri engeller.
 - **Stay awake** (hızlı ayarlar ya da `awake on`): kilit ve ekran kapatma, sen kapatana ya da

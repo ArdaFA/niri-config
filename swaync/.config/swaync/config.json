@@ -60,10 +60,11 @@
         "animation-type": "slide_down",
         "animation-duration": 150,
         "actions": [
+          { "label": "All settings", "command": "sh -c '~/.local/bin/quick-settings open ~/.local/bin/settings'" },
+          { "label": "Displays", "command": "sh -c '~/.local/bin/quick-settings open ~/.local/bin/settings displays'" },
           { "label": "Sound", "command": "sh -c '~/.local/bin/quick-settings open pavucontrol'" },
           { "label": "Network", "command": "sh -c '~/.local/bin/quick-settings open nm-connection-editor'" },
-          { "label": "Bluetooth", "command": "sh -c '~/.local/bin/quick-settings open blueman-manager'" },
-          { "label": "Displays", "command": "sh -c '~/.local/bin/quick-settings displays'" }
+          { "label": "Bluetooth", "command": "sh -c '~/.local/bin/quick-settings open blueman-manager'" }
         ]
       },
       "buttons#lock": {

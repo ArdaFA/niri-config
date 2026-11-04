@@ -12,6 +12,7 @@ binds {
     Mod+Return hotkey-overlay-title="Terminal (foot)" { spawn "foot"; }
     Mod+D hotkey-overlay-title="App launcher (fuzzel)" { spawn "fuzzel"; }
     Mod+Space { spawn "fuzzel"; }
+    Mod+S hotkey-overlay-title="Settings" { spawn-sh "~/.local/bin/settings"; }
     Mod+Shift+T hotkey-overlay-title="Pick a color theme" { spawn-sh "~/.local/bin/theme pick"; }
     Mod+Alt+L hotkey-overlay-title="Lock screen" { spawn-sh "~/.local/bin/lock-screen"; }
     Mod+Q repeat=false hotkey-overlay-title="Close window" { close-window; }

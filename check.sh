@@ -181,6 +181,8 @@ check "layout planner"    python3 -I "$DOTFILES/bin/.local/bin/layout-mode" self
 check "bar status rules"  python3 -I "$DOTFILES/bin/.local/bin/bar-status" selftest
 check "media popup rules" python3 -I "$DOTFILES/bin/.local/bin/media-popup" selftest
 check "monitor placement" python3 -I "$DOTFILES/bin/.local/bin/displays" selftest
+check "settings files"    python3 -I "$DOTFILES/bin/.local/bin/settings" selftest
+check "desktop entries"   desktop-file-validate "$DOTFILES"/bin/.local/share/applications/*.desktop
 check "presets"           presets
 check "systemd units"     units
 

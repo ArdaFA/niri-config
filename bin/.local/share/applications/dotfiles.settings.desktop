@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+GenericName=Desktop settings
+Comment=Wallpaper, colors, monitors, night light, touchpad and screen lock
+# ~/.local/bin niri'nin PATH'inde yok: yol kabukla çözülür. KDE'nin kendi ayarları var, orada gizli.
+Exec=sh -c "\\$HOME/.local/bin/settings"
+Icon=preferences-system
+Categories=Settings;
+Keywords=theme;wallpaper;colors;monitor;display;night;touchpad;lock;
+NotShowIn=KDE;
+StartupNotify=false

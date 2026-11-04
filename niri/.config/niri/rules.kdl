@@ -22,8 +22,9 @@ window-rule {
 }
 
 // Küçük ayar pencereleri (Waybar/tepsiden açılanlar) de yüzen açılsın:
-// ses mikseri, ağ bağlantıları, Bluetooth.
+// ses mikseri, ağ bağlantıları, Bluetooth, ayarlar (settings).
 window-rule {
+    match app-id=r#"^dotfiles\.settings$"#
     match app-id=r#"^org\.pulseaudio\.pavucontrol$"#
     match app-id=r#"^nm-connection-editor$"#
     match app-id=r#"blueman-manager"#

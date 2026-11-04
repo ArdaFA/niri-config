@@ -3,8 +3,8 @@
 #
 # -t düşük, -T yüksek sıcaklık. İkisi neredeyse aynı olduğu için ekran gün içinde de
 # sıcak kalır (sabah/akşam saatleri -S/-s yalnızca wlsunset istediği için yazılı).
-# Daha sıcak için -t'yi düşür (ör. 3500), -T hep bir fazlası olsun.
-# Değiştirdikten sonra: systemctl --user daemon-reload && night-light off && night-light on
+# Sıcaklık: Settings uygulaması (Super+S → Displays → Warmth) ~/.local/state/settings/
+# services.env'e yazar; buradaki Environment= satırı o dosya yokken geçerli varsayılandır.
 #
 # /usr/bin/env: wlsunset kurulu olmasa da birim dosyası geçerli kalsın (check.sh).
 
@@ -15,5 +15,7 @@ After=graphical-session.target
 Requisite=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/env wlsunset -t 4000 -T 4001 -S 06:00 -s 18:00
+Environment=NIGHT_TEMP=4000 NIGHT_TEMP_HIGH=4001
+EnvironmentFile=-%S/settings/services.env
+ExecStart=/usr/bin/env wlsunset -t ${NIGHT_TEMP} -T ${NIGHT_TEMP_HIGH} -S 06:00 -s 18:00
 Restart=on-failure

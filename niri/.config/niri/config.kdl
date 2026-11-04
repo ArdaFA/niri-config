@@ -4,6 +4,7 @@
 // "include" konumsaldır: sonra dahil edilen dosya, öncekinin aynı ayarını ezer.
 //
 //   input.kdl    klavye düzeni, touchpad
+//   ~/.local/state/settings/niri.kdl  touchpad — Settings uygulaması üretir (Super+S)
 //   outputs.kdl  ekranlar: ölçek, konum, harici monitör
 //   ~/.local/state/displays/niri.kdl  harici monitörlerin yeri — `displays` komutu üretir (Super+P)
 //   layout.kdl   boşluklar, sütun genişlikleri, odak halkası
@@ -15,6 +16,7 @@
 // Kaydettiğin her değişiklik anında uygulanır. Hata kontrolü için: niri validate
 
 include "input.kdl"
+include optional=true "~/.local/state/settings/niri.kdl"
 include "outputs.kdl"
 include optional=true "~/.local/state/displays/niri.kdl"
 include "layout.kdl"

@@ -1,6 +1,6 @@
 #!/bin/sh
 # night-light — gece ışığı: ekran renklerini sıcak tona çeker (wlsunset, night-light.service).
-# Açıkken gün içinde de sıcak kalır; zaman çizelgesi yok. Sıcaklık: night-light.service.
+# Açıkken gün içinde de sıcak kalır; zaman çizelgesi yok. Sıcaklık: Settings → Displays.
 # Oturumdan çıkınca kapanır.
 #
 #   night-light on | off | toggle

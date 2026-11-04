@@ -1,0 +1,1173 @@
+#!/usr/bin/env python3
+"""settings — the settings window of this niri desktop (Super+S).
+
+  settings [appearance|displays|touchpad|lock]   open the window (on that page)
+  settings selftest                              check the file writers (check.sh)
+
+  Appearance   wallpaper, colors (a preset or taken from the wallpaper), terminal opacity
+  Displays     where the external monitor sits, night light and its warmth
+  Touchpad     tap to click, natural scrolling, pointer speed
+  Screen lock  how long the computer may stay idle before it locks
+
+Every change applies at once; there is no Apply button.
+"""
+# Not: Ekranda görünen metinler İngilizce; yorumlar Türkçe.
+#
+# Pencere yalnızca bir ön yüz; ayarların sahipleri değişmedi:
+#   tema, duvar kağıdı     → `theme` komutu (~/.local/state/theme)
+#   monitörün yeri         → `displays` komutu (~/.local/state/displays)
+#   gece ışığı aç/kapa      → `night-light` komutu
+#   terminal saydamlığı    → foot.ini'deki `alpha=` satırı (repo'daki dosya)
+#   touchpad, kilit süresi, gece ışığının sıcaklığı → ~/.local/state/settings:
+#       niri.kdl       touchpad bloğu; config.kdl input.kdl'den sonra okur, niri anında uygular
+#       services.env   swayidle.service ve night-light.service okur (EnvironmentFile)
+#       settings.json  bu pencerenin hatırladığı değerler
+#
+# Hafif tutmak için: GTK3 (media-popup ile aynı), tek dosya, animasyon yok; duvar kağıdı
+# küçük resimleri arka planda üretilip ~/.cache/settings'te saklanır.
+
+import hashlib
+import importlib.machinery
+import importlib.util
+import json
+import math
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import tomllib
+from pathlib import Path
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import GLib  # noqa: E402
+
+APP_ID = "dotfiles.settings"
+# GTK3 Wayland'de pencere kimliği (app_id) program adıdır; niri'nin yüzen pencere kuralı
+# bununla eşleşir. Gtk yüklenmeden önce ayarlanmalı, yoksa "settings" olur.
+GLib.set_prgname(APP_ID)
+from gi.repository import Gdk, GdkPixbuf, Gio, Gtk, Pango  # noqa: E402
+
+HOME = Path.home()
+BIN = Path(__file__).resolve().parent                 # theme, displays, night-light burada
+REPO = Path(__file__).resolve().parents[3]            # ~/dotfiles
+PRESETS = REPO / "themes" / "presets"
+WALLPAPERS = REPO / "wallpapers"
+STATE_HOME = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local" / "state")
+CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
+CACHE_HOME = Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache")
+STATE = STATE_HOME / "settings"
+THEME_STATE = STATE_HOME / "theme"
+FOOT_INI = CONFIG_HOME / "foot" / "foot.ini"
+THUMBS = CACHE_HOME / "settings" / "thumbnails"
+
+PAGES = (("appearance", "Appearance"), ("displays", "Displays"),
+         ("touchpad", "Touchpad"), ("lock", "Screen lock"))
+DEFAULTS = {"tap": True, "natural_scroll": False, "pointer_speed": 0.0,
+            "lock_after": 300, "night_temp": 4000}
+TOUCHPAD_KEYS = ("tap", "natural_scroll", "pointer_speed")
+LOCK_CHOICES = ((60, "1 min"), (120, "2 min"), (300, "5 min"), (600, "10 min"),
+                (900, "15 min"), (1800, "30 min"), (3600, "1 hour"))
+SCREEN_OFF_DELAY = 30           # kilitten bu kadar saniye sonra ekran kapanır
+NIGHT_MIN, NIGHT_MAX = 2500, 5500
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+THUMB_W, THUMB_H = 124, 70      # mantıksal piksel (16:9)
+
+
+# ── Ayar dosyaları (arayüzden bağımsız; selftest bunları sınar) ───────────
+
+def read_json(path):
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def write_atomic(path, text):
+    """İçerik aynıysa dokunmaz (niri boşuna yeniden yüklemesin). Değiştiyse True."""
+    try:
+        if path.read_text() == text:
+            return False
+    except OSError:
+        pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text)
+    tmp.replace(path)
+    return True
+
+
+def load_settings():
+    """settings.json + varsayılanlar; bozuk ya da aralık dışı değerler varsayılana döner."""
+    data = read_json(STATE / "settings.json")
+    s = dict(DEFAULTS)
+    for key, default in DEFAULTS.items():
+        value = data.get(key)
+        if isinstance(default, bool):
+            if isinstance(value, bool):
+                s[key] = value
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            s[key] = type(default)(value)
+    s["pointer_speed"] = round(min(1.0, max(-1.0, s["pointer_speed"])), 2)
+    s["night_temp"] = min(NIGHT_MAX, max(NIGHT_MIN, s["night_temp"]))
+    if s["lock_after"] not in dict(LOCK_CHOICES):
+        s["lock_after"] = DEFAULTS["lock_after"]
+    return s
+
+
+def render_niri(s):
+    # niri'de touchpad bölümü include'lar arasında birleşmez: bu blok input.kdl'dekinin
+    # tamamen yerine geçer, o yüzden dwt de burada yazılı.
+    lines = ["// Settings uygulamasının ürettiği dosya (Settings → Touchpad); elle düzenleme.",
+             "// input.kdl'deki touchpad bloğunun yerine geçer.",
+             "",
+             "input {",
+             "    touchpad {"]
+    if s["tap"]:
+        lines.append("        tap")
+    lines.append("        dwt")
+    if s["natural_scroll"]:
+        lines.append("        natural-scroll")
+    if s["pointer_speed"]:
+        lines.append(f"        accel-speed {s['pointer_speed']:.2f}")
+    lines += ["    }", "}", ""]
+    return "\n".join(lines)
+
+
+def render_env(s):
+    return ("# Settings uygulamasının ürettiği dosya; elle düzenleme.\n"
+            "# swayidle.service ve night-light.service okur (EnvironmentFile).\n"
+            f"LOCK_AFTER={s['lock_after']}\n"
+            f"SCREEN_OFF_AFTER={s['lock_after'] + SCREEN_OFF_DELAY}\n"
+            f"NIGHT_TEMP={s['night_temp']}\n"
+            f"NIGHT_TEMP_HIGH={s['night_temp'] + 1}\n")
+
+
+def save_settings(s):
+    write_atomic(STATE / "settings.json", json.dumps(s, indent=2, sort_keys=True) + "\n")
+    write_atomic(STATE / "services.env", render_env(s))
+    # Touchpad'e hiç dokunulmadıysa input.kdl geçerli kalsın.
+    niri = STATE / "niri.kdl"
+    if niri.exists() or any(s[k] != DEFAULTS[k] for k in TOUCHPAD_KEYS):
+        write_atomic(niri, render_niri(s))
+
+
+ALPHA_RE = re.compile(r"^([ \t]*alpha[ \t]*=[ \t]*)([0-9.]+)[ \t]*$", re.M)
+
+
+def foot_alpha(text):
+    found = ALPHA_RE.findall(text)
+    try:
+        return min(1.0, max(0.0, float(found[-1][1]))) if found else 1.0
+    except ValueError:
+        return 1.0
+
+
+def with_foot_alpha(text, alpha):
+    """foot.ini metninde alpha değerini değiştirir (yorumlar ve geri kalan aynen kalır)."""
+    value = f"{alpha:.2f}".rstrip("0").rstrip(".")
+    matches = list(ALPHA_RE.finditer(text))
+    if matches:
+        m = matches[-1]
+        return text[:m.start(2)] + value + text[m.end(2):]
+    return text.rstrip("\n") + f"\n\n[colors]\nalpha={value}\n"
+
+
+# ── Tema, duvar kağıtları, monitörler (yalnızca okuma) ────────────────────
+
+def presets():
+    found = []
+    for path in PRESETS.glob("*.toml"):
+        try:
+            data = tomllib.loads(path.read_text())
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        found.append((path.stem, data.get("name", path.stem), data.get("ui", {})))
+    return sorted(found, key=lambda p: p[1].lower())
+
+
+def wallpapers():
+    try:
+        files = [f for f in WALLPAPERS.iterdir() if f.is_file() and not f.name.startswith(".")
+                 and f.suffix.lower() in IMAGE_SUFFIXES]
+    except OSError:
+        return []
+    return sorted(files, key=lambda f: f.name.lower())
+
+
+def copy_wallpaper(src):
+    """Resmi wallpapers/ klasörüne kopyalar (orada değilse); aynı adda başka resim varsa ad-2…"""
+    src = Path(src).resolve()
+    WALLPAPERS.mkdir(parents=True, exist_ok=True)
+    if src.parent == WALLPAPERS.resolve():
+        return src
+    dest, n = WALLPAPERS / src.name, 2
+    while dest.exists():
+        if dest.read_bytes() == src.read_bytes():
+            return dest.resolve()
+        dest, n = WALLPAPERS / f"{src.stem}-{n}{src.suffix}", n + 1
+    shutil.copy2(src, dest)
+    return dest.resolve()
+
+
+def load_displays():
+    """`displays` komutunu modül olarak yükler: monitörü bulma kuralları tek yerde kalsın."""
+    loader = importlib.machinery.SourceFileLoader("displays_cli", str(BIN / "displays"))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+def thumbnail(path, w, h):
+    """w×h piksel, ortadan kırpılmış küçük resim; önbellekten ya da yeni. Olmazsa None."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    key = hashlib.sha1(f"{path.resolve()}|{st.st_mtime_ns}|{st.st_size}|{w}x{h}".encode())
+    cached = THUMBS / f"{key.hexdigest()}.png"
+    try:
+        return GdkPixbuf.Pixbuf.new_from_file(str(cached))
+    except GLib.Error:
+        pass
+    try:
+        fmt, iw, ih = GdkPixbuf.Pixbuf.get_file_info(str(path))
+        if fmt is None:
+            return None
+        # Kısa kenar en az max(w, h) olsun: yan dönmüş (EXIF) fotoğrafta da yetsin.
+        s = max(w, h) / max(1, min(iw, ih))
+        pb = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(path), max(1, round(iw * s)),
+                                                     max(1, round(ih * s)), True)
+        pb = pb.apply_embedded_orientation() or pb
+        pw, ph = pb.get_width(), pb.get_height()
+        s = max(w / pw, h / ph)
+        sw, sh = max(w, math.ceil(pw * s)), max(h, math.ceil(ph * s))
+        pb = pb.scale_simple(sw, sh, GdkPixbuf.InterpType.BILINEAR)
+        pb = pb.new_subpixbuf((sw - w) // 2, (sh - h) // 2, w, h).copy()
+    except (GLib.Error, TypeError, ValueError):
+        return None
+    try:
+        THUMBS.mkdir(parents=True, exist_ok=True)
+        pb.savev(str(cached), "png", [], [])
+    except GLib.Error:
+        pass
+    return pb
+
+
+def thumbnails_later(jobs, scale):
+    """jobs: [(karo, dosya)]. Arka planda üretir, hazır oldukça karoya verir."""
+    def work():
+        for tile, path in jobs:
+            pb = thumbnail(path, THUMB_W * scale, THUMB_H * scale)
+            if pb is not None:
+                GLib.idle_add(tile.set_image, pb)
+    threading.Thread(target=work, daemon=True).start()
+
+
+def run(argv, done=None):
+    """Komutu pencereyi dondurmadan çalıştırır; bitince done(başarılı mı, hata metni)."""
+    try:
+        proc = Gio.Subprocess.new([str(a) for a in argv],
+                                  Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_PIPE)
+    except GLib.Error as e:
+        if done:
+            done(False, e.message)
+        return
+
+    def finished(p, result):
+        try:
+            _, _, err = p.communicate_utf8_finish(result)
+        except GLib.Error as e:
+            err = e.message
+        if done:
+            lines = (err or "").strip().splitlines()
+            done(p.get_successful(), lines[-1] if lines else "")
+    proc.communicate_utf8_async(None, None, finished)
+
+
+def night_light_on():
+    try:
+        out = subprocess.run([str(BIN / "night-light"), "status"], capture_output=True,
+                             text=True, timeout=3).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return out.strip() == "true"
+
+
+# ── Çizim ─────────────────────────────────────────────────────────────────
+
+def rgb(color):
+    h = str(color).lstrip("#")
+    try:
+        return tuple(int(h[i:i + 2], 16) / 255 for i in (0, 2, 4))
+    except ValueError:
+        return (0.5, 0.5, 0.5)
+
+
+def rounded(cr, x, y, w, h, r):
+    cr.new_sub_path()
+    cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+    cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+    cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+    cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+    cr.close_path()
+
+
+def paint_image(cr, w, h, pb):
+    cr.save()
+    cr.scale(w / pb.get_width(), h / pb.get_height())
+    Gdk.cairo_set_source_pixbuf(cr, pb, 0, 0)
+    cr.paint()
+    cr.restore()
+
+
+def paint_dots(cr, x, y, colors):
+    for i, color in enumerate(colors):
+        cr.arc(x + i * 13, y, 4.5, 0, 2 * math.pi)
+        cr.set_source_rgb(*rgb(color))
+        cr.fill()
+
+
+def paint_palette(cr, w, h, c):
+    """Paletin minyatürü: zemin, üstünde vurgu kenarlı küçük bir pencere, renk noktaları."""
+    def use(key):
+        cr.set_source_rgb(*rgb(c.get(key, c.get("fg", "#808080"))))
+    use("bg")
+    cr.paint()
+    x, y, ww, hh = 10, 9, w - 20, h - 31
+    rounded(cr, x, y, ww, hh, 5)
+    use("surface")
+    cr.fill_preserve()
+    use("accent")
+    cr.set_line_width(1.5)
+    cr.stroke()
+    for i, (key, frac) in enumerate((("fg", 0.55), ("subtle", 0.38), ("muted", 0.46))):
+        rounded(cr, x + 8, y + 8 + i * 9, (ww - 16) * frac, 4, 2)
+        use(key)
+        cr.fill()
+    paint_dots(cr, x + 5, h - 11, [c.get(k, "#808080") for k in ("accent", "accent2", "ok", "warn", "urgent")])
+
+
+# ── Küçük parçalar ────────────────────────────────────────────────────────
+
+def label(text, cls=None, **kw):
+    kw.setdefault("xalign", 0)
+    widget = Gtk.Label(label=text, **kw)
+    if cls:
+        widget.get_style_context().add_class(cls)
+    return widget
+
+
+def note(text):
+    return label(text, "note", wrap=True, max_width_chars=64)
+
+
+def row(title, widget, hint=None, below=False):
+    """Başlık (ve açıklama) solda, denetim sağda; below=True: denetim altta."""
+    box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL if below else Gtk.Orientation.HORIZONTAL,
+                  spacing=10 if below else 24)
+    box.get_style_context().add_class("row")
+    text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+    text.add(label(title))
+    if hint:
+        text.add(note(hint))
+    if below:
+        box.add(text)
+        widget.set_halign(Gtk.Align.START)
+        box.add(widget)
+    else:
+        box.pack_start(text, True, True, 0)
+        widget.set_valign(Gtk.Align.CENTER)
+        box.pack_end(widget, False, False, 0)
+    return box
+
+
+class Later:
+    """fn'yi son çağrıdan ms sonra bir kez çalıştırır: sürgü sürüklenirken her adımda dosya
+    yazılmasın, servis yeniden başlamasın. flush(): bekleyen varsa hemen çalıştır."""
+
+    def __init__(self, ms, fn):
+        self.ms, self.fn, self.source, self.args = ms, fn, 0, ()
+
+    def __call__(self, *args):
+        self.args = args
+        if self.source:
+            GLib.source_remove(self.source)
+        self.source = GLib.timeout_add(self.ms, self.fire)
+
+    def fire(self):
+        self.source = 0
+        self.fn(*self.args)
+        return False
+
+    def flush(self):
+        if self.source:
+            GLib.source_remove(self.source)
+            self.fire()
+
+
+class Choice(Gtk.Box):
+    """Yan yana düğmeler, biri seçili. on_pick(değer) yalnızca tıklanınca çağrılır."""
+
+    def __init__(self, options, on_pick):
+        super().__init__()
+        self.get_style_context().add_class("choice")
+        self.buttons = {}
+        for value, text in options:
+            button = Gtk.Button(label=text)
+            button.connect("clicked", lambda _b, v=value: on_pick(v))
+            self.buttons[value] = button
+            self.add(button)
+
+    def set(self, value):
+        for v, button in self.buttons.items():
+            ctx = button.get_style_context()
+            (ctx.add_class if v == value else ctx.remove_class)("selected")
+
+
+class Switch(Gtk.Switch):
+    def __init__(self, on_toggle):
+        super().__init__()
+        self.handler = self.connect("notify::active", lambda s, _p: on_toggle(s.get_active()))
+
+    def set(self, value):
+        with self.handler_block(self.handler):
+            self.set_active(value)
+
+
+class Slider(Gtk.Box):
+    def __init__(self, lo, hi, step, fmt, on_change, inverted=False):
+        super().__init__(spacing=10)
+        self.step, self.fmt, self.on_change = step, fmt, on_change
+        self.scale = Gtk.Scale.new_with_range(Gtk.Orientation.HORIZONTAL, lo, hi, step)
+        self.scale.set_draw_value(False)
+        self.scale.set_inverted(inverted)
+        self.scale.set_size_request(200, -1)
+        # Tekerlek sayfayı kaydırsın, sürgüyü değil (yanlışlıkla değer değişmesin).
+        self.scale.connect("scroll-event", self.pass_scroll)
+        self.value_label = label("", "value", width_chars=7, xalign=1)
+        self.add(self.scale)
+        self.add(self.value_label)
+        self.handler = self.scale.connect("value-changed", self.changed)
+
+    @staticmethod
+    def pass_scroll(scale, _event):
+        scale.stop_emission_by_name("scroll-event")
+        return False
+
+    def value(self):
+        return round(round(self.scale.get_value() / self.step) * self.step, 2)
+
+    def changed(self, _scale):
+        self.value_label.set_text(self.fmt(self.value()))
+        self.on_change(self.value())
+
+    def set(self, value):
+        with self.scale.handler_block(self.handler):
+            self.scale.set_value(value)
+        self.value_label.set_text(self.fmt(self.value()))
+
+
+class Tile(Gtk.FlowBoxChild):
+    """Resimli seçenek (duvar kağıdı ya da renk paleti). paint(karo, cr, w, h) resmi çizer."""
+
+    def __init__(self, key, title, paint):
+        super().__init__()
+        self.key, self.paint, self.image = key, paint, None
+        self.area = Gtk.DrawingArea()
+        self.area.set_size_request(THUMB_W, THUMB_H)
+        self.area.connect("draw", self.on_draw)
+        frame = Gtk.Box(halign=Gtk.Align.CENTER)
+        frame.get_style_context().add_class("frame")
+        frame.add(self.area)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.add(frame)
+        box.add(Gtk.Label(label=title, ellipsize=Pango.EllipsizeMode.END, max_width_chars=16))
+        self.add(box)
+
+    def set_image(self, pixbuf):
+        self.image = pixbuf
+        self.area.queue_draw()
+        return False
+
+    def on_draw(self, area, cr):
+        w, h = area.get_allocated_width(), area.get_allocated_height()
+        rounded(cr, 0, 0, w, h, 7)
+        cr.clip()
+        self.paint(self, cr, w, h)
+
+
+def flowbox(on_activate):
+    box = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.SINGLE, homogeneous=True,
+                      column_spacing=8, row_spacing=10, max_children_per_line=8,
+                      valign=Gtk.Align.START)
+    box.set_activate_on_single_click(True)
+    box.connect("child-activated", on_activate)
+    return box
+
+
+def select(box, key):
+    tile = next((t for t in box.get_children() if t.key == key), None)
+    if tile is None:
+        box.unselect_all()
+    else:
+        box.select_child(tile)
+
+
+# ── Görünüm (CSS) ─────────────────────────────────────────────────────────
+
+FALLBACK_COLORS = b"""
+@define-color panel_bg #1d1a21;
+@define-color panel_surface #26222b;
+@define-color panel_overlay #332d39;
+@define-color panel_fg #ede4ea;
+@define-color panel_muted #6f6577;
+@define-color panel_subtle #a397a8;
+@define-color panel_accent #f4a7b9;
+@define-color panel_border #f4a7b9;
+"""
+
+# Yalnızca .settings penceresine uygulanır; dosya seçici gibi diyaloglar sistemin temasında kalır.
+CSS = b"""
+.settings, .settings * { font-family: "Departure Mono", monospace; font-size: 11px; }
+.settings { background-color: @panel_bg; color: @panel_fg; }
+.settings label { color: inherit; text-shadow: none; }
+.settings .sidebar { background-color: @panel_surface; }
+.settings .sidebar list { background: transparent; }
+.settings .sidebar row {
+    padding: 8px 14px; margin: 1px 10px; border-radius: 8px;
+    color: @panel_subtle; background: transparent; outline: none; box-shadow: none;
+}
+.settings .sidebar row:hover { background-color: alpha(@panel_overlay, 0.5); color: @panel_fg; }
+.settings .sidebar row:selected { background-color: @panel_overlay; color: @panel_fg; }
+.settings .app-title { color: @panel_accent; padding: 20px 24px 14px 24px; }
+.settings .status { color: @panel_muted; padding: 14px 24px; }
+.settings .status.error { color: @panel_accent; }
+.settings .page-title { font-size: 22px; margin-bottom: 4px; }
+.settings .heading { color: @panel_accent; margin-top: 22px; margin-bottom: 6px; }
+.settings .note, .settings .value { color: @panel_muted; }
+.settings .value { color: @panel_subtle; }
+.settings .row { padding: 10px 0; border-bottom: 1px solid alpha(@panel_overlay, 0.7); }
+
+.settings button {
+    background-image: none; background-color: @panel_surface; color: @panel_fg;
+    border: 1px solid @panel_overlay; border-radius: 8px; padding: 5px 12px;
+    box-shadow: none; text-shadow: none; -gtk-icon-shadow: none; outline-color: @panel_subtle;
+}
+.settings button:hover { background-color: @panel_overlay; }
+.settings button.selected { background-color: @panel_accent; border-color: @panel_accent; color: @panel_bg; }
+.settings .choice button { border-radius: 0; margin-left: -1px; }
+.settings .choice button:first-child { border-radius: 8px 0 0 8px; margin-left: 0; }
+.settings .choice button:last-child { border-radius: 0 8px 8px 0; }
+.settings .place button { min-width: 84px; }
+.settings .laptop {
+    background-color: @panel_overlay; color: @panel_subtle; border-radius: 6px;
+    min-width: 84px; padding: 12px 0;
+}
+
+.settings switch {
+    background-image: none; background-color: @panel_overlay; border: 1px solid @panel_overlay;
+    border-radius: 12px; color: transparent; box-shadow: none; min-width: 44px; min-height: 22px;
+}
+.settings switch:checked { background-color: @panel_accent; border-color: @panel_accent; }
+.settings switch slider {
+    background-image: none; background-color: @panel_subtle; border: none; box-shadow: none;
+    border-radius: 10px; min-width: 18px; min-height: 18px; margin: 2px;
+}
+.settings switch:checked slider { background-color: @panel_bg; }
+
+.settings scale trough {
+    background-image: none; background-color: @panel_overlay; border: none; box-shadow: none;
+    border-radius: 3px; min-height: 4px;
+}
+.settings scale highlight { background-image: none; background-color: @panel_accent; border: none; border-radius: 3px; }
+.settings scale slider {
+    background-image: none; background-color: @panel_fg; border: none; box-shadow: none;
+    border-radius: 9px; min-width: 16px; min-height: 16px; margin: -6px;
+}
+
+.settings flowboxchild { padding: 0; background: transparent; outline: none; border-radius: 10px; }
+.settings flowboxchild .frame { border: 2px solid transparent; border-radius: 10px; padding: 2px; }
+.settings flowboxchild:hover .frame, .settings flowboxchild:focus .frame { border-color: @panel_overlay; }
+.settings flowboxchild:selected .frame { border-color: @panel_accent; }
+.settings flowboxchild label { color: @panel_subtle; }
+.settings flowboxchild:selected label { color: @panel_fg; }
+.settings flowboxchild:disabled label { color: @panel_muted; }
+
+.settings scrollbar { background: transparent; border: none; }
+.settings scrollbar slider { background-color: @panel_overlay; border: none; border-radius: 4px; min-width: 6px; }
+.settings undershoot, .settings overshoot { background: none; }
+"""
+
+
+def theme_css():
+    try:
+        colors = (THEME_STATE / "panel.css").read_bytes()
+    except OSError:
+        colors = FALLBACK_COLORS
+    if b"panel_subtle" not in colors:             # eski panel.css: theme apply çalışmadan önce
+        colors += b"@define-color panel_subtle @panel_muted;\n"
+    return colors + CSS
+
+
+# ── Pencere ───────────────────────────────────────────────────────────────
+
+class Window(Gtk.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title="Settings")
+        self.app = app
+        self.set_default_size(960, 660)
+        self.set_icon_name("preferences-system")
+        self.get_style_context().add_class("settings")
+        self.settings = load_settings()
+        self.theme = {}
+        self.palette = {}
+        self.theme_busy, self.theme_next = False, None
+        self.status_timer = 0
+        self.scale = max([1] + [Gdk.Display.get_default().get_monitor(i).get_scale_factor()
+                                for i in range(Gdk.Display.get_default().get_n_monitors())])
+        self.pending = []                          # Later nesneleri: kapanırken boşaltılır
+
+        self.stack = Gtk.Stack()
+        self.refreshers = {}
+        for name, title in PAGES:
+            page, refresh = getattr(self, f"page_{name}")(title)
+            scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER)
+            scroller.add(page)
+            self.stack.add_named(scroller, name)
+            self.refreshers[name] = refresh
+
+        self.nav = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE)
+        for name, title in PAGES:
+            item = Gtk.ListBoxRow()
+            item.name = name
+            item.add(label(title))
+            self.nav.add(item)
+        self.nav.connect("row-selected", self.on_nav)
+        self.status_label = label("", "status", wrap=True, max_width_chars=18, valign=Gtk.Align.END)
+
+        sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        sidebar.get_style_context().add_class("sidebar")
+        sidebar.set_size_request(170, -1)
+        sidebar.add(label("Settings", "app-title"))
+        sidebar.add(self.nav)
+        sidebar.pack_end(self.status_label, True, True, 0)
+        body = Gtk.Box()
+        body.add(sidebar)
+        body.pack_start(self.stack, True, True, 0)
+        self.add(body)
+
+        self.connect("key-press-event", self.on_key)
+        self.connect("delete-event", self.on_close)
+        self.connect("focus-in-event", self.on_focus)
+
+    # Sayfalar arası
+
+    def show_page(self, name):
+        item = next((r for r in self.nav.get_children() if r.name == name), None)
+        if item is not None:
+            if self.nav.get_selected_row() is item:
+                self.refreshers[name]()
+            self.nav.select_row(item)
+
+    def on_nav(self, _nav, item):
+        if item is not None:
+            self.stack.set_visible_child_name(item.name)
+            self.refreshers[item.name]()
+
+    def on_focus(self, *_):
+        # Başka yerden yapılan değişiklikler (Super+Shift+T, monitör takıldı…) görünsün.
+        self.app.reload_css()
+        item = self.nav.get_selected_row()
+        if item is not None:
+            self.refreshers[item.name]()
+        return False
+
+    def on_key(self, _w, event):
+        ctrl = event.state & Gdk.ModifierType.CONTROL_MASK
+        if event.keyval == Gdk.KEY_Escape or (ctrl and event.keyval in (Gdk.KEY_w, Gdk.KEY_q)):
+            self.close()
+            return True
+        return False
+
+    def on_close(self, *_):
+        for later in self.pending:
+            later.flush()
+        return False
+
+    def later(self, ms, fn):
+        later = Later(ms, fn)
+        self.pending.append(later)
+        return later
+
+    def status(self, text, error=False):
+        self.status_label.set_text(text)
+        ctx = self.status_label.get_style_context()
+        (ctx.add_class if error else ctx.remove_class)("error")
+        if self.status_timer:
+            GLib.source_remove(self.status_timer)
+            self.status_timer = 0
+        if text and not self.theme_busy:
+            self.status_timer = GLib.timeout_add_seconds(6 if error else 3, self.clear_status)
+
+    def clear_status(self):
+        self.status_timer = 0
+        self.status_label.set_text("")
+        return False
+
+    def failed(self, what):
+        def done(ok, err):
+            if not ok:
+                self.status(f"{what} failed" + (f": {err}" if err else ""), error=True)
+        return done
+
+    def save(self, key, value):
+        self.settings[key] = value
+        try:
+            save_settings(self.settings)
+        except OSError as e:
+            self.status(f"Could not save: {e.strerror}", error=True)
+            return False
+        return True
+
+    def page(self, title):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4, margin_top=22,
+                      margin_bottom=28, margin_start=28, margin_end=28)
+        box.add(label(title, "page-title"))
+        return box
+
+    # ── Appearance ──
+
+    def page_appearance(self, title):
+        page = self.page(title)
+        page.add(label("Wallpaper", "heading"))
+        self.walls = flowbox(self.on_wallpaper)
+        page.add(self.walls)
+        page.add(label("Colors", "heading"))
+        self.colors = flowbox(self.on_colors)
+        page.add(self.colors)
+        self.variant = Choice((("light", "Light"), ("dark", "Dark")), self.on_variant)
+        self.variant_row = row("Wallpaper colors", self.variant,
+                               "Light or dark colors, taken from the wallpaper")
+        page.add(self.variant_row)
+        page.add(label("Terminal", "heading"))
+        self.opacity = Slider(50, 100, 5, lambda v: f"{v:.0f} %",
+                              self.later(300, self.set_opacity))
+        page.add(row("Opacity", self.opacity,
+                     "For new terminal windows. The wallpaper shows through, blurred."))
+
+        self.fill_wallpapers()
+        self.from_wallpaper = Tile("wallpaper", "From wallpaper", self.paint_from_wallpaper)
+        self.from_wallpaper.path = None
+        self.colors.add(self.from_wallpaper)
+        for key, name, ui in presets():
+            self.colors.add(Tile(key, name, lambda _t, cr, w, h, ui=ui: paint_palette(cr, w, h, ui)))
+        return page, self.refresh_appearance
+
+    def fill_wallpapers(self):
+        for tile in self.walls.get_children():
+            tile.destroy()
+        jobs = []
+        for path in wallpapers():
+            tile = Tile(str(path.resolve()), path.stem, self.paint_wallpaper)
+            self.walls.add(tile)
+            jobs.append((tile, path))
+        self.walls.add(Tile("none", "None", self.paint_none))
+        self.walls.add(Tile("add", "Add…", self.paint_add))
+        self.walls.show_all()
+        thumbnails_later(jobs, self.scale)
+
+    def color(self, key):
+        return rgb(self.palette.get(key, "#808080"))
+
+    def paint_wallpaper(self, tile, cr, w, h):
+        if tile.image is not None:
+            paint_image(cr, w, h, tile.image)
+        else:
+            cr.set_source_rgb(*self.color("surface"))
+            cr.paint()
+
+    def paint_none(self, _tile, cr, w, h):
+        cr.set_source_rgb(*self.color("bg"))
+        cr.paint()
+        cr.set_source_rgb(*self.color("overlay"))
+        rounded(cr, 1, 1, w - 2, h - 2, 6)
+        cr.set_line_width(2)
+        cr.stroke()
+        cr.move_to(w * 0.38, h * 0.72)
+        cr.line_to(w * 0.62, h * 0.28)
+        cr.stroke()
+
+    def paint_add(self, _tile, cr, w, h):
+        cr.set_source_rgb(*self.color("surface"))
+        cr.paint()
+        cr.set_source_rgb(*self.color("subtle"))
+        cr.set_line_width(2)
+        for dx, dy in ((9, 0), (0, 9)):
+            cr.move_to(w / 2 - dx, h / 2 - dy)
+            cr.line_to(w / 2 + dx, h / 2 + dy)
+        cr.stroke()
+
+    def paint_from_wallpaper(self, tile, cr, w, h):
+        self.paint_wallpaper(tile, cr, w, h)
+        if self.theme.get("source") == "wallpaper":
+            # Duvar kağıdından üretilmiş geçerli renkler: altta küçük bir şeritte.
+            rounded(cr, 6, h - 21, 72, 15, 7)
+            cr.set_source_rgb(*self.color("bg"))
+            cr.fill()
+            paint_dots(cr, 14, h - 13.5, [self.palette.get(k, "#808080")
+                                          for k in ("accent", "accent2", "ok", "warn", "urgent")])
+
+    def refresh_appearance(self):
+        if self.theme_busy:
+            return                                 # sonuç gelince zaten yenilenecek
+        self.theme = read_json(THEME_STATE / "state.json")
+        self.palette = read_json(THEME_STATE / "palette.json")
+        wallpaper = self.theme.get("wallpaper")
+        from_wallpaper = self.theme.get("source") == "wallpaper"
+        select(self.walls, str(Path(wallpaper).resolve()) if wallpaper else "none")
+        select(self.colors, "wallpaper" if from_wallpaper else self.theme.get("preset", "sakura"))
+        self.from_wallpaper.set_sensitive(bool(wallpaper))
+        if wallpaper != self.from_wallpaper.path:
+            self.from_wallpaper.path, self.from_wallpaper.image = wallpaper, None
+            if wallpaper:
+                thumbnails_later([(self.from_wallpaper, Path(wallpaper))], self.scale)
+        self.variant.set(self.theme.get("variant", "dark"))
+        self.variant_row.set_visible(from_wallpaper and bool(wallpaper))
+        for box in (self.walls, self.colors):
+            for tile in box.get_children():
+                tile.area.queue_draw()
+        try:
+            self.opacity.set(round(foot_alpha(FOOT_INI.read_text()) * 100))
+        except OSError:
+            self.opacity.set(100)
+
+    def run_theme(self, args):
+        if self.theme_busy:                        # sırada en fazla bir istek: en sonuncusu
+            self.theme_next = args
+            return
+        self.theme_busy = True
+        self.status("Applying…")
+        run([BIN / "theme", *args], self.theme_done)
+
+    def theme_done(self, ok, err):
+        self.theme_busy = False
+        if self.theme_next:
+            args, self.theme_next = self.theme_next, None
+            self.run_theme(args)
+            return
+        self.app.reload_css()
+        self.refresh_appearance()
+        if ok:
+            self.status("")
+        else:
+            self.status(f"Theme failed: {err}" if err else "Theme failed", error=True)
+
+    def on_wallpaper(self, _box, tile):
+        if tile.key == "add":
+            self.add_wallpaper()
+            return
+        current = self.theme.get("wallpaper")
+        if tile.key == "none":
+            if current:
+                self.run_theme(["wallpaper", "none"])
+            return
+        if current and str(Path(current).resolve()) == tile.key:
+            return
+        self.choose_wallpaper(tile.key)
+
+    def choose_wallpaper(self, path):
+        # Renkler duvar kağıdından geliyorsa yeni resimden yeniden üretilir; preset seçiliyse kalır.
+        if self.theme.get("source") == "wallpaper":
+            self.run_theme(["wallpaper", path])
+        else:
+            self.run_theme(["wallpaper", path, "--keep-colors"])
+
+    def add_wallpaper(self):
+        dialog = Gtk.FileChooserNative.new("Add wallpaper", self, Gtk.FileChooserAction.OPEN,
+                                           "Add", "Cancel")
+        images = Gtk.FileFilter()
+        images.set_name("Images (JPEG, PNG)")
+        for suffix in IMAGE_SUFFIXES:
+            images.add_pattern(f"*{suffix}")
+            images.add_pattern(f"*{suffix.upper()}")
+        dialog.add_filter(images)
+        pictures = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_PICTURES)
+        if pictures:
+            dialog.set_current_folder(pictures)
+        chosen = dialog.get_filename() if dialog.run() == Gtk.ResponseType.ACCEPT else None
+        dialog.destroy()
+        if not chosen:
+            self.refresh_appearance()              # "Add…" seçili kalmasın
+            return
+        try:
+            path = copy_wallpaper(chosen)
+        except OSError as e:
+            self.status(f"Could not add the image: {e.strerror}", error=True)
+            self.refresh_appearance()
+            return
+        self.fill_wallpapers()
+        select(self.walls, str(path))
+        self.choose_wallpaper(str(path))
+
+    def on_colors(self, _box, tile):
+        wallpaper = self.theme.get("wallpaper")
+        if tile.key == "wallpaper":
+            if wallpaper and self.theme.get("source") != "wallpaper":
+                self.run_theme(["wallpaper", wallpaper])
+        elif self.theme.get("source") == "wallpaper" or self.theme.get("preset") != tile.key:
+            self.run_theme(["preset", tile.key])
+
+    def on_variant(self, variant):
+        wallpaper = self.theme.get("wallpaper")
+        if wallpaper and variant != self.theme.get("variant"):
+            self.variant.set(variant)
+            self.run_theme(["wallpaper", wallpaper, f"--{variant}"])
+
+    def set_opacity(self, percent):
+        path = FOOT_INI.resolve()                  # symlink'in hedefi (repo); bağlantı bozulmasın
+        try:
+            write_atomic(path, with_foot_alpha(path.read_text(), percent / 100))
+        except OSError as e:
+            self.status(f"Could not change foot.ini: {e.strerror}", error=True)
+
+    # ── Displays ──
+
+    def page_displays(self, title):
+        page = self.page(title)
+        page.add(label("External monitor", "heading"))
+        self.monitor = label("")
+        self.monitor_missing = note("")
+        self.place = {}
+        grid = Gtk.Grid(column_spacing=6, row_spacing=6, margin_top=8, margin_bottom=6)
+        grid.get_style_context().add_class("place")
+        for place, text, col, line in (("above", "Above", 1, 0), ("left", "Left", 0, 1),
+                                       ("right", "Right", 2, 1), ("below", "Below", 1, 2)):
+            button = Gtk.Button(label=text)
+            button.connect("clicked", lambda _b, p=place: self.on_place(p))
+            grid.attach(button, col, line, 1, 1)
+            self.place[place] = button
+        grid.attach(label("Laptop", "laptop", xalign=0.5), 1, 1, 1, 1)
+        auto = Gtk.Button(label="Automatic (right)")
+        auto.connect("clicked", lambda _b: self.on_place("auto"))
+        grid.attach(auto, 0, 3, 3, 1)
+        self.place["auto"] = auto
+        self.monitor_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        self.monitor_box.add(self.monitor)
+        self.monitor_box.add(grid)
+        self.monitor_box.add(note("Each monitor remembers its place and goes back to it whenever "
+                                  "it is plugged in. Shortcut: Super+P."))
+        page.add(self.monitor_box)
+        page.add(self.monitor_missing)
+
+        page.add(label("Night light", "heading"))
+        self.night = Switch(self.on_night)
+        page.add(row("Night light", self.night, "Warm screen colors for the evening"))
+        self.warmth = Slider(NIGHT_MIN, NIGHT_MAX, 100, lambda v: f"{v:.0f} K",
+                             self.later(400, self.set_warmth), inverted=True)
+        self.warmth.set(self.settings["night_temp"])
+        page.add(row("Warmth", self.warmth, "Further right is warmer"))
+        return page, self.refresh_displays
+
+    def refresh_displays(self):
+        try:
+            displays = load_displays()
+        except (OSError, SyntaxError, ImportError) as e:
+            self.show_monitor(None, f"The displays command is missing ({e}).")
+        else:
+            try:
+                _laptop, target = displays.current_screens()
+            except displays.Error as e:
+                text = str(e)
+                self.show_monitor(None, text[:1].upper() + text[1:] + ".")
+            else:
+                name = " ".join(x for x in (target.get("make"), target.get("model")) if x)
+                place = displays.load_state().get(displays.monitor_id(target), {}).get("place", "auto")
+                self.show_monitor(f"{name or target['name']}  ·  {target['name']}", None, place)
+        self.night.set(night_light_on())
+
+    def show_monitor(self, name, missing, place=None):
+        self.monitor_box.set_visible(name is not None)
+        self.monitor_missing.set_visible(missing is not None)
+        if name is not None:
+            self.monitor.set_text(name)
+            for p, button in self.place.items():
+                ctx = button.get_style_context()
+                (ctx.add_class if p == place else ctx.remove_class)("selected")
+        if missing is not None:
+            self.monitor_missing.set_text(missing)
+
+    def on_place(self, place):
+        def done(ok, err):
+            self.refresh_displays()
+            if not ok:
+                self.status(f"Moving the monitor failed: {err}", error=True)
+        run([BIN / "displays", place], done)
+
+    def on_night(self, on):
+        def done(ok, err):
+            self.night.set(night_light_on())
+            if not ok:
+                self.status(f"Night light failed: {err}" if err else "Night light failed", error=True)
+        run([BIN / "night-light", "on" if on else "off"], done)
+
+    def set_warmth(self, kelvin):
+        if self.save("night_temp", int(kelvin)):
+            # Açıksa yeni sıcaklıkla yeniden başlat; kapalıysa bir dahaki açılışta geçerli.
+            run(["systemctl", "--user", "try-restart", "night-light.service"],
+                self.failed("Night light"))
+
+    # ── Touchpad ──
+
+    def page_touchpad(self, title):
+        page = self.page(title)
+        self.tap = Switch(lambda on: self.save("tap", on))
+        self.natural = Switch(lambda on: self.save("natural_scroll", on))
+        self.speed = Slider(-1, 1, 0.1, lambda v: "default" if v == 0 else f"{v:+.1f}",
+                            self.later(300, lambda v: self.save("pointer_speed", v)))
+        page.add(row("Tap to click", self.tap, "A light tap counts as a click"))
+        page.add(row("Natural scrolling", self.natural, "Content moves with your fingers, like on a phone"))
+        page.add(row("Pointer speed", self.speed))
+        return page, self.refresh_touchpad
+
+    def refresh_touchpad(self):
+        self.tap.set(self.settings["tap"])
+        self.natural.set(self.settings["natural_scroll"])
+        self.speed.set(self.settings["pointer_speed"])
+
+    # ── Screen lock ──
+
+    def page_lock(self, title):
+        page = self.page(title)
+        self.lock = Choice(LOCK_CHOICES, self.set_lock)
+        page.add(row("Lock the screen after", self.lock,
+                     f"of inactivity. The screen turns off {SCREEN_OFF_DELAY} seconds later.",
+                     below=True))
+        page.add(note("To keep the screen on for a while (a film, a talk), turn on "
+                      "Stay awake in quick settings."))
+        return page, lambda: self.lock.set(self.settings["lock_after"])
+
+    def set_lock(self, seconds):
+        self.lock.set(seconds)
+        if self.save("lock_after", seconds):
+            run(["systemctl", "--user", "try-restart", "swayidle.service"], self.failed("Screen lock"))
+
+    def raise_to_front(self):
+        """Pencere zaten açıkken yeniden çağrılınca: niri'den bu pencereye odaklanmasını iste."""
+        try:
+            out = subprocess.run(["niri", "msg", "--json", "windows"], capture_output=True,
+                                 text=True, timeout=2).stdout
+            wid = next(w["id"] for w in json.loads(out) if w.get("pid") == os.getpid())
+            subprocess.run(["niri", "msg", "action", "focus-window", "--id", str(wid)],
+                           capture_output=True, timeout=2)
+        except (OSError, ValueError, StopIteration, subprocess.TimeoutExpired):
+            self.present()
+
+
+class App(Gtk.Application):
+    def __init__(self):
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_COMMAND_LINE)
+        self.window, self.css, self.css_text = None, None, None
+
+    def reload_css(self):
+        if self.css is None:
+            self.css = Gtk.CssProvider()
+            Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), self.css,
+                                                     Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        text = theme_css()
+        if text != self.css_text:
+            self.css_text = text
+            try:
+                self.css.load_from_data(text)
+            except GLib.Error:
+                self.css.load_from_data(FALLBACK_COLORS + CSS)
+
+    def do_command_line(self, cmdline):
+        args = cmdline.get_arguments()[1:]
+        page = args[0] if args else None
+        if self.window is None:
+            self.reload_css()
+            self.window = Window(self)
+            self.window.show_all()
+            self.window.show_page(page or PAGES[0][0])
+        else:
+            if page:
+                self.window.show_page(page)
+            self.window.raise_to_front()
+        return 0
+
+
+# ── Selftest (check.sh) ───────────────────────────────────────────────────
+
+def selftest():
+    import tempfile
+    global STATE
+    original = STATE
+    with tempfile.TemporaryDirectory() as tmp:
+        STATE = Path(tmp)
+        try:
+            assert load_settings() == DEFAULTS
+            (STATE / "settings.json").write_text(json.dumps(
+                {"tap": "yes", "pointer_speed": 7, "lock_after": 61, "night_temp": 100,
+                 "natural_scroll": True}))
+            s = load_settings()
+            assert s == dict(DEFAULTS, pointer_speed=1.0, night_temp=NIGHT_MIN, natural_scroll=True), s
+            (STATE / "settings.json").unlink()
+
+            # Touchpad'e dokunulmadıkça niri.kdl yazılmaz; dokunulunca hep yazılır.
+            s = dict(DEFAULTS, lock_after=600)
+            save_settings(s)
+            assert not (STATE / "niri.kdl").exists()
+            env = (STATE / "services.env").read_text()
+            assert "LOCK_AFTER=600\n" in env and "SCREEN_OFF_AFTER=630\n" in env, env
+            assert "NIGHT_TEMP=4000\n" in env and "NIGHT_TEMP_HIGH=4001\n" in env, env
+            s.update(tap=False, natural_scroll=True, pointer_speed=-0.3)
+            save_settings(s)
+            kdl = (STATE / "niri.kdl").read_text()
+            assert "tap\n" not in kdl and "dwt" in kdl and "natural-scroll" in kdl, kdl
+            assert "accel-speed -0.30" in kdl, kdl
+            s.update(tap=True, natural_scroll=False, pointer_speed=0.0)
+            save_settings(s)
+            kdl = (STATE / "niri.kdl").read_text()
+            assert "        tap\n" in kdl and "natural" not in kdl and "accel" not in kdl, kdl
+            assert load_settings() == s
+            if shutil.which("niri"):
+                out = subprocess.run(["niri", "validate", "-c", str(STATE / "niri.kdl")],
+                                     capture_output=True, text=True)
+                assert out.returncode == 0, out.stderr[-500:]
+        finally:
+            STATE = original
+
+    foot = "[main]\ninclude=x\n# alpha=0.2 (yorum)\n[colors]\nalpha=0.8\n"
+    assert foot_alpha(foot) == 0.8 and foot_alpha("[main]\n") == 1.0
+    assert with_foot_alpha(foot, 0.85) == foot.replace("alpha=0.8", "alpha=0.85")
+    assert with_foot_alpha(foot, 1.0).endswith("alpha=1\n")
+    assert with_foot_alpha("[main]\nfont=x\n", 0.5) == "[main]\nfont=x\n\n[colors]\nalpha=0.5\n"
+    assert "alpha = 0.6  " in with_foot_alpha("alpha = 0.9  \n", 0.6)
+    assert presets() and all(len(p) == 3 for p in presets())
+    print("ok")
+
+
+def main():
+    args = sys.argv[1:]
+    if args[:1] == ["selftest"]:
+        selftest()
+        return
+    if args[:1] in (["-h"], ["--help"], ["help"]):
+        print(__doc__.strip())
+        return
+    if len(args) > 1 or (args and args[0] not in dict(PAGES)):
+        print(__doc__.strip(), file=sys.stderr)
+        sys.exit(2)
+    sys.exit(App().run(sys.argv))
+
+
+if __name__ == "__main__":
+    main()

@@ -3,7 +3,8 @@
 #   5.5 dk → ekranları kapat (fare/klavye ile geri açılır)
 #   uyku   → uykuya geçmeden önce kilitle
 # İlk ikisi `awake` açıkken atlanır (hızlı ayarlar → Stay awake); uyku öncesi kilit her zaman çalışır.
-# Süreleri değiştirdikten sonra: systemctl --user daemon-reload && systemctl --user restart swayidle
+# Süre: Settings uygulaması (Super+S → Screen lock) ~/.local/state/settings/services.env'e
+# yazar; buradaki Environment= satırı o dosya yokken geçerli varsayılandır.
 
 [Unit]
 Description=Idle manager for the niri session (lock, screen off)
@@ -12,9 +13,11 @@ After=graphical-session.target
 Requisite=graphical-session.target
 
 [Service]
+Environment=LOCK_AFTER=300 SCREEN_OFF_AFTER=330
+EnvironmentFile=-%S/settings/services.env
 ExecStart=/usr/bin/swayidle -w \
-    timeout 300 '%h/.local/bin/awake unless loginctl lock-session' \
-    timeout 330 '%h/.local/bin/awake unless niri msg action power-off-monitors' \
+    timeout ${LOCK_AFTER} '%h/.local/bin/awake unless loginctl lock-session' \
+    timeout ${SCREEN_OFF_AFTER} '%h/.local/bin/awake unless niri msg action power-off-monitors' \
     lock '%h/.local/bin/lock-screen' \
     before-sleep '%h/.local/bin/lock-screen'
 Restart=on-failure

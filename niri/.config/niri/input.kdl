@@ -8,6 +8,8 @@ input {
         }
     }
 
+    // Settings uygulaması (Super+S → Touchpad) kullanıldıysa bu blok yerine onun yazdığı
+    // ~/.local/state/settings/niri.kdl geçerlidir (niri touchpad bloklarını birleştirmez).
     touchpad {
         tap                 // dokunarak tıklama
         dwt                 // yazarken touchpad'i devre dışı bırak
