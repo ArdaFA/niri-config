@@ -24,7 +24,7 @@
     ],
     "modules-center": ["clock"],
     "modules-right": [
-        "custom/rec", "custom/privacy", "custom/failed", "custom/system",
+        "custom/timer", "custom/rec", "custom/privacy", "custom/failed", "custom/system",
         "group/media", "tray",
         "custom/mic", "wireplumber", "backlight", "network", "battery", "custom/notifications"
     ],
@@ -72,6 +72,18 @@
     // Üstüne gelince hangi uygulama olduğu görünür.
     // REC 0:42: ekran kaydı sürüyor (screen-record). Tıkla: durdur.
     // exec-if: kayıt yokken her saniye yalnızca bir dosya kontrolü; modül gizli kalır.
+    // TMR 4:32: aramadan kurulan zamanlayıcının geri sayımı ("timer 10m tea"). Birden fazlaysa
+    // en yakını ve "+n". Üstüne gel: hepsi · tıkla: arama "timer" ile açılır (iptal için).
+    // Klasör yalnızca zamanlayıcı varken var; yokken saniyede bir yalnızca `test -d` çalışır.
+    "custom/timer": {
+        "exec": "~/.local/bin/timer-status",
+        "exec-if": "test -d \"$XDG_RUNTIME_DIR/launcher-timers\"",
+        "return-type": "json",
+        "interval": 1,
+        "signal": 12,
+        "on-click": "sh -c 'printf timer > \"$XDG_RUNTIME_DIR/launcher-query\"; systemctl --user kill --kill-whom=main --signal=USR1 launcher.service'"
+    },
+
     "custom/rec": {
         "exec": "~/.local/bin/screen-record label",
         "exec-if": "test -e \"$XDG_RUNTIME_DIR/screen-record\"",

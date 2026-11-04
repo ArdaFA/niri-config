@@ -195,6 +195,7 @@ window#waybar.empty #window {
 
 /* ── Gerektiğinde görünen göstergeler ───────────────────────────────── */
 /* Gizliyken yer kaplamazlar; görününce kısa, renkli birer yazı. */
+#custom-timer,
 #custom-rec,
 #custom-privacy,
 #custom-failed,
@@ -221,6 +222,10 @@ window#waybar.empty #window {
 
 #custom-failed {
     color: @urgent;
+}
+
+#custom-timer {
+    color: @accent;
 }
 
 #custom-system {

@@ -324,7 +324,8 @@ def parse_timer(query):
         unit = (d.group(2) or "m")[0].lower()
         total += float(d.group(1).replace(",", ".")) * {"h": 3600, "s": 1}.get(unit, 60)
         rest = rest[d.end():]
-    label = re.sub(r"^\s*(?:for|to)\s+", "", rest, flags=re.I).strip().replace("%", "")
+    label = re.sub(r"^\s*(?:for|to)\s+", "", rest, flags=re.I)
+    label = re.sub(r"[%\\\x00-\x1f]", "", label).strip()     # systemd belirteci, JSON, sekme
     seconds = round(total)
     return (seconds if 0 < seconds <= 86400 else 0), label
 
@@ -412,6 +413,7 @@ def selftest():
         ("timer too long", parse_timer("timer 48h")[0], 0),
         ("not timer", (parse_timer("timeshift"), parse_timer("timers")), (None, None)),
         ("timer 5mins", parse_timer("timer 5mins")[0], 300),
+        ("timer label cleaned", parse_timer("timer 5m tea 50% a\\b\tc"), (300, "tea 50 abc")),
         ("duration fmt", [fmt_duration(s) for s in (90, 300, 5400, 3601, 0)],
          ["1 min 30 s", "5 min", "1 h 30 min", "1 h", "0 s"]),
     ]
@@ -475,6 +477,8 @@ TERMINAL = "foot"
 SEARCH_URL = "https://search.brave.com/search?q={}"   # web araması (Brave'in varsayılanı)
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 TIMER_SOUND = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
+TIMER_DIR = RUNTIME / "launcher-timers"     # Waybar'daki TMR modülü okur (timer-status)
+QUERY_FILE = RUNTIME / "launcher-query"     # varsa açılışta kutuya yazılır (Waybar'dan "timer")
 
 CARD_W = 640            # kutunun genişliği
 LIST_H = 400            # sonuç listesinin en fazla yüksekliği; fazlası kayar
@@ -644,6 +648,11 @@ def swatch(rgb, size=40):
     cr.set_line_width(2)
     cr.stroke()
     return Gdk.pixbuf_get_from_surface(surface, 0, 0, size, size)
+
+
+def signal_bar():
+    """Waybar'daki TMR modülü hemen yenilensin (custom/timer, signal 12)."""
+    run_async(["pkill", "-RTMIN+12", "-x", "waybar"])
 
 
 def parse_bool(out):
@@ -1394,25 +1403,41 @@ class Launcher:
             ends = time.strftime("%H:%M", time.localtime(end))
             items.append(Item("timers", ("timer", unit), name or "Timer",
                               f"{fmt_duration(end - now)} left · ends {ends}", icon, hint="Cancel",
-                              run=lambda unit=unit: run_async(["systemctl", "--user", "stop", unit])))
+                              run=lambda unit=unit: self.cancel_timer(unit)))
         if not items:
             items.append(Item("timers", ("timer-help",), "Type a duration: timer 10m tea",
                               "Units: s, min, h. A plain number means minutes.", icon, hint=""))
         return items
 
+    def cancel_timer(self, unit):
+        run_async(["systemctl", "--user", "stop", unit])
+        try:
+            (TIMER_DIR / unit).unlink()
+        except OSError:
+            pass
+        signal_bar()
+
     def start_timer(self, seconds, label):
         end = int(time.time() + seconds)
-        unit = f"launcher-timer-{end}-{os.getpid()}{int(time.time() * 1000) % 1000:03d}"
+        unit = f"launcher-timer-{end}-{os.getpid()}{int(time.time() * 1000) % 1000:03d}.timer"
         length = fmt_duration(seconds)
         title = label or f"{length} timer"
+        marker = TIMER_DIR / unit
+        try:
+            TIMER_DIR.mkdir(exist_ok=True, mode=0o700)
+            marker.write_text(f"{end}\t{title}\n")
+        except OSError:
+            pass
+        signal_bar()
         # Süre dolunca: kalıcı bildirim + alarm sesi. Metin argüman olarak geçer, kabuk görmez;
         # --expand-environment=no: içinde $ olsa da systemd açmaz.
-        run_async(["systemd-run", "--user", "--quiet", "--collect", f"--unit={unit}",
+        run_async(["systemd-run", "--user", "--quiet", "--collect", f"--unit={unit.removesuffix('.timer')}",
                    f"--on-active={seconds}", "--timer-property=AccuracySec=1s",
                    f"--description={title}", "--expand-environment=no", "--",
-                   "sh", "-c", 'notify-send -a Timer -u critical -i alarm-symbolic "$1" "$2"; '
-                   'exec pw-play "$3"', "sh", "Time's up" if not label else label,
-                   f"{length} timer finished", TIMER_SOUND],
+                   "sh", "-c", 'rm -f "$4"; pkill -RTMIN+12 -x waybar; '
+                   'notify-send -a Timer -u critical -i alarm-symbolic "$1" "$2"; exec pw-play "$3"',
+                   "sh", "Time's up" if not label else label, f"{length} timer finished", TIMER_SOUND,
+                   str(marker)],
                   lambda out: out is not None and run_async(
                       ["notify-send", "-a", "Timer", "-e", "-u", "low", "-i", "alarm-symbolic",
                        f"Timer started: {length}",
@@ -1675,7 +1700,12 @@ class Launcher:
 
     def toggle(self, mode="search"):
         if not self.visible:
-            self.show(mode=mode)
+            try:                            # Waybar'dan: ör. TMR'ye tıklayınca "timer"
+                text = QUERY_FILE.read_text().strip()[:200]
+                QUERY_FILE.unlink()
+            except OSError:
+                text = ""
+            self.show(text, mode=mode)
         elif self.mode == mode:
             self.hide("toggle")
         else:                               # açıkken öbür kısayol: o moda geç

@@ -133,6 +133,7 @@ gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
   kullanıcı zamanlayıcısıdır (`launcher-timer-*.timer`): arama penceresi kapansa ya da yeniden
   başlasa da çalışır, oturumu kapatınca silinir. Komut satırından:
   `systemctl --user list-timers 'launcher-timer-*'`.
+  Çalışan zamanlayıcının geri sayımı panelde görünür (`TMR 4:32`).
 - **Web araması:** Brave Search. Değiştirmek için `bin/.local/bin/launcher` → `SEARCH_URL`.
 - **Hafif ve hızlı:** pencere arka planda hazır bekler (`launcher.service`), `Super+D` ona yalnızca
   bir sinyal gönderir; bu yüzden basar basmaz açılır. Beklerken yaklaşık 45 MB bellek kullanır,
@@ -732,6 +733,7 @@ Kayıtlar `~/Videos/Recordings/` içine (`.mp4`). Kayıt sürerken Waybar'ın sa
 | `VPN` | Yalnızca VPN bağlıyken. Üstüne gel: hangi bağlantı |
 | Saat | Tıkla: takvim. Tekrar tıkla, `Esc`'e bas ya da dışarı tıkla: kapanır. Üstüne gel: tam tarih. |
 | `\|<` `>` / `\|\|` `>\|` ♪ başlık | Yalnızca bir çalar açıkken görünür. Önceki · oynat/duraklat · sonraki. Başlığa tıkla: kontrol kutusu (aşağıda), tekerlek: 5 sn ileri / geri, orta tık: önceki, sağ tık: sonraki. |
+| `TMR 4:32` | Aramadan kurulan zamanlayıcı çalışırken (`timer 10m tea`): en yakınının kalan süresi, birden fazlaysa `+n`. Üstüne gel: hepsi · tıkla: arama `timer` ile açılır (Enter iptal eder) |
 | `REC 0:42` (kırmızı) | Ekran kaydı sürerken. Tıkla: durdur |
 | `MIC CAM SCR` (kırmızı) | Mikrofon / kamera / ekran paylaşımı kullanılırken. Üstüne gel: hangi uygulama |
 | `FAIL n` | Bir servis çöktüğünde. Üstüne gel: adları · tıkla: ayrıntılar (terminalde) |
@@ -808,6 +810,7 @@ Sağ yarı zaten dolu olduğu için modlar solda; orada pencere başlığı gere
 | Gösterge | Ne zaman | Nasıl anlıyor |
 |---|---|---|
 | `AWAKE` | Hızlı ayarlar → Stay awake açıkken | `awake` scripti; swayidle bu sırada kilitlemez, ekranı kapatmaz |
+| `TMR 4:32` | Zamanlayıcı çalışırken | `timer-status`; arama penceresinin `$XDG_RUNTIME_DIR/launcher-timers/` dosyaları (saniyede bir, yalnızca zamanlayıcı varken) |
 | `REC 0:42` | Ekran kaydı sürerken | `screen-record`'un durum dosyası ve wf-recorder süreci (saniyede bir; kayıt yokken yalnızca dosya kontrolü) |
 | `NIGHT` | Hızlı ayarlar → Night light açıkken | `night-light.service` (wlsunset) çalışıyor mu |
 | `ECO` / `PERF` | Güç profili balanced değilken | tuned-ppd'nin D-Bus sinyali (anında) |

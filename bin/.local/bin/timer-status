@@ -1,0 +1,35 @@
+#!/bin/sh
+# timer-status — Waybar'daki TMR modülü: en yakın zamanlayıcının geri sayımı (custom/timer).
+# Zamanlayıcıları arama penceresi kurar ("timer 10m tea"); her biri için şu dosyayı yazar:
+#   $XDG_RUNTIME_DIR/launcher-timers/<systemd birimi>   içinde: "bitiş(epoch)<TAB>ad"
+# Süre dolunca ya da iptal edilince dosya silinir; son dosya gidince klasör de silinir ve
+# Waybar'ın exec-if'i modülü gizler. Saniyede bir çalışır, yalnızca zamanlayıcı varken.
+dir="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/launcher-timers"
+now=$(date +%s)
+best=; best_name=; tip=; n=0
+for f in "$dir"/*; do
+    [ -f "$f" ] || continue
+    IFS='	' read -r end name < "$f" || true
+    case $end in ''|*[!0-9]*) rm -f "$f"; continue ;; esac
+    left=$((end - now))
+    if [ "$left" -lt -5 ]; then             # süre dolmuş ama dosya kalmış (ör. oturum askıdaydı)
+        rm -f "$f"; continue
+    fi
+    [ "$left" -lt 0 ] && left=0
+    n=$((n + 1))
+    if [ -z "$best" ] || [ "$left" -lt "$best" ]; then best=$left; best_name=$name; fi
+    h=$((left / 3600)); m=$((left % 3600 / 60)); s=$((left % 60))
+    if [ "$h" -gt 0 ]; then t=$(printf '%d:%02d:%02d' $h $m $s); else t=$(printf '%d:%02d' $m $s); fi
+    tip="$tip${tip:+\\n}$t  $name"
+done
+rmdir "$dir" 2>/dev/null      # boşsa
+if [ -z "$best" ]; then
+    printf '%s\n' '{"text":""}'
+    exit 0
+fi
+h=$((best / 3600)); m=$((best % 3600 / 60)); s=$((best % 60))
+if [ "$h" -gt 0 ]; then t=$(printf '%d:%02d:%02d' $h $m $s); else t=$(printf '%d:%02d' $m $s); fi
+[ "$n" -gt 1 ] && t="$t +$((n - 1))"
+# JSON için tırnak kaçışı (adları kullanıcı yazıyor; ters bölü ve sekmeyi arama zaten atar).
+tip=$(printf '%s' "$tip" | sed 's/"/\\"/g')
+printf '{"text":"TMR %s","class":"timer","tooltip":"%s\\nClick: timers"}\n' "$t" "$tip"
