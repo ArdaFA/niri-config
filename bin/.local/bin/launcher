@@ -6,6 +6,9 @@
 #   launcher daemon      arka planda bekleyen pencere (launcher.service)
 #   launcher selftest    arayüzsüz arama mantığı testleri (check.sh)
 #
+# Hata ayıklama: systemctl --user set-environment LAUNCHER_DEBUG=1 && systemctl --user restart
+# launcher → açılıp kapanmalar ve nedenleri `journalctl --user -u launcher`'da (yazılan metin hariç).
+#
 # Pencere arka planda hazır bekler; tuşa basınca yalnızca görünür olur. Super+D bu betiği
 # değil doğrudan TOGGLE komutunu çalıştırır: servise SIGUSR1 gönderir (~6 ms; Python'u
 # başlatmak bile ~40 ms). Servis çalışmıyorsa fuzzel açılır.
@@ -42,6 +45,12 @@ HOME = os.path.expanduser("~")
 TOGGLE = ("systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null"
           " || exec fuzzel")
 USAGE = "usage: launcher [toggle] | daemon | selftest"
+DEBUG = bool(os.environ.get("LAUNCHER_DEBUG"))   # açılıp kapanmaları günlüğe yazar
+
+
+def debug(*args):
+    if DEBUG:
+        print("launcher:", *args, file=sys.stderr, flush=True)
 
 if __name__ == "__main__" and sys.argv[1:] in ([], ["toggle"]):
     os.execvp("sh", ["sh", "-c", TOGGLE])
@@ -637,7 +646,8 @@ class Launcher:
             GtkLayerShell.set_anchor(self.backdrop, edge, True)
         GtkLayerShell.set_exclusive_zone(self.backdrop, -1)
         self.backdrop.get_style_context().add_class("backdrop")
-        self.backdrop.connect("button-press-event", lambda *_: self.hide())
+        self.backdrop.connect("button-press-event", lambda _w, ev: self.hide(
+            f"click outside (button {ev.button}, {ev.x:.0f},{ev.y:.0f})"))
 
         # Pencerenin boyu sabit, yalnızca içindeki kutu büyür: niri boyu değişen katman
         # penceresine yeni kare vermiyor (bkz. media-popup). Kutunun altı saydam.
@@ -648,6 +658,11 @@ class Launcher:
         self.win.get_style_context().add_class("launcher-win")
         self.win.connect("key-press-event", self.on_key)
         self.win.connect("button-press-event", self.on_click)
+        if DEBUG:
+            for widget, name in ((self.win, "box"), (self.backdrop, "backdrop")):
+                for sig in ("map-event", "unmap-event", "delete-event", "focus-in-event",
+                            "focus-out-event"):
+                    widget.connect(sig, lambda *_a, n=name, s=sig: debug(n, s) and False)
 
         self.card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.START,
                             halign=Gtk.Align.CENTER, margin=SHADOW)
@@ -697,6 +712,7 @@ class Launcher:
         self.css, self.css_stamp = provider, colors
 
     def show(self, text=""):
+        debug("show")
         if self.visible:
             return
         self.load_css()
@@ -717,7 +733,8 @@ class Launcher:
             self.update()
         run_async(["niri", "msg", "--json", "windows"], self.windows_loaded)
 
-    def hide(self):
+    def hide(self, why=""):
+        debug("hide:", why)
         if not self.visible:
             return
         self.visible = False
@@ -750,14 +767,16 @@ class Launcher:
         alloc = self.card.get_allocation()
         if not (alloc.x <= event.x <= alloc.x + alloc.width
                 and alloc.y <= event.y <= alloc.y + alloc.height):
-            self.hide()                     # kutunun altındaki saydam boşluk
+            self.hide("click below the box")  # kutunun altındaki saydam boşluk
         return False
 
     def on_key(self, _win, event):
         key = event.keyval
         ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
+        if DEBUG and not Gdk.keyval_to_unicode(key):     # yalnızca özel tuşlar; yazılanlar günlüğe girmez
+            debug("key", Gdk.keyval_name(key), "state", int(event.state))
         if key == Gdk.KEY_Escape:
-            self.hide()
+            self.hide("escape")
         elif key in (Gdk.KEY_Down, Gdk.KEY_Tab) or (ctrl and key in (Gdk.KEY_n, Gdk.KEY_j)):
             self.move(1)
         elif key in (Gdk.KEY_Up, Gdk.KEY_ISO_Left_Tab) or (ctrl and key in (Gdk.KEY_p, Gdk.KEY_k)):
@@ -959,7 +978,7 @@ class Launcher:
         action = item.alt if alt and item.alt else item.run
         if not action:
             return
-        self.hide()
+        self.hide("activated " + item.title)
         GLib.timeout_add(ACTION_DELAY if item.group == "actions" else 0,
                          lambda: action() and False)
 
@@ -1310,7 +1329,7 @@ class Launcher:
 
     def toggle(self):
         if self.visible:
-            self.hide()
+            self.hide("toggle")
         else:
             self.show()
         return False
