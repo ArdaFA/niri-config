@@ -25,6 +25,8 @@
 #   emoji          ":smile" — IBus'un emoji listesi; seçilen kopyalanır
 #   renk           "#f4a7b9", "rgb(…)", "hsl(…)": örnek + hex/rgb/hsl; "Pick color" ekrandan alır
 #   komut          "> komut": terminalde çalıştırır (Ctrl+Enter: arka planda); geçmiş hatırlanır
+#   cihazlar       ses çıkışı/girişi seç, Bluetooth cihazına bağlan/kes, Wi-Fi ağına bağlan; ilk
+#                  harf yazılınca bir kez okunur (pactl, bluetoothctl, nmcli), boşta maliyeti yok
 #   zamanlayıcı    "timer 10m tea", "remind me in 20 min to stretch": süre dolunca sesli bildirim.
 #                  systemd --user zamanlayıcısı (launcher-timer-*.timer): arama kapansa da çalışır;
 #                  yalnızca "timer" yazınca çalışanlar listelenir, Enter iptal eder
@@ -338,6 +340,49 @@ def fmt_duration(seconds):
     return " ".join(parts) or "0 s"
 
 
+def split_nmcli(line):
+    """nmcli -t satırı → alanlar (":" ayırır; "\\:" ve "\\\\" kaçışlı)."""
+    fields, cur, escaped = [], "", False
+    for ch in line:
+        if escaped:
+            cur, escaped = cur + ch, False
+        elif ch == "\\":
+            escaped = True
+        elif ch == ":":
+            fields.append(cur)
+            cur = ""
+        else:
+            cur += ch
+    fields.append(cur)
+    return fields
+
+
+def parse_wifi(text):
+    """nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY dev wifi list → ağ başına bir kayıt, güçlüsü önde."""
+    nets = {}
+    for line in (text or "").splitlines():
+        f = split_nmcli(line)
+        if len(f) < 4 or not f[1]:
+            continue
+        signal = int(f[2]) if f[2].isdigit() else 0
+        net = {"ssid": f[1], "signal": signal, "secure": f[3] not in ("", "--"),
+               "active": f[0].strip() == "*"}
+        old = nets.get(f[1])
+        if old is None or net["active"] or (signal > old["signal"] and not old["active"]):
+            nets[f[1]] = net
+    return sorted(nets.values(), key=lambda n: (not n["active"], -n["signal"]))
+
+
+def parse_bt(text):
+    """bluetoothctl devices → [(adres, ad)]"""
+    found = []
+    for line in (text or "").splitlines():
+        m = re.match(r"Device ([0-9A-F:]{17}) (.+)$", line.strip())
+        if m:
+            found.append((m.group(1), m.group(2)))
+    return found
+
+
 def window_app_keys(app_id):
     """niri app_id'sinden .desktop eşleştirme anahtarları."""
     a = (app_id or "").lower()
@@ -414,6 +459,12 @@ def selftest():
         ("not timer", (parse_timer("timeshift"), parse_timer("timers")), (None, None)),
         ("timer 5mins", parse_timer("timer 5mins")[0], 300),
         ("timer label cleaned", parse_timer("timer 5m tea 50% a\\b\tc"), (300, "tea 50 abc")),
+        ("nmcli split", split_nmcli(r"*:Café\: 5G:58:WPA2"), ["*", "Café: 5G", "58", "WPA2"]),
+        ("wifi parse", [(n["ssid"], n["signal"], n["secure"], n["active"]) for n in parse_wifi(
+            "*:Home:58:WPA2\n :Home:70:WPA2\n :Cafe:80:\n :Cafe:40:\n ::90:WPA2\n :Lib:33:--\n")],
+         [("Home", 58, True, True), ("Cafe", 80, False, False), ("Lib", 33, False, False)]),
+        ("bt parse", parse_bt("Device 00:1B:66:C5:AE:BE HD 450BT\nController 11:22 x\n"),
+         [("00:1B:66:C5:AE:BE", "HD 450BT")]),
         ("duration fmt", [fmt_duration(s) for s in (90, 300, 5400, 3601, 0)],
          ["1 min 30 s", "5 min", "1 h 30 min", "1 h", "0 s"]),
     ]
@@ -479,6 +530,24 @@ IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 TIMER_SOUND = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
 TIMER_DIR = RUNTIME / "launcher-timers"     # Waybar'daki TMR modülü okur (timer-status)
 QUERY_FILE = RUNTIME / "launcher-query"     # varsa açılışta kutuya yazılır (Waybar'dan "timer")
+# Cihaz bilgisi tek süreçte: ses (pactl), Bluetooth (bluetoothctl), Wi-Fi (nmcli). "@@" ayırır.
+DEVICE_PROBE = """
+sep() { printf '\\n@@\\n'; }          # pactl'ın JSON'u satır sonu olmadan biter
+pactl -f json info; sep
+pactl -f json list sinks; sep
+pactl -f json list sources; sep
+timeout 2 bluetoothctl devices Paired; sep
+timeout 2 bluetoothctl devices Connected; sep
+nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY device wifi list --rescan no; sep
+nmcli -t -f NAME,TYPE connection show
+true
+"""
+DEVICE_WORDS = {
+    "sink": "sound audio output speakers headphones headset volume device",
+    "source": "microphone mic input audio sound record device",
+    "bt": "bluetooth headphones headset speaker earbuds connect disconnect device",
+    "wifi": "wifi wi fi wlan wireless network internet connect",
+}
 
 CARD_W = 640            # kutunun genişliği
 LIST_H = 400            # sonuç listesinin en fazla yüksekliği; fazlası kayar
@@ -487,10 +556,10 @@ MARGIN_TOP = 110        # ekranın (panelin) üstünden uzaklık
 DEBOUNCE = 110          # qalc ve plocate yazmayı bu kadar ms bekler
 ACTION_DELAY = 180      # eylemlerden önce pencere kapansın (ekran görüntüsüne girmesin)
 LIMITS = {"calc": 1, "apps": 6, "windows": 5, "actions": 6, "files": 7, "web": 2, "emoji": 60,
-          "color": 3, "commands": 8, "timers": 10}
+          "color": 3, "commands": 8, "timers": 10, "devices": 6}
 TITLES = {"calc": "Calculator", "apps": "Applications", "windows": "Windows",
           "actions": "Settings & actions", "files": "Files", "web": "Web", "emoji": "Emoji",
-          "color": "Color", "commands": "Run a command", "timers": "Timers"}
+          "color": "Color", "commands": "Run a command", "timers": "Timers", "devices": "Devices"}
 
 CSS = b"""
 .launcher-win, .backdrop { background: transparent; }
@@ -650,6 +719,11 @@ def swatch(rgb, size=40):
     return Gdk.pixbuf_get_from_surface(surface, 0, 0, size, size)
 
 
+def notify(app, summary, body="", icon="", transient=False):
+    argv = ["notify-send", "-a", app] + (["-i", icon] if icon else []) + (["-e"] if transient else [])
+    run_async(argv + [summary] + ([body] if body else []))
+
+
 def signal_bar():
     """Waybar'daki TMR modülü hemen yenilensin (custom/timer, signal 12)."""
     run_async(["pkill", "-RTMIN+12", "-x", "waybar"])
@@ -794,6 +868,8 @@ class Launcher:
         self.navigated = self.visible = self.pending_enter = False
         self.mode = "search"                # ya da "clipboard"
         self.timers = []                    # (birim, bitiş zamanı, ad)
+        self.devices = None                 # açılış başına bir kez okunur (ilk harfte)
+        self.devices_asked = False
         self.clips = []
         self.css, self.css_stamp = None, None
         self.build()
@@ -901,6 +977,7 @@ class Launcher:
             self.update()
         run_async(["niri", "msg", "--json", "windows"], self.windows_loaded)
         self.load_timers()
+        self.devices, self.devices_asked = None, False
 
     def hide(self, why=""):
         debug("hide:", why)
@@ -978,6 +1055,9 @@ class Launcher:
         self.cancel_async()
         self.extra, self.navigated, self.pending_enter = {}, False, False
         query = self.entry.get_text()
+        if self.mode == "search" and query.strip() and not self.devices_asked:
+            self.devices_asked = True
+            self.load_devices()
         self.local = self.search_local(query)
         self.render()
         if (self.mode == "search" and query.strip() and query[0] not in ":>"
@@ -1021,6 +1101,7 @@ class Launcher:
         groups["apps"] = self.search_apps(words)
         groups["windows"] = self.search_windows(words)
         groups["actions"] = self.search_actions(words)
+        groups["devices"] = self.search_devices(words)
         groups["files"] = self.search_recent(words) if len(query.strip()) >= 2 else []
         groups["web"] = self.web_items(query)
         return groups
@@ -1368,6 +1449,119 @@ class Launcher:
             items.append(Item("commands", ("cmd-help",), "Type a command after >",
                               "Runs in a terminal; Ctrl+Enter runs it in the background", hint=""))
         return items
+
+    # Cihazlar: ses, Bluetooth, Wi-Fi
+
+    def load_devices(self, then=None):
+        def loaded(out):
+            parts = [part.strip() for part in (out or "").split("\n@@\n")]
+            parts += [""] * (7 - len(parts))
+            try:
+                info = json.loads(parts[0] or "{}")
+                sinks = json.loads(parts[1] or "[]")
+                sources = json.loads(parts[2] or "[]")
+            except ValueError:
+                info, sinks, sources = {}, [], []
+            connected = {mac for mac, _ in parse_bt(parts[4])}
+            known = [split_nmcli(line) for line in parts[6].splitlines()]
+            self.devices = {
+                "sink": info.get("default_sink_name", ""),
+                "source": info.get("default_source_name", ""),
+                "sinks": [(s.get("name", ""), s.get("description", "")) for s in sinks],
+                "sources": [(s.get("name", ""), s.get("description", "")) for s in sources
+                            if not s.get("name", "").endswith(".monitor")],
+                "bt": [(mac, name, mac in connected) for mac, name in parse_bt(parts[3])],
+                "wifi": parse_wifi(parts[5]),
+                "known": [f[0] for f in known if len(f) >= 2 and f[1] == "802-11-wireless"],
+            }
+            if then:
+                then()
+            if self.visible and self.mode == "search" and self.entry.get_text().strip():
+                self.local = self.search_local(self.entry.get_text())
+                self.render()
+        run_async(["sh", "-c", DEVICE_PROBE], loaded, timeout=6000)
+
+    def search_devices(self, words):
+        d = self.devices
+        if not d or not words:
+            return []
+        found = []
+
+        def add(kind, key, title, sub, icons, run, hint, extra="", stay=False):
+            fields = [(fold(title), 1.0), (fold(DEVICE_WORDS[kind] + " " + extra), 0.7)]
+            score = match(words, fields)
+            if score:
+                item = Item("devices", key, title, sub, themed(*icons), score * 100, run=run, hint=hint)
+                item.stay = stay
+                found.append(item)
+
+        for name, desc in d["sinks"]:
+            current = name == d["sink"]
+            add("sink", ("sink", name), desc, "Sound output" + (" · in use" if current else ""),
+                ("audio-headphones-symbolic" if "bluez" in name else "audio-speakers-symbolic",),
+                None if current else lambda name=name: run_async(["pactl", "set-default-sink", name]),
+                "In use" if current else "Use")
+        for name, desc in d["sources"]:
+            current = name == d["source"]
+            add("source", ("source", name), desc, "Microphone" + (" · in use" if current else ""),
+                ("audio-input-microphone-symbolic",),
+                None if current else lambda name=name: run_async(["pactl", "set-default-source", name]),
+                "In use" if current else "Use")
+        for mac, name, connected in d["bt"]:
+            add("bt", ("bt", mac), name, "Bluetooth" + (" · connected" if connected else ""),
+                ("bluetooth-active-symbolic", "bluetooth-symbolic"),
+                lambda mac=mac, name=name, c=connected: self.bluetooth(mac, name, c),
+                "Disconnect" if connected else "Connect")
+        for net in d["wifi"]:
+            ssid = net["ssid"]
+            sub = f"Wi-Fi · {net['signal']}%" + (" · connected" if net["active"] else "") \
+                + ("" if net["secure"] else " · open")
+            add("wifi", ("wifi", ssid), ssid, sub,
+                ("network-wireless-signal-good-symbolic", "network-wireless-symbolic"),
+                None if net["active"] else lambda net=net: self.wifi(net),
+                "Connected" if net["active"] else "Connect")
+        add("wifi", ("wifi-scan",), "Scan for Wi-Fi networks", "Wi-Fi",
+            ("view-refresh-symbolic",), self.wifi_scan, "Scan", "scan refresh search networks list",
+            stay=True)
+        return sorted(found, key=lambda i: -i.score)
+
+    def bluetooth(self, mac, name, connected):
+        verb = "disconnect" if connected else "connect"
+
+        def done(out):
+            ok = out is not None and "fail" not in out.lower() and "error" not in out.lower()
+            text = (f"Disconnected from {name}" if connected else f"Connected to {name}") if ok \
+                else f"Could not {verb} {name}"
+            notify("Bluetooth", text, "" if ok else "Is it switched on and nearby?",
+                   "bluetooth-active-symbolic", transient=ok)
+        # Bluetooth kapalıysa önce açılır (bağlanmak isteyen onu da ister).
+        run_async(["sh", "-c", f'bluetoothctl power on >/dev/null 2>&1; exec bluetoothctl {verb} "$1"',
+                   "sh", mac], done, timeout=25_000)
+
+    def wifi(self, net):
+        ssid = net["ssid"]
+        known = next((n for n in self.devices["known"] if n == ssid or n.startswith(ssid + " ")), None)
+
+        def done(out):
+            ok = out is not None
+            notify("Wi-Fi", f"Connected to {ssid}" if ok else f"Could not connect to {ssid}", "",
+                   "network-wireless-symbolic", transient=ok)
+        if known:
+            run_async(["nmcli", "connection", "up", "id", known], done, timeout=45_000)
+        elif not net["secure"]:
+            run_async(["nmcli", "device", "wifi", "connect", ssid], done, timeout=45_000)
+        else:
+            # Parola gerekiyor: nmcli terminalde sorar.
+            spawn(TERMINAL, "--title", "Wi-Fi", "sh", "-c",
+                  'nmcli --ask device wifi connect "$1"; printf "\\nPress Enter to close."; read -r _',
+                  "sh", ssid)
+
+    def wifi_scan(self):
+        self.tip.set_text("Scanning…")
+
+        def scanned(_out):
+            GLib.timeout_add(2500, lambda: self.load_devices(lambda: self.tip.set_text("")) and False)
+        run_async(["nmcli", "device", "wifi", "rescan"], scanned, timeout=15_000)
 
     def load_timers(self):
         def loaded(out):

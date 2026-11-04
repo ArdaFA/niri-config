@@ -108,6 +108,9 @@ gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
 | uygulama adı, türü ya da baş harfleri (`brave`, `browser`, `vsc`) | **Applications**: en çok ve en son açtıkların üstte | açar |
 | pencere başlığı ya da uygulaması | **Windows**: açık pencereler | o pencereye geçer; `Ctrl+Enter` pencereyi kapatır |
 | `night`, `wifi`, `lock`, `restart`, `nord`, `monitor`, `screenshot`… | **Settings & actions**: Settings sayfaları, renk temaları, duvar kağıtları, monitörün yeri, hızlı ayar düğmeleri (açık/kapalı yazar), ekran görüntüsü, oturum | uygular / aç-kapa yapar |
+| `bluetooth`, `headphones`, cihazın adı (`hd 450`) | **Devices**: eşleşmiş Bluetooth cihazları (bağlı mı yazar) | bağlanır / bağlantıyı keser (Bluetooth kapalıysa açar); sonucu bildirir |
+| `wifi`, ağın adı (`eduroam`) | **Devices**: çevredeki Wi-Fi ağları (sinyal %, bağlı olan) ve *Scan for Wi-Fi networks* | bağlanır: kayıtlı ağa doğrudan, açık ağa doğrudan, şifreli yeni ağda şifreyi terminalde sorar |
+| `sound`, `speakers`, `microphone` | **Devices**: ses çıkışları ve mikrofonlar (hangisi kullanımda) | o cihazı varsayılan yapar |
 | dosya ya da klasör adının bir parçası (en az 3 harf) | **Files**: önce son açtıkların, sonra ev klasöründeki her şey | açar; `Ctrl+Enter` klasöründe gösterir |
 | `2*(3+4)`, `5 km to mi`, `100 usd to eur`, `20% of 80`, `sqrt(2)` | **Calculator**: sonuç en üstte | sonucu kopyalar |
 | `:` ile başlayan kelime (`:smile`, `:heart`) | **Emoji** | kopyalar (`Ctrl+V` ile yapıştır) |
@@ -128,6 +131,10 @@ gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
 - **Hesap makinesi:** basit işlemleri anında kendisi yapar; birim, kur, yüzde ve fonksiyonlar için
   `qalc` (paket: `qalculate`) kullanır. Döviz kurları haftada bir güncellenir. Bir şeyin kesin
   hesap olarak alınmasını istersen başına `=` koy: `=pi`.
+- **Cihazlar:** Bluetooth, Wi-Fi ve ses cihazlarının listesi ilk harfi yazınca bir kez okunur
+  (`pactl`, `bluetoothctl`, `nmcli`; ~0.2 sn, tek süreç). Pencere boşta beklerken hiçbir şey
+  sorulmaz. Wi-Fi listesi NetworkManager'ın son taramasıdır; yeni ağlar için
+  *Scan for Wi-Fi networks*.
 - **Zamanlayıcı:** süre dolunca kalıcı bir bildirim ve alarm sesi gelir. Birimler `s`, `min`,
   `h`; birimsiz sayı dakikadır (`timer 5 pasta`), en fazla 24 saat. Her zamanlayıcı systemd'nin
   kullanıcı zamanlayıcısıdır (`launcher-timer-*.timer`): arama penceresi kapansa ya da yeniden
@@ -943,8 +950,8 @@ niri'de yapan yoktu):
 
 - Hızlı ayarlar ve bildirim geçmişi **aynı panelde**. swaync tek panel kullanıyor; GNOME'daki
   gibi iki ayrı menü yok.
-- Panelde **Wi-Fi ağ listesi yok**. Ağ seçmek için tepsideki Wi-Fi simgesi (nm-applet) ya da
-  `Settings ▼` → Network.
+- Panelde **Wi-Fi ağ listesi yok**. Ağ seçmek için: `Super+D` → `wifi` (ya da ağın adı), tepsideki
+  Wi-Fi simgesi (nm-applet) ya da `Settings ▼` → Network.
 - Düğmelerin açık/kapalı hali panel açılırken okunur. Panel açıkken Power saver'dan doğrudan
   Performance'a geçersen Power saver düğmesi panel kapanıp açılana kadar yanık görünür. Wi-Fi'yi
   başka yerden değiştirirsen de düğme bir sonraki açılışta güncellenir.
