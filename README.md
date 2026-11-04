@@ -743,7 +743,7 @@ Kayıtlar `~/Videos/Recordings/` içine (`.mp4`). Kayıt sürerken Waybar'ın sa
 | `LCD` | Tıkla: hızlı ayarlar · tekerlek: parlaklık ±%5 (parlaklık tuşları gibi gösterge açar) |
 | `NET` | Tıkla: hızlı ayarlar · sağ tık: ağ bağlantıları penceresi |
 | `BAT` / `AC` | Tıkla: hızlı ayarlar |
-| `MSG` / `DND` | `MSG`: geçmiş boş · `MSG •`: bildirim var · `DND`: Rahatsız Etme açık. Tıkla: panel · sağ tık: Rahatsız Etme aç/kapa |
+| `MSG` / `DND` / `QUIET` | `MSG`: geçmiş boş · `MSG •`: bildirim var · `DND`: Rahatsız Etme açık · `QUIET`: ekran paylaşılıyor, açılır bildirimler bekletiliyor. Tıkla: panel · sağ tık: Rahatsız Etme aç/kapa |
 | Tepsi | Wi-Fi (nm-applet), Bluetooth (blueman) ve diğer uygulamalar |
 
 **Tepsi simgeleri ve açık temalar:** Tepsi simgeleri, KDE'de seçili simge temasından gelir
@@ -900,6 +900,11 @@ Panelde yukarıdan aşağıya:
 - Aynı uygulamanın bildirimleri panelde gruplanır.
 - Ses/parlaklık göstergesi (`osd`) de bir bildirimdir ama geçmişe yazılmaz. Artık üst ortada
   değil, diğer bildirimlerle birlikte sağ üstte çıkar; swaync bütün bildirimleri tek yerde gösteriyor.
+
+**Ekran paylaşırken:** ekranı ya da bir pencereyi paylaştığın sürece (toplantı, sunum; panelde
+`SCR`) açılır bildirimler gösterilmez, panelde birikir; paneldeki `MSG` bu sürede `QUIET` olur.
+Paylaşım bitince her şey eskisi gibi. (`bar-status privacy` swaync'e `screen-sharing` adlı bir
+engelleyici ekler/kaldırır; elle: `swaync-client -In`.)
 
 **Pil ve USB disk bildirimleri** (`device-notify.service`; KDE'de bunları Plasma yapıyordu,
 niri'de yapan yoktu):

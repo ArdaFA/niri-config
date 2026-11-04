@@ -2,7 +2,8 @@
 """bar-status — status modules for Waybar. Each one prints a JSON line whenever its
 state changes; an empty text hides the module.
 
-  bar-status privacy        MIC / CAM / SCR while the microphone, camera or screen sharing is in use
+  bar-status privacy        MIC / CAM / SCR while the microphone, camera or screen sharing is in use;
+                            notification popups are held back while the screen is shared
   bar-status mic            MIC off while the microphone is muted
   bar-status failed         FAIL n while a systemd service (user or system) has failed
   bar-status system         CPU / MEM / TEMP while load, memory use or temperature stays high
@@ -164,12 +165,36 @@ def privacy_state(mic, cam, casts):
     return {"text": " ".join(parts), "tooltip": "\n".join(tips), "class": classes}
 
 
+INHIBITOR = "screen-sharing"     # swaync engelleyicisinin adı (swaync-client -In ile görülür)
+
+
+def inhibit_change(was_sharing, sharing):
+    """Ekran paylaşımı başlayınca/bitince swaync'e ne denecek: "add", "remove" ya da None."""
+    if sharing and not was_sharing:
+        return "add"
+    if was_sharing and not sharing:
+        return "remove"
+    return None
+
+
+def set_inhibitor(change):
+    # Ekran paylaşılırken açılır bildirimler gösterilmez (sunumda/toplantıda başkası görmesin);
+    # bildirimler yine panelde birikir. swaync yoksa (mako) swaync-client da yoktur.
+    if change:
+        run(["swaync-client", "-Ia" if change == "add" else "-Ir", INHIBITOR])
+
+
 def cmd_privacy():
     last = None
+    sharing = False
+    set_inhibitor("remove")      # önceki çalışmadan kalmış olabilir (Waybar modülü yeniden başlattı)
     while True:
         outputs = run_json(["pactl", "-f", "json", "list", "source-outputs"]) or []
         sources = run_json(["pactl", "-f", "json", "list", "sources", "short"]) or []
-        last = emit(privacy_state(mic_users(outputs, sources), camera_users(), niri_casts()), last)
+        casts = niri_casts()
+        set_inhibitor(inhibit_change(sharing, bool(casts)))
+        sharing = bool(casts)
+        last = emit(privacy_state(mic_users(outputs, sources), camera_users(), casts), last)
         time.sleep(PRIVACY_INTERVAL)
 
 
@@ -464,6 +489,8 @@ def cmd_selftest():
                                   "application.name": "PulseAudio Volume Control"})], sources), []),
         (privacy_state([], [], []), {"text": ""}),
         (privacy_state(["Firefox"], ["brave"], [{}])["text"], "MIC CAM SCR"),
+        ([inhibit_change(a, b) for a, b in ((False, True), (True, True), (True, False), (False, False))],
+         ["add", None, "remove", None]),
         (privacy_state([], [], [{"target": {"Output": {"name": "eDP-1"}}, "is_active": True},
                                 {"target": {"Window": {"id": 7}}, "is_active": False}])["tooltip"],
          "Screen sharing: screen eDP-1, a window (paused)"),

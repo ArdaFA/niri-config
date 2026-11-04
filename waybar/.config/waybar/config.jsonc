@@ -291,8 +291,9 @@
             "notification": "MSG •",
             "dnd-none": "DND",
             "dnd-notification": "DND •",
-            "inhibited-none": "MSG",
-            "inhibited-notification": "MSG •",
+            // inhibited: ekran paylaşılırken açılır bildirimler bekletilir (bar-status privacy)
+            "inhibited-none": "QUIET",
+            "inhibited-notification": "QUIET •",
             "dnd-inhibited-none": "DND",
             "dnd-inhibited-notification": "DND •"
         },
