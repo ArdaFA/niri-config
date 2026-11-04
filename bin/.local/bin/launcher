@@ -25,6 +25,9 @@
 #   emoji          ":smile" — IBus'un emoji listesi; seçilen kopyalanır
 #   renk           "#f4a7b9", "rgb(…)", "hsl(…)": örnek + hex/rgb/hsl; "Pick color" ekrandan alır
 #   komut          "> komut": terminalde çalıştırır (Ctrl+Enter: arka planda); geçmiş hatırlanır
+#   zamanlayıcı    "timer 10m tea", "remind me in 20 min to stretch": süre dolunca sesli bildirim.
+#                  systemd --user zamanlayıcısı (launcher-timer-*.timer): arama kapansa da çalışır;
+#                  yalnızca "timer" yazınca çalışanlar listelenir, Enter iptal eder
 #   pano geçmişi   Super+Ctrl+V (SIGUSR2) pencereyi pano modunda açar; kayıtları `clipboard`
 #                  tutar (clipboard-history.service, RAM'de)
 #   web            her sorgunun en altında; alan adı yazılırsa doğrudan açar
@@ -303,6 +306,37 @@ def picked_color(output):
     return parse_color(m.group(0)) if m else None
 
 
+DURATION = re.compile(r"\s*(\d+(?:[.,]\d+)?)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)?"
+                      r"(?![a-z])", re.I)
+
+
+def parse_timer(query):
+    """'timer 1h30m tea' → (5400, 'tea'); 'timer' → (0, ''); zamanlayıcı değilse None.
+    Birimsiz sayı dakikadır; en fazla 24 saat."""
+    m = re.match(r"\s*(?:timer|remind(?:\s+me)?(?:\s+in)?)(?:\s+|$)(.*)", query, re.I | re.S)
+    if not m:
+        return None
+    rest, total = m.group(1), 0.0
+    while rest.strip():
+        d = DURATION.match(rest)
+        if not d:
+            break
+        unit = (d.group(2) or "m")[0].lower()
+        total += float(d.group(1).replace(",", ".")) * {"h": 3600, "s": 1}.get(unit, 60)
+        rest = rest[d.end():]
+    label = re.sub(r"^\s*(?:for|to)\s+", "", rest, flags=re.I).strip().replace("%", "")
+    seconds = round(total)
+    return (seconds if 0 < seconds <= 86400 else 0), label
+
+
+def fmt_duration(seconds):
+    seconds = max(0, round(seconds))
+    h, rest = divmod(seconds, 3600)
+    m, s = divmod(rest, 60)
+    parts = [f"{h} h"] * bool(h) + [f"{m} min"] * bool(m) + [f"{s} s"] * bool(s and not h)
+    return " ".join(parts) or "0 s"
+
+
 def window_app_keys(app_id):
     """niri app_id'sinden .desktop eşleştirme anahtarları."""
     a = (app_id or "").lower()
@@ -368,6 +402,18 @@ def selftest():
         ("color hsl roundtrip", all(abs(a - b) <= 3 for a, b in zip(parse_color(color_formats((244, 167, 185))[2]), (244, 167, 185))), True),
         ("picked", picked_color("Picked color: rgb(0.957, 0.655, 0.725)\nHex: #f4a7b9\n"), (244, 167, 185)),
         ("pick cancelled", picked_color("No color was picked.\n"), None),
+        ("timer", parse_timer("timer 5m tea"), (300, "tea")),
+        ("timer combo", parse_timer("timer 1h30m"), (5400, "")),
+        ("timer bare minutes", parse_timer("Timer 10 pasta"), (600, "pasta")),
+        ("timer words", parse_timer("remind me in 20 minutes to stretch"), (1200, "stretch")),
+        ("timer seconds", parse_timer("timer 1 min 30 sec"), (90, "")),
+        ("timer list", parse_timer("timer"), (0, "")),
+        ("timer no duration", parse_timer("timer tea"), (0, "tea")),
+        ("timer too long", parse_timer("timer 48h")[0], 0),
+        ("not timer", (parse_timer("timeshift"), parse_timer("timers")), (None, None)),
+        ("timer 5mins", parse_timer("timer 5mins")[0], 300),
+        ("duration fmt", [fmt_duration(s) for s in (90, 300, 5400, 3601, 0)],
+         ["1 min 30 s", "5 min", "1 h 30 min", "1 h", "0 s"]),
     ]
     failed = [(name, got, want) for name, got, want in cases if got != want]
     for name, got, want in failed:
@@ -428,6 +474,7 @@ PLACEHOLDERS = {"search": "Search apps, windows, files, settings",
 TERMINAL = "foot"
 SEARCH_URL = "https://search.brave.com/search?q={}"   # web araması (Brave'in varsayılanı)
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+TIMER_SOUND = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
 
 CARD_W = 640            # kutunun genişliği
 LIST_H = 400            # sonuç listesinin en fazla yüksekliği; fazlası kayar
@@ -436,10 +483,10 @@ MARGIN_TOP = 110        # ekranın (panelin) üstünden uzaklık
 DEBOUNCE = 110          # qalc ve plocate yazmayı bu kadar ms bekler
 ACTION_DELAY = 180      # eylemlerden önce pencere kapansın (ekran görüntüsüne girmesin)
 LIMITS = {"calc": 1, "apps": 6, "windows": 5, "actions": 6, "files": 7, "web": 2, "emoji": 60,
-          "color": 3, "commands": 8}
+          "color": 3, "commands": 8, "timers": 10}
 TITLES = {"calc": "Calculator", "apps": "Applications", "windows": "Windows",
           "actions": "Settings & actions", "files": "Files", "web": "Web", "emoji": "Emoji",
-          "color": "Color", "commands": "Run a command"}
+          "color": "Color", "commands": "Run a command", "timers": "Timers"}
 
 CSS = b"""
 .launcher-win, .backdrop { background: transparent; }
@@ -725,6 +772,8 @@ class Launcher:
         self.monitor = Gio.AppInfoMonitor.get()
         self.monitor.connect("changed", lambda *_: setattr(self, "apps_dirty", True))
         self.recent_manager = Gtk.RecentManager.get_default()
+        # Referansı tutulmazsa her açılışta yeniden kurulur (gvfs'e beş D-Bus çağrısı).
+        self.volume_monitor = Gio.VolumeMonitor.get()
         self.recent = []
         self.emoji = None
         self.windows = []
@@ -735,6 +784,7 @@ class Launcher:
         self.items, self.rows, self.sel = [], [], -1
         self.navigated = self.visible = self.pending_enter = False
         self.mode = "search"                # ya da "clipboard"
+        self.timers = []                    # (birim, bitiş zamanı, ad)
         self.clips = []
         self.css, self.css_stamp = None, None
         self.build()
@@ -841,6 +891,7 @@ class Launcher:
         elif reloaded or mode != "search":
             self.update()
         run_async(["niri", "msg", "--json", "windows"], self.windows_loaded)
+        self.load_timers()
 
     def hide(self, why=""):
         debug("hide:", why)
@@ -921,7 +972,7 @@ class Launcher:
         self.local = self.search_local(query)
         self.render()
         if (self.mode == "search" and query.strip() and query[0] not in ":>"
-                and not parse_color(query)):
+                and not parse_color(query) and parse_timer(query) is None):
             self.timer = GLib.timeout_add(DEBOUNCE, self.search_async, self.gen, query)
 
     def cancel_async(self):
@@ -942,6 +993,9 @@ class Launcher:
         rgb = parse_color(query)
         if rgb:
             return {"color": self.color_items(rgb)}
+        timer = parse_timer(query)
+        if timer is not None:
+            return {"timers": self.timer_items(*timer)}
         words = fold(query).split()
         if not words:
             return {"": self.all_apps()}
@@ -1196,7 +1250,10 @@ class Launcher:
                               app.info.get_icon() if app else themed("window-symbolic"),
                               score * 100 - 2 + recency, hint="Switch to",
                               run=lambda wid=wid: run_async(
-                                  ["niri", "msg", "action", "focus-window", "--id", str(wid)])))
+                                  ["niri", "msg", "action", "focus-window", "--id", str(wid)]),
+                              alt=lambda wid=wid: run_async(
+                                  ["niri", "msg", "action", "close-window", "--id", str(wid)]),
+                              alt_hint="close window"))
         return sorted(found, key=lambda i: -i.score)
 
     def load_recent(self):
@@ -1302,6 +1359,64 @@ class Launcher:
             items.append(Item("commands", ("cmd-help",), "Type a command after >",
                               "Runs in a terminal; Ctrl+Enter runs it in the background", hint=""))
         return items
+
+    def load_timers(self):
+        def loaded(out):
+            try:
+                units = json.loads(out or "[]")
+            except ValueError:
+                units = []
+            timers = []
+            for unit in units:
+                name = unit.get("unit", "")
+                m = re.fullmatch(r"launcher-timer-(\d+)-\w+\.timer", name)
+                if m and unit.get("active") == "active":
+                    timers.append((name, int(m.group(1)), unit.get("description", "")))
+            self.timers = sorted(timers, key=lambda t: t[1])
+            if self.visible and parse_timer(self.entry.get_text()) is not None:
+                self.update()
+        run_async(["systemctl", "--user", "list-units", "launcher-timer-*.timer", "--all",
+                   "--output=json"], loaded)
+
+    def timer_items(self, seconds, label):
+        icon = themed("alarm-symbolic", "preferences-system-time-symbolic", "appointment-soon-symbolic")
+        items = []
+        if seconds:
+            length = fmt_duration(seconds)
+            items.append(Item("timers", ("timer-new",), f"Start a {length} timer", label, icon,
+                              hint="Start", run=lambda: self.start_timer(seconds, label)))
+        now = time.time()
+        for unit, end, name in self.timers:
+            if end <= now:
+                continue
+            if label and not seconds and not match(fold(label).split(), [(fold(name), 1.0)]):
+                continue
+            ends = time.strftime("%H:%M", time.localtime(end))
+            items.append(Item("timers", ("timer", unit), name or "Timer",
+                              f"{fmt_duration(end - now)} left · ends {ends}", icon, hint="Cancel",
+                              run=lambda unit=unit: run_async(["systemctl", "--user", "stop", unit])))
+        if not items:
+            items.append(Item("timers", ("timer-help",), "Type a duration: timer 10m tea",
+                              "Units: s, min, h. A plain number means minutes.", icon, hint=""))
+        return items
+
+    def start_timer(self, seconds, label):
+        end = int(time.time() + seconds)
+        unit = f"launcher-timer-{end}-{os.getpid()}{int(time.time() * 1000) % 1000:03d}"
+        length = fmt_duration(seconds)
+        title = label or f"{length} timer"
+        # Süre dolunca: kalıcı bildirim + alarm sesi. Metin argüman olarak geçer, kabuk görmez;
+        # --expand-environment=no: içinde $ olsa da systemd açmaz.
+        run_async(["systemd-run", "--user", "--quiet", "--collect", f"--unit={unit}",
+                   f"--on-active={seconds}", "--timer-property=AccuracySec=1s",
+                   f"--description={title}", "--expand-environment=no", "--",
+                   "sh", "-c", 'notify-send -a Timer -u critical -i alarm-symbolic "$1" "$2"; '
+                   'exec pw-play "$3"', "sh", "Time's up" if not label else label,
+                   f"{length} timer finished", TIMER_SOUND],
+                  lambda out: out is not None and run_async(
+                      ["notify-send", "-a", "Timer", "-e", "-u", "low", "-i", "alarm-symbolic",
+                       f"Timer started: {length}",
+                       (f"{label} · " if label else "") + "ends " + time.strftime("%H:%M", time.localtime(end))]))
 
     def run_command(self, cmd, shell, terminal):
         self.history.bump("cmd", cmd)
@@ -1411,7 +1526,7 @@ class Launcher:
             "clipboard paste copy history delete forget", lambda: spawn(BIN / "clipboard", "clear"))
 
         # Takılı USB diskler (device-notify'ın bildirimindeki düğmelerin aynısı)
-        for mount in Gio.VolumeMonitor.get().get_mounts():
+        for mount in self.volume_monitor.get_mounts():
             drive = mount.get_drive()
             if drive is None or not (drive.is_removable() or drive.is_media_removable()):
                 continue

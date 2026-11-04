@@ -106,13 +106,14 @@ gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
 | Yazınca | Çıkan | `Enter` |
 |---|---|---|
 | uygulama adı, türü ya da baş harfleri (`brave`, `browser`, `vsc`) | **Applications**: en çok ve en son açtıkların üstte | açar |
-| pencere başlığı ya da uygulaması | **Windows**: açık pencereler | o pencereye geçer |
+| pencere başlığı ya da uygulaması | **Windows**: açık pencereler | o pencereye geçer; `Ctrl+Enter` pencereyi kapatır |
 | `night`, `wifi`, `lock`, `restart`, `nord`, `monitor`, `screenshot`… | **Settings & actions**: Settings sayfaları, renk temaları, duvar kağıtları, monitörün yeri, hızlı ayar düğmeleri (açık/kapalı yazar), ekran görüntüsü, oturum | uygular / aç-kapa yapar |
 | dosya ya da klasör adının bir parçası (en az 3 harf) | **Files**: önce son açtıkların, sonra ev klasöründeki her şey | açar; `Ctrl+Enter` klasöründe gösterir |
 | `2*(3+4)`, `5 km to mi`, `100 usd to eur`, `20% of 80`, `sqrt(2)` | **Calculator**: sonuç en üstte | sonucu kopyalar |
 | `:` ile başlayan kelime (`:smile`, `:heart`) | **Emoji** | kopyalar (`Ctrl+V` ile yapıştır) |
 | renk: `#f4a7b9`, `#fab`, `rgb(244 167 185)`, `hsl(346, 78%, 81%)` | **Color**: renk örneği ve hex / rgb / hsl hali | seçilen biçimi kopyalar |
 | `pick color` | **Pick color** eylemi: imleç seçiciye döner, ekranda bir yere tıkla (`Esc` vazgeçer) | rengin hex'ini kopyalar, bildirimde gösterir |
+| `timer 10m tea`, `timer 1h30m`, `remind me in 20 min to stretch` | **Timers**: zamanlayıcı başlat; yalnızca `timer` yazınca çalışanlar ve kalan süreleri | başlatır; çalışan bir zamanlayıcıda `Enter` iptal eder |
 | `>` ile başlayan komut (`> sudo dnf upgrade`, `> htop`) | **Run a command**; yalnızca `>` yazınca son çalıştırdıkların | terminalde (foot) senin kabuğunla çalıştırır, bitince terminal açık kalır; `Ctrl+Enter` arka planda, pencere açmadan |
 | `github.com` gibi bir adres | **Web**: adresi açar | |
 | herhangi bir şey | **Web**: en altta *Search the web* | tarayıcıda arar |
@@ -127,6 +128,11 @@ gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
 - **Hesap makinesi:** basit işlemleri anında kendisi yapar; birim, kur, yüzde ve fonksiyonlar için
   `qalc` (paket: `qalculate`) kullanır. Döviz kurları haftada bir güncellenir. Bir şeyin kesin
   hesap olarak alınmasını istersen başına `=` koy: `=pi`.
+- **Zamanlayıcı:** süre dolunca kalıcı bir bildirim ve alarm sesi gelir. Birimler `s`, `min`,
+  `h`; birimsiz sayı dakikadır (`timer 5 pasta`), en fazla 24 saat. Her zamanlayıcı systemd'nin
+  kullanıcı zamanlayıcısıdır (`launcher-timer-*.timer`): arama penceresi kapansa ya da yeniden
+  başlasa da çalışır, oturumu kapatınca silinir. Komut satırından:
+  `systemctl --user list-timers 'launcher-timer-*'`.
 - **Web araması:** Brave Search. Değiştirmek için `bin/.local/bin/launcher` → `SEARCH_URL`.
 - **Hafif ve hızlı:** pencere arka planda hazır bekler (`launcher.service`), `Super+D` ona yalnızca
   bir sinyal gönderir; bu yüzden basar basmaz açılır. Beklerken yaklaşık 45 MB bellek kullanır,
