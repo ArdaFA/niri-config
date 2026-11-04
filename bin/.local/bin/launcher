@@ -1262,6 +1262,15 @@ class Launcher:
         return [Item("color", ("color", n), text, sub, icon, hint="Copy", run=lambda text=text: copy(text))
                 for n, (text, sub) in enumerate(zip(color_formats(rgb), ("Hex", "RGB", "HSL")))]
 
+    def eject(self, uri, name):
+        def done(out):
+            ok = out is not None
+            run_async(["notify-send", "-a", "Devices", "-i", "drive-removable-media-symbolic",
+                       "-u", "low" if ok else "normal",
+                       f"{name} can be removed" if ok else f"Could not eject {name}",
+                       "It is safe to unplug it now." if ok else "It may still be in use. Close the files on it and try again."])
+        run_async(["gio", "mount", "-e", uri], done, timeout=30_000)
+
     def pick_color(self):
         def done(out):
             rgb = picked_color(out)
@@ -1400,6 +1409,19 @@ class Launcher:
             stay=True)
         add("Clear clipboard history", "Tools", ("edit-clear-all-symbolic", "edit-clear-symbolic"),
             "clipboard paste copy history delete forget", lambda: spawn(BIN / "clipboard", "clear"))
+
+        # Takılı USB diskler (device-notify'ın bildirimindeki düğmelerin aynısı)
+        for mount in Gio.VolumeMonitor.get().get_mounts():
+            drive = mount.get_drive()
+            if drive is None or not (drive.is_removable() or drive.is_media_removable()):
+                continue
+            name, uri = mount.get_name(), mount.get_root().get_uri()
+            add(f"Open {name}", "Drives", ("drive-removable-media-symbolic", "drive-removable-media"),
+                "usb drive disk stick removable open files", lambda uri=uri: spawn("gio", "open", uri),
+                "Open")
+            add(f"Eject {name}", "Drives", ("media-eject-symbolic",),
+                "usb drive disk stick removable eject unmount remove safely",
+                lambda uri=uri, name=name: self.eject(uri, name), "Eject")
 
         add("Pick color", "Tools", ("color-select-symbolic", "color-picker", "applications-graphics-symbolic"),
             "color colour picker eyedropper hex rgb screen pipette", self.pick_color)

@@ -1,0 +1,413 @@
+#!/usr/bin/python3
+# device-notify — pil ve USB disk bildirimleri (niri oturumu; KDE'de bunları Plasma yapıyor).
+#
+#   device-notify            dinler (device-notify.service)
+#   device-notify selftest   arayüzsüz testler (check.sh)
+#
+# Pil: eşikler UPower'ın kendi uyarı seviyeleri (/etc/UPower/UPower.conf; Fedora'da %20 düşük,
+#   %5 kritik, %2'de sistem uyku/kapanma yapar). Bildirim, sistemin kendi kararıyla aynı anda
+#   gelir. Tek bildirim var, seviye değişince yerine yenisi geçer; şarja takınca kapanır.
+#   Kritik bildirim kendiliğinden kaybolmaz (swaync: urgency critical).
+# USB disk: çıkarılabilir bir disk takılınca "Open" / "Eject" düğmeli bildirim. Kendiliğinden
+#   bağlamaz (mount); Open'a basınca bağlar ve dosya yöneticisinde açar, Eject güvenle çıkarır.
+#   Ağ klasörleri (GNOME Online Accounts WebDAV…) ve iç diskler sayılmaz.
+# İki iş tek süreçte: ayrı ayrı iki Python süreci iki kat bellek demek.
+# Test için: DEVICE_NOTIFY_BUS=session → UPower'ı oturum veri yolunda arar.
+
+import os
+import sys
+from types import SimpleNamespace
+
+UPOWER = "org.freedesktop.UPower"
+DEVICE = "/org/freedesktop/UPower/devices/DisplayDevice"
+NONE, LOW, CRITICAL, ACTION = 1, 3, 4, 5            # UPower WarningLevel
+ACTIONS = {"PowerOff": "shut down", "Hibernate": "hibernate", "HybridSleep": "hibernate",
+           "Suspend": "go to sleep", "Sleep": "go to sleep"}
+
+
+# ── Pil ──────────────────────────────────────────────────────────────────
+
+def duration(seconds):
+    minutes = round(seconds / 60)
+    if minutes < 1:
+        return ""
+    if minutes < 60:
+        return f"about {minutes} min"
+    return f"about {minutes // 60} h {minutes % 60:02d} min"
+
+
+def message(level, percentage, time_to_empty, action):
+    """(başlık, metin, aciliyet 1/2, simge) ya da None (bildirim gerekmez)."""
+    left = f"{round(percentage)}% left"
+    remaining = duration(time_to_empty)
+    verb = ACTIONS.get(action, "shut down")
+    if level == LOW:
+        return ("Battery low", left + (f" · {remaining}" if remaining else ""), 1,
+                "battery-low-symbolic")
+    if level == CRITICAL:
+        return ("Battery critically low",
+                f"{left}. Plug in the charger: the computer will {verb} soon.", 2,
+                "battery-caution-symbolic")
+    if level == ACTION:
+        return ("Battery empty", f"The computer will {verb} now.", 2, "battery-empty-symbolic")
+    return None
+
+
+class Battery:
+    """Seviye geçişleri: yükselince bildir, NONE'a dönünce kapat, aynı seviyede sessiz kal."""
+
+    def __init__(self, notify, close):
+        self.notify, self.close = notify, close
+        self.shown = NONE
+
+    def update(self, level, percentage, time_to_empty, action):
+        if level < LOW:
+            if self.shown != NONE:
+                self.close()
+                self.shown = NONE
+            return
+        if level <= self.shown:
+            return
+        msg = message(level, percentage, time_to_empty, action)
+        if msg:
+            self.notify(*msg)
+            self.shown = level
+
+
+# ── USB diskler ──────────────────────────────────────────────────────────
+
+def is_removable(volume):
+    """Takılıp çıkarılan fiziksel disk mi? (ağ klasörü, iç disk, telefon değil)"""
+    drive = volume.get_drive()
+    if drive is None or volume.get_identifier("class") == "network":
+        return False
+    return bool(drive.is_removable() or drive.is_media_removable())
+
+
+def volume_key(volume):
+    return (volume.get_identifier("unix-device") or volume.get_uuid()
+            or f"{volume.get_name()}#{id(volume)}")
+
+
+class Drives:
+    """Takılınca bildir; Open → bağla ve aç; Eject → güvenle çıkar; çıkarılınca bildirimi kapat.
+
+    io: notify(anahtar, başlık, metin, aciliyet, simge, düğmeler) · close(anahtar) ·
+        open(uri) · mount(volume, bitince(hata)) · eject(volume, bitince(hata))
+    """
+
+    def __init__(self, io):
+        self.io = io
+        self.volumes = {}
+
+    def added(self, volume):
+        if not is_removable(volume):
+            return
+        key = volume_key(volume)
+        self.volumes[key] = volume
+        self.io.notify(key, volume.get_name() or "USB drive", "Drive connected", 1,
+                       "drive-removable-media-symbolic", [("open", "Open"), ("eject", "Eject")])
+
+    def removed(self, volume):
+        key = volume_key(volume)
+        if self.volumes.pop(key, None) is not None:
+            self.io.close(key)
+
+    def action(self, key, name):
+        volume = self.volumes.get(key)
+        if volume is None:
+            return
+        label = volume.get_name() or "USB drive"
+        if name == "open":
+            def opened(error):
+                mount = volume.get_mount()
+                if error or mount is None:
+                    self.io.notify(key, f"Could not open {label}", error or "It could not be mounted.",
+                                   1, "dialog-error-symbolic", [])
+                else:
+                    self.io.open(mount.get_root().get_uri())
+            if volume.get_mount() is not None:
+                opened(None)
+            else:
+                self.io.mount(volume, opened)
+        elif name == "eject":
+            def ejected(error):
+                if error:
+                    self.io.notify(key, f"Could not eject {label}", error, 1,
+                                   "dialog-error-symbolic", [("eject", "Try again")])
+                else:
+                    self.io.notify(key, f"{label} can be removed", "It is safe to unplug it now.",
+                                   0, "drive-removable-media-symbolic", [])
+            self.io.eject(volume, ejected)
+
+
+# ── Selftest ─────────────────────────────────────────────────────────────
+
+class FakeDrive:
+    def __init__(self, removable):
+        self.removable = removable
+
+    def is_removable(self):
+        return self.removable
+
+    def is_media_removable(self):
+        return False
+
+
+class FakeVolume:
+    def __init__(self, name, dev, removable=True, drive=True, cls="device"):
+        self.name, self.dev, self.cls = name, dev, cls
+        self.drive = FakeDrive(removable) if drive else None
+        self.mount = None
+
+    def get_drive(self):
+        return self.drive
+
+    def get_identifier(self, kind):
+        return {"unix-device": self.dev, "class": self.cls}.get(kind)
+
+    def get_uuid(self):
+        return None
+
+    def get_name(self):
+        return self.name
+
+    def get_mount(self):
+        return self.mount
+
+
+class FakeRoot:
+    def __init__(self, uri):
+        self.uri = uri
+
+    def get_uri(self):
+        return self.uri
+
+
+class FakeMount:
+    def __init__(self, uri):
+        self.root = FakeRoot(uri)
+
+    def get_root(self):
+        return self.root
+
+
+def selftest():
+    calls = []
+    battery = Battery(lambda *m: calls.append(("notify",) + m), lambda: calls.append(("close",)))
+    battery.update(NONE, 80, 9000, "PowerOff")
+    battery.update(LOW, 20, 3900, "PowerOff")
+    battery.update(LOW, 19, 3700, "PowerOff")          # aynı seviye: sessiz
+    battery.update(CRITICAL, 5, 600, "Sleep")
+    battery.update(LOW, 6, 700, "Sleep")               # geri düşüş (ölçüm oynadı): sessiz
+    battery.update(NONE, 6, 0, "Sleep")                # şarja takıldı
+    battery.update(NONE, 7, 0, "Sleep")
+    battery.update(CRITICAL, 4, 300, "Hibernate")      # şarjdan çıkınca doğrudan kritik
+    kinds = [c[0] for c in calls]
+
+    class IO:
+        def __init__(self):
+            self.log, self.fail = [], None
+
+        def notify(self, key, summary, body, urgency, icon, actions):
+            self.log.append(("notify", key, summary, body, [a for a, _ in actions]))
+
+        def close(self, key):
+            self.log.append(("close", key))
+
+        def open(self, uri):
+            self.log.append(("open", uri))
+
+        def mount(self, volume, done):
+            self.log.append(("mount", volume.dev))
+            if not self.fail:
+                volume.mount = FakeMount(f"file:///run/media/u/{volume.name}")
+            done(self.fail)
+
+        def eject(self, volume, done):
+            self.log.append(("eject", volume.dev))
+            done(self.fail)
+
+    io = IO()
+    drives = Drives(io)
+    stick = FakeVolume("BACKUP", "/dev/sdb1")
+    drives.added(FakeVolume("cloud", None, drive=False, cls="network"))   # GOA WebDAV
+    drives.added(FakeVolume("Windows", "/dev/nvme0n1p3", removable=False))
+    drives.added(stick)
+    after_add = list(io.log)
+    drives.action("/dev/sdb1", "open")
+    drives.action("/dev/sdb1", "open")                  # zaten bağlı: yalnızca açar
+    io.fail = "Device is busy"
+    drives.action("/dev/sdb1", "eject")
+    io.fail = None
+    drives.action("/dev/sdb1", "eject")
+    drives.removed(stick)
+    drives.action("/dev/sdb1", "open")                  # çıkarıldıktan sonra: yok sayılır
+
+    cases = [
+        ("battery sequence", kinds, ["notify", "notify", "close", "notify"]),
+        ("low text", calls[0][1:3], ("Battery low", "20% left · about 1 h 05 min")),
+        ("critical text", calls[1][2], "5% left. Plug in the charger: the computer will go to sleep soon."),
+        ("critical urgency", calls[1][3], 2),
+        ("hibernate", "hibernate soon" in calls[3][2], True),
+        ("no time", message(LOW, 19.6, 0, "")[1], "20% left"),
+        ("short time", duration(1500), "about 25 min"),
+        ("action", message(ACTION, 2, 60, "PowerOff")[1], "The computer will shut down now."),
+        ("only removable drives", after_add,
+         [("notify", "/dev/sdb1", "BACKUP", "Drive connected", ["open", "eject"])]),
+        ("drive flow", io.log[1:], [
+            ("mount", "/dev/sdb1"), ("open", "file:///run/media/u/BACKUP"),
+            ("open", "file:///run/media/u/BACKUP"),
+            ("eject", "/dev/sdb1"), ("notify", "/dev/sdb1", "Could not eject BACKUP", "Device is busy", ["eject"]),
+            ("eject", "/dev/sdb1"), ("notify", "/dev/sdb1", "BACKUP can be removed",
+                                     "It is safe to unplug it now.", []),
+            ("close", "/dev/sdb1")]),
+    ]
+    failed = [(name, got, want) for name, got, want in cases if got != want]
+    for name, got, want in failed:
+        print(f"FAIL {name}: got {got!r}, want {want!r}")
+    if failed:
+        sys.exit(1)
+    print(f"device-notify: {len(cases)} checks ok")
+
+
+# ── Servis ───────────────────────────────────────────────────────────────
+
+def main():
+    from gi.repository import Gio, GLib
+
+    session = Gio.bus_get_sync(Gio.BusType.SESSION)
+    system = os.environ.get("DEVICE_NOTIFY_BUS") != "session"
+    upower_bus = Gio.bus_get_sync(Gio.BusType.SYSTEM) if system else session
+    NOTIFY = ("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+              "org.freedesktop.Notifications")
+    ids = {}                                  # anahtar → bildirim numarası
+    keys = {}                                 # bildirim numarası → anahtar
+
+    def notify(key, summary, body, urgency, icon, actions=()):
+        hints = {"urgency": GLib.Variant("y", urgency),
+                 "category": GLib.Variant("s", "device" if key != "battery" else "device.warning")}
+        flat = [part for pair in actions for part in pair]
+        try:
+            reply = session.call_sync(
+                *NOTIFY, "Notify",
+                GLib.Variant("(susssasa{sv}i)", ("Devices", ids.get(key, 0), icon, summary, body,
+                                                 flat, hints, -1)),
+                GLib.VariantType("(u)"), Gio.DBusCallFlags.NONE, 5000, None)
+        except GLib.Error as e:
+            print(f"device-notify: {e.message}", file=sys.stderr)
+            return
+        nid = reply.unpack()[0]
+        ids[key] = nid
+        keys[nid] = key
+
+    def close(key):
+        nid = ids.pop(key, 0)
+        keys.pop(nid, None)
+        if nid:
+            try:
+                session.call_sync(*NOTIFY, "CloseNotification", GLib.Variant("(u)", (nid,)), None,
+                                  Gio.DBusCallFlags.NONE, 5000, None)
+            except GLib.Error:
+                pass
+
+    def spawn(*argv):
+        # niri üzerinden: dosya yöneticisi bu servisin parçası olmasın (servis yeniden başlarsa
+        # kapanmasın).
+        try:
+            Gio.Subprocess.new(["niri", "msg", "action", "spawn", "--", *argv],
+                               Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_SILENCE)
+        except GLib.Error:
+            pass
+
+    # Pil
+    battery = Battery(lambda *m: notify("battery", *m), lambda: close("battery"))
+    try:
+        device = Gio.DBusProxy.new_sync(upower_bus, Gio.DBusProxyFlags.NONE, None, UPOWER, DEVICE,
+                                        f"{UPOWER}.Device")
+    except GLib.Error:
+        device = None
+
+    def critical_action():
+        try:
+            return upower_bus.call_sync(UPOWER, "/org/freedesktop/UPower", UPOWER, "GetCriticalAction",
+                                        None, GLib.VariantType("(s)"), Gio.DBusCallFlags.NONE, 2000,
+                                        None).unpack()[0]
+        except GLib.Error:
+            return ""
+
+    def prop(name, default):
+        value = device.get_cached_property(name)
+        return value.unpack() if value is not None else default
+
+    def battery_changed(*_):
+        level = prop("WarningLevel", NONE)
+        action = critical_action() if level >= CRITICAL else ""
+        battery.update(level, prop("Percentage", 0.0), prop("TimeToEmpty", 0), action)
+
+    if device is not None:
+        device.connect("g-properties-changed", battery_changed)
+        battery_changed()
+
+    # USB diskler
+    def open_uri(uri):
+        spawn("gio", "open", uri)
+
+    def mount(volume, done):
+        def finished(v, result):
+            try:
+                v.mount_finish(result)
+                done(None)
+            except GLib.Error as e:
+                done(e.message)
+        volume.mount(Gio.MountMountFlags.NONE, None, None, finished)
+
+    def eject(volume, done):
+        drive, mounted = volume.get_drive(), volume.get_mount()
+
+        def finished(obj, result):
+            try:
+                if isinstance(obj, Gio.Drive):
+                    obj.eject_with_operation_finish(result)
+                else:
+                    obj.unmount_with_operation_finish(result)
+                done(None)
+            except GLib.Error as e:
+                done(e.message)
+        if drive is not None and drive.can_eject():
+            drive.eject_with_operation(Gio.MountUnmountFlags.NONE, None, None, finished)
+        elif mounted is not None and mounted.can_unmount():
+            mounted.unmount_with_operation(Gio.MountUnmountFlags.NONE, None, None, finished)
+        else:
+            done("This drive cannot be ejected.")
+
+    drives = Drives(SimpleNamespace(notify=notify, close=close, open=open_uri, mount=mount,
+                                    eject=eject))
+    monitor = Gio.VolumeMonitor.get()
+    monitor.connect("volume-added", lambda _m, v: drives.added(v))
+    monitor.connect("volume-removed", lambda _m, v: drives.removed(v))
+
+    def on_signal(_conn, _sender, _path, _iface, signal, params):
+        nid = params.unpack()[0]
+        key = keys.get(nid)
+        if key is None:
+            return
+        if signal == "ActionInvoked":
+            drives.action(key, params.unpack()[1])
+        elif signal == "NotificationClosed" and ids.get(key) == nid:
+            ids.pop(key, None)
+            keys.pop(nid, None)
+
+    for name in ("ActionInvoked", "NotificationClosed"):
+        session.signal_subscribe(None, NOTIFY[2], name, NOTIFY[1], None, Gio.DBusSignalFlags.NONE,
+                                 on_signal)
+    GLib.MainLoop().run()
+
+
+if __name__ == "__main__":
+    if sys.argv[1:] == ["selftest"]:
+        selftest()
+    elif sys.argv[1:]:
+        sys.exit("usage: device-notify [selftest]")
+    else:
+        main()

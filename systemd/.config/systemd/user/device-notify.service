@@ -1,0 +1,14 @@
+# Pil azalınca ve USB disk takılınca bildirim — yalnızca niri oturumu (KDE'de Plasma'nın kendisi var).
+# Pil eşikleri UPower'ın: /etc/UPower/UPower.conf (Fedora: %20 düşük, %5 kritik).
+# Ayrıntı: README → Hızlı ayarlar ve bildirimler → Pil ve USB disk bildirimleri
+
+[Unit]
+Description=Battery and removable drive notifications for the niri session
+PartOf=graphical-session.target
+After=graphical-session.target swaync.service
+Requisite=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/device-notify
+Restart=on-failure
+RestartSec=2

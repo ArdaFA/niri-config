@@ -244,7 +244,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `systemd/.config/systemd/user/theme-apply.service` | Oturum açılışında kayıtlı temayı uygular |
 | `systemd/.config/systemd/user/swaybg.service` | Duvar kağıdı |
 | `systemd/.config/systemd/user/swayidle.service` | Boşta kalınca kilit ve ekran kapatma (süre: Settings → Screen lock) |
-| `systemd/.config/systemd/user/battery-notify.service`, `bin/.local/bin/battery-notify` | Pil azalınca bildirim (bkz. [Pil uyarıları](#hızlı-ayarlar-ve-bildirimler)) |
+| `systemd/.config/systemd/user/device-notify.service`, `bin/.local/bin/device-notify` | Pil azalınca ve USB disk takılınca bildirim (bkz. [Hızlı ayarlar ve bildirimler](#hızlı-ayarlar-ve-bildirimler)) |
 | `systemd/.config/systemd/user/swaync.service.d/niri-only.conf` | swaync'in KDE/GNOME'da başlamasını engeller |
 | `systemd/.config/systemd/user/mako.service.d/niri-only.conf` | mako'yu yalnızca niri'de ve yalnızca swaync kurulu değilse başlatır |
 | `systemd/.config/systemd/user/app-…@autostart.service.d/not-in-niri.conf` | KDE'den gelen bazı autostart programlarının niri'de **başlamaması** (bkz. [Notlar](#notlar)) |
@@ -892,16 +892,22 @@ Panelde yukarıdan aşağıya:
 - Ses/parlaklık göstergesi (`osd`) de bir bildirimdir ama geçmişe yazılmaz. Artık üst ortada
   değil, diğer bildirimlerle birlikte sağ üstte çıkar; swaync bütün bildirimleri tek yerde gösteriyor.
 
-**Pil uyarıları:** pil azalınca `battery-notify.service` bildirim gösterir (KDE'de bunu Plasma
-yapıyordu, niri'de yapan yoktu).
+**Pil ve USB disk bildirimleri** (`device-notify.service`; KDE'de bunları Plasma yapıyordu,
+niri'de yapan yoktu):
 
-- Eşikler UPower'ın kendi seviyeleri (`/etc/UPower/UPower.conf`; Fedora'da %20 **Battery low**,
-  %5 **Battery critically low**, %2'de sistem kendisi uyku/kapanma yapar). Bildirim, sistemin
-  kendi kararıyla aynı anda gelir; ayrı bir eşik ayarı yok.
-- Tek bildirim var: seviye değişince yerine yenisi geçer, şarja takınca kendiliğinden kapanır.
-  Kritik uyarı sen kapatana kadar durur ve sistemin birazdan ne yapacağını yazar (uyku,
-  hazırda bekletme ya da kapanma).
-- Pili olmayan bir bilgisayarda hiçbir şey yapmaz. Komut: `bin/.local/bin/battery-notify`.
+- **Pil azalınca:** eşikler UPower'ın kendi seviyeleri (`/etc/UPower/UPower.conf`; Fedora'da
+  %20 **Battery low**, %5 **Battery critically low**, %2'de sistem kendisi uyku/kapanma yapar).
+  Bildirim, sistemin kendi kararıyla aynı anda gelir; ayrı bir eşik ayarı yok. Tek bildirim
+  var: seviye değişince yerine yenisi geçer, şarja takınca kendiliğinden kapanır. Kritik uyarı
+  sen kapatana kadar durur ve sistemin birazdan ne yapacağını yazar (uyku, hazırda bekletme ya
+  da kapanma). Pili olmayan bir bilgisayarda hiçbir şey yapmaz.
+- **USB disk takılınca:** diskin adıyla bir bildirim ve iki düğme. **Open** diski bağlar ve
+  dosya yöneticisinde açar (Settings → Default apps → Files), **Eject** güvenle çıkarır ve
+  "can be removed" yazar; disk meşgulse nedenini ve **Try again** düğmesini gösterir. Disk
+  kendiliğinden bağlanmaz. Disk çıkarılınca bildirim kaybolur. Ağ klasörleri (GNOME Online
+  Accounts), iç diskler ve telefonlar sayılmaz.
+- Takılı diskler aramada da var: `Super+D` → diskin adı ya da `eject` → **Open …** / **Eject …**.
+- İkisi tek bir küçük süreçte (~15 MB): `bin/.local/bin/device-notify`.
 
 **Bilinen sınırlar:**
 
@@ -1083,7 +1089,7 @@ journalctl --user -b -u layout-mode   # otomatik düzen
 journalctl --user -b -u swaync        # bildirimler ve hızlı ayarlar paneli
 journalctl --user -b -u launcher      # arama penceresi (Super+D)
 journalctl --user -b -u clipboard-history   # pano geçmişi
-systemctl --user status waybar swaync swaybg swayidle theme-apply niri-polkit layout-mode launcher clipboard-history battery-notify
+systemctl --user status waybar swaync swaybg swayidle theme-apply niri-polkit layout-mode launcher clipboard-history device-notify
 systemctl --user restart waybar       # panel kaybolduysa
 ```
 

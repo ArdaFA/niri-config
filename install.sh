@@ -24,7 +24,7 @@ NIRI_SERVICES=(
     layout-mode.service
     launcher.service
     clipboard-history.service
-    battery-notify.service
+    device-notify.service
 )
 
 WANTS_DIR="$HOME/.config/systemd/user/niri.service.wants"

@@ -184,7 +184,7 @@ check "monitor placement" python3 -I "$DOTFILES/bin/.local/bin/displays" selftes
 check "settings files"    python3 -I "$DOTFILES/bin/.local/bin/settings" selftest
 check "launcher search"   python3 -I "$DOTFILES/bin/.local/bin/launcher" selftest
 check "clipboard history" python3 -I "$DOTFILES/bin/.local/bin/clipboard" selftest
-check "battery notify"    python3 -I "$DOTFILES/bin/.local/bin/battery-notify" selftest
+check "device notify"     python3 -I "$DOTFILES/bin/.local/bin/device-notify" selftest
 check "desktop entries"   desktop-file-validate "$DOTFILES"/bin/.local/share/applications/*.desktop
 check "presets"           presets
 check "systemd units"     units
