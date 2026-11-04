@@ -1,0 +1,12 @@
+# Otomatik gece ışığı: 19:00'da açar, 07:00'de kapatır (night-light-auto.service). Uyku sırasında
+# kaçan geçiş uyanınca yapılır. Arada elle açıp kapatmak bir sonraki geçişe kadar geçerli.
+# Saatleri değiştirmek: buradaki iki satır + bin/.local/bin/night-light → ON_AT / OFF_AT.
+
+[Unit]
+Description=Turn the night light on in the evening and off in the morning (niri session)
+PartOf=graphical-session.target
+
+[Timer]
+OnCalendar=*-*-* 07:00:00
+OnCalendar=*-*-* 19:00:00
+AccuracySec=1min

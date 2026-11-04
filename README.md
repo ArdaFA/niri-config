@@ -76,6 +76,7 @@ Ayrıntılar ilgili bölümlerde.
 | **USB disk bildirimi** | Disk takılınca **Open** / **Eject** düğmeli bildirim; aramada `eject`. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
 | **Ekran paylaşırken** | Açılır bildirimler bekletilir (panelde `QUIET`); parola yöneticisi, arama penceresi ve bildirimler yayında siyah görünür. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
 | **Güncellemeler** | Panelde `UPD 47`: tıkla → terminalde dnf + Flatpak güncellemesi (onayı sen verirsin). | [Waybar modülleri](#waybar-modülleri) |
+| **Otomatik gece ışığı** | `Super+S` → Displays → **Turn on automatically**: 19:00'da açılır, 07:00'de kapanır. Varsayılan kapalı. | [Hızlı ayarlar](#hızlı-ayarlar-ve-bildirimler) |
 | **Auto açık/koyu renkler** | `Super+S` → Appearance → Wallpaper colors → **Auto**: 07:00 açık, 19:00 koyu. Varsayılan kapalı. | [Renkler](#renkler-theme-komutu) |
 | **Video PiP** | Tarayıcıdaki resim-içinde-resim videosu sağ altta küçük yüzen pencere olarak açılır. | [Hangi dosya…](#hangi-dosya-neyi-kontrol-ediyor) |
 
@@ -90,7 +91,7 @@ All settings. Her değişiklik anında uygulanır, "Apply" düğmesi yok. `Esc` 
 | Sayfa | İçinde |
 |---|---|
 | **Appearance** | Duvar kağıdı (küçük resimlerle; *Add…* kendi resmini `wallpapers/`'a kopyalar), renkler (bir preset ya da *From wallpaper*; duvar kağıdından gelen renklerin açık/koyu hali ya da *Auto*: gündüz açık, akşam koyu), terminal saydamlığı |
-| **Displays** | Harici monitörün laptopa göre yeri (`Super+P` ile aynı, her monitör hatırlanır), gece ışığı ve sıcaklığı |
+| **Displays** | Harici monitörün laptopa göre yeri (`Super+P` ile aynı, her monitör hatırlanır), gece ışığı, sıcaklığı ve **Turn on automatically** (19:00'da açılır, 07:00'de kapanır) |
 | **Touchpad** | Dokunarak tıklama, doğal kaydırma, imleç hızı |
 | **Screen lock** | Kaç dakika boşta kalınca kilitlensin (ekran 30 sn sonra kapanır) |
 | **Default apps** | Hangi uygulama açsın: web bağlantıları, klasörler, metin, resim, PDF, video, müzik, arşiv, e-posta. Liste o türü açabilen kurulu uygulamalardan gelir. |
@@ -105,7 +106,7 @@ değiştirilebiliyor:
 | Gece ışığı aç/kapa | `night-light` komutu |
 | Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir) |
 | Touchpad | `~/.local/state/settings/niri.kdl`. `config.kdl` bunu `input.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
-| Kilit süresi, gece ışığının sıcaklığı | `~/.local/state/settings/services.env`. `swayidle.service` ve `night-light.service` okur; dosya yoksa servis dosyalarındaki varsayılanlar geçerli (5 dk, 4000 K). |
+| Kilit süresi, gece ışığının sıcaklığı ve otomatiği | `~/.local/state/settings/services.env`. `swayidle.service` ve `night-light.service` okur; dosya yoksa servis dosyalarındaki varsayılanlar geçerli (5 dk, 4000 K). |
 | Varsayılan uygulamalar | `~/.config/niri-mimeapps.list`. XDG kuralı: `XDG_CURRENT_DESKTOP=niri` olan oturum bu dosyayı `mimeapps.list`'ten önce okur, KDE hiç okumaz. Yani KDE'deki seçimlerin değişmez; niri'de seçmediğin türler KDE'deki gibi kalır. Bir kategori seçilince o uygulamanın desteklediği bütün türleri yazılır (ör. Images → png, jpeg, webp…). Elle de düzenlenebilir; silersen niri yine KDE'nin seçimlerine döner. |
 
 - **Hafif:** tek dosya (`bin/.local/bin/settings`, Python + GTK3, yeni paket gerektirmez).
@@ -307,7 +308,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `bin/.local/bin/settings` | Ayarlar penceresi (`Super+S`), bkz. [Ayarlar uygulaması](#ayarlar-uygulaması) |
 | `bin/.local/share/applications/dotfiles.settings.desktop` | Ayarlar penceresinin başlatıcıdaki kaydı (KDE menüsünde gizli) |
 | `bin/.local/bin/displays` | Harici monitörün laptopa göre yeri (üst/alt/sol/sağ), her monitör için ayrı hatırlanır, bkz. [Ekranlar](#ekranlar) |
-| `systemd/.config/systemd/user/night-light.service` | Gece ışığı: wlsunset ile sıcak ekran rengi. Oturum açılışında başlamaz. |
+| `systemd/.config/systemd/user/night-light.service` | Gece ışığı: wlsunset ile sıcak ekran rengi. Oturum açılışında kendiliğinden başlamaz. |
+| `systemd/.config/systemd/user/night-light-auto.timer`, `night-light-auto.service` | Otomatik gece ışığı: 19:00'da açar, 07:00'de kapatır, oturum açılışında saate göre ayarlar. Otomatik kapalıyken hiçbir şey yapmaz. |
 | `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
 | `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)) |
 | `wallpapers/` | Duvar kağıtların. İçindekiler git'e girmez (bkz. [Duvar kağıdı](#duvar-kağıdı)). |
@@ -983,6 +985,11 @@ niri'de yapan yoktu):
 - Paneldeki düğme yazıları düz metin, çünkü panelin fontunda simge yok.
 - Night light'ın sıcaklığı: Settings → Displays → Warmth (sağa doğru daha sıcak; açıksa anında
   uygulanır). Varsayılan 4000 K, `night-light.service` içinde.
+- **Otomatik gece ışığı:** Settings → Displays → **Turn on automatically**. Her akşam 19:00'da
+  açılır, sabah 07:00'de kapanır; bilgisayar o saatte uykudaysa uyanınca, kapalıysa oturum
+  açılışında yetişir. Arada düğmeyle ya da paneldeki `NIGHT`'a tıklayarak elle açıp kapatabilirsin;
+  bu bir sonraki geçişe kadar geçerli. Varsayılan kapalı. Saatleri değiştirmek:
+  `night-light-auto.timer` + `night-light` → `ON_AT`/`OFF_AT`.
 
 **Ayar dosyaları:**
 

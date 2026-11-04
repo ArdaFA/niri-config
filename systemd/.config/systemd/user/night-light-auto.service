@@ -1,0 +1,13 @@
+# Otomatik gece ışığı: `night-light auto` saate göre açar (19:00–07:00) ya da kapatır.
+# Settings → Displays → "Turn on automatically" kapalıysa (services.env → NIGHT_AUTO=0) hiçbir
+# şey yapmaz. Oturum açılışında bir kez (niri.service.wants), sonra night-light-auto.timer ile.
+
+[Unit]
+Description=Turn the night light on or off if it is set to automatic
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/night-light auto

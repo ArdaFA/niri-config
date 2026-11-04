@@ -1,5 +1,6 @@
-# Gece ışığı: ekran renklerini sıcak tona çeker (wlsunset). Oturum açılışında başlamaz;
-# hızlı ayarlardaki "Night light" düğmesi ya da `night-light on` başlatır.
+# Gece ışığı: ekran renklerini sıcak tona çeker (wlsunset). Hızlı ayarlardaki "Night light"
+# düğmesi ya da `night-light on` başlatır. Settings → Displays → "Turn on automatically" açıksa
+# night-light-auto.timer akşam 19:00'da başlatır, sabah 07:00'de durdurur.
 #
 # -t düşük, -T yüksek sıcaklık. İkisi neredeyse aynı olduğu için ekran gün içinde de
 # sıcak kalır (sabah/akşam saatleri -S/-s yalnızca wlsunset istediği için yazılı).

@@ -73,12 +73,13 @@ THUMBS = CACHE_HOME / "settings" / "thumbnails"
 PAGES = (("appearance", "Appearance"), ("displays", "Displays"),
          ("touchpad", "Touchpad"), ("lock", "Screen lock"), ("apps", "Default apps"))
 DEFAULTS = {"tap": True, "natural_scroll": False, "pointer_speed": 0.0,
-            "lock_after": 300, "night_temp": 4000}
+            "lock_after": 300, "night_temp": 4000, "night_auto": False}
 TOUCHPAD_KEYS = ("tap", "natural_scroll", "pointer_speed")
 LOCK_CHOICES = ((60, "1 min"), (120, "2 min"), (300, "5 min"), (600, "10 min"),
                 (900, "15 min"), (1800, "30 min"), (3600, "1 hour"))
 SCREEN_OFF_DELAY = 30           # kilitten bu kadar saniye sonra ekran kapanır
 NIGHT_MIN, NIGHT_MAX = 2500, 5500
+NIGHT_FROM, NIGHT_UNTIL = "19:00", "07:00"      # otomatik gece ışığı (night-light-auto.timer)
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 THUMB_W, THUMB_H = 124, 70      # mantıksal piksel (16:9)
 
@@ -182,7 +183,8 @@ def render_env(s):
             f"LOCK_AFTER={s['lock_after']}\n"
             f"SCREEN_OFF_AFTER={s['lock_after'] + SCREEN_OFF_DELAY}\n"
             f"NIGHT_TEMP={s['night_temp']}\n"
-            f"NIGHT_TEMP_HIGH={s['night_temp'] + 1}\n")
+            f"NIGHT_TEMP_HIGH={s['night_temp'] + 1}\n"
+            f"NIGHT_AUTO={int(s['night_auto'])}\n")
 
 
 def save_settings(s):
@@ -1144,6 +1146,9 @@ class Window(Gtk.ApplicationWindow):
         page.add(label("Night light", "heading"))
         self.night = Switch(self.on_night)
         page.add(row("Night light", self.night, "Warm screen colors for the evening"))
+        self.night_auto = Switch(self.on_night_auto)
+        page.add(row("Turn on automatically", self.night_auto,
+                     f"On at {NIGHT_FROM}, off at {NIGHT_UNTIL}. You can still switch it in between"))
         self.warmth = Slider(NIGHT_MIN, NIGHT_MAX, 100, lambda v: f"{v:.0f} K",
                              self.later(400, self.set_warmth), inverted=True)
         self.warmth.set(self.settings["night_temp"])
@@ -1166,6 +1171,7 @@ class Window(Gtk.ApplicationWindow):
                 place = displays.load_state().get(displays.monitor_id(target), {}).get("place", "auto")
                 self.show_monitor(f"{name or target['name']}  ·  {target['name']}", None, place)
         self.night.set(night_light_on())
+        self.night_auto.set(self.settings["night_auto"])
 
     def show_monitor(self, name, missing, place=None):
         self.monitor_box.set_visible(name is not None)
@@ -1191,6 +1197,16 @@ class Window(Gtk.ApplicationWindow):
             if not ok:
                 self.status(f"Night light failed: {err}" if err else "Night light failed", error=True)
         run([BIN / "night-light", "on" if on else "off"], done)
+
+    def on_night_auto(self, on):
+        if not self.save("night_auto", on) or not on:
+            return              # kapatınca gece ışığı olduğu gibi kalır
+
+        def done(ok, err):
+            self.night.set(night_light_on())
+            if not ok:
+                self.status(f"Night light failed: {err}" if err else "Night light failed", error=True)
+        run([BIN / "night-light", "auto"], done)     # şimdi saate göre: akşamsa açılır
 
     def set_warmth(self, kelvin):
         if self.save("night_temp", int(kelvin)):
@@ -1326,6 +1342,9 @@ def selftest():
             env = (STATE / "services.env").read_text()
             assert "LOCK_AFTER=600\n" in env and "SCREEN_OFF_AFTER=630\n" in env, env
             assert "NIGHT_TEMP=4000\n" in env and "NIGHT_TEMP_HIGH=4001\n" in env, env
+            assert "NIGHT_AUTO=0\n" in env, env
+            save_settings(dict(s, night_auto=True))
+            assert "NIGHT_AUTO=1\n" in (STATE / "services.env").read_text()
             s.update(tap=False, natural_scroll=True, pointer_speed=-0.3)
             save_settings(s)
             kdl = (STATE / "niri.kdl").read_text()

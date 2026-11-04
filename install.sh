@@ -26,6 +26,8 @@ NIRI_SERVICES=(
     clipboard-history.service
     device-notify.service
     theme-auto.timer
+    night-light-auto.service
+    night-light-auto.timer
 )
 
 WANTS_DIR="$HOME/.config/systemd/user/niri.service.wants"
