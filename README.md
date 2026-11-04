@@ -17,23 +17,24 @@ sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü.
 
 1. [Hızlı başlangıç](#hızlı-başlangıç)
 2. [Ayarlar uygulaması](#ayarlar-uygulaması)
-3. [Kurulum (sıfırdan)](#kurulum-sıfırdan)
-4. [Hangi dosya neyi kontrol ediyor](#hangi-dosya-neyi-kontrol-ediyor)
-5. [Oturum nasıl başlıyor](#oturum-nasıl-başlıyor)
-6. [Renkler: `theme` komutu](#renkler-theme-komutu)
-7. [Yeni preset eklemek](#yeni-preset-eklemek)
-8. [Duvar kağıdı](#duvar-kağıdı)
-9. [Otomatik düzen: AUTO / FREE](#otomatik-düzen-auto--free)
-10. [Kısayollar](#kısayollar)
-11. [Waybar modülleri](#waybar-modülleri)
-12. [Hızlı ayarlar ve bildirimler](#hızlı-ayarlar-ve-bildirimler)
-13. [Font](#font)
-14. [Terminal saydamlığı](#terminal-saydamlığı)
-15. [Ekranlar](#ekranlar)
-16. [Kilit ve boşta kalma](#kilit-ve-boşta-kalma)
-17. [Bir şey bozulursa](#bir-şey-bozulursa)
-18. [Her şeyi tamamen kaldırmak](#her-şeyi-tamamen-kaldırmak)
-19. [Notlar](#notlar)
+3. [Arama (Super+D)](#arama-superd)
+4. [Kurulum (sıfırdan)](#kurulum-sıfırdan)
+5. [Hangi dosya neyi kontrol ediyor](#hangi-dosya-neyi-kontrol-ediyor)
+6. [Oturum nasıl başlıyor](#oturum-nasıl-başlıyor)
+7. [Renkler: `theme` komutu](#renkler-theme-komutu)
+8. [Yeni preset eklemek](#yeni-preset-eklemek)
+9. [Duvar kağıdı](#duvar-kağıdı)
+10. [Otomatik düzen: AUTO / FREE](#otomatik-düzen-auto--free)
+11. [Kısayollar](#kısayollar)
+12. [Waybar modülleri](#waybar-modülleri)
+13. [Hızlı ayarlar ve bildirimler](#hızlı-ayarlar-ve-bildirimler)
+14. [Font](#font)
+15. [Terminal saydamlığı](#terminal-saydamlığı)
+16. [Ekranlar](#ekranlar)
+17. [Kilit ve boşta kalma](#kilit-ve-boşta-kalma)
+18. [Bir şey bozulursa](#bir-şey-bozulursa)
+19. [Her şeyi tamamen kaldırmak](#her-şeyi-tamamen-kaldırmak)
+20. [Notlar](#notlar)
 
 ---
 
@@ -45,7 +46,7 @@ GDM son seçilen oturumu hatırlar. KDE'ye dönmek için aynı menüden **Plasma
 | Kısayol | İş |
 |---|---|
 | `Super+Enter` | terminal (foot) |
-| `Super+D` | uygulama başlatıcı (fuzzel) |
+| `Super+D` | arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji |
 | `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, kilit süresi |
 | `Super+Q` | pencereyi kapat |
 | `Super+Shift+ß` (yani `Super+?`) | ekranda kısayol listesi |
@@ -94,6 +95,41 @@ değiştirilebiliyor:
 
 ---
 
+## Arama (Super+D)
+
+`Super+D` (ya da `Super+Space`) ekranın üstünde tek bir arama kutusu açar. Yazdıkça sonuçlar
+gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
+
+| Yazınca | Çıkan | `Enter` |
+|---|---|---|
+| uygulama adı, türü ya da baş harfleri (`brave`, `browser`, `vsc`) | **Applications**: en çok ve en son açtıkların üstte | açar |
+| pencere başlığı ya da uygulaması | **Windows**: açık pencereler | o pencereye geçer |
+| `night`, `wifi`, `lock`, `restart`, `nord`, `monitor`, `screenshot`… | **Settings & actions**: Settings sayfaları, renk temaları, duvar kağıtları, monitörün yeri, hızlı ayar düğmeleri (açık/kapalı yazar), ekran görüntüsü, oturum | uygular / aç-kapa yapar |
+| dosya ya da klasör adının bir parçası (en az 3 harf) | **Files**: önce son açtıkların, sonra ev klasöründeki her şey | açar; `Ctrl+Enter` klasöründe gösterir |
+| `2*(3+4)`, `5 km to mi`, `100 usd to eur`, `20% of 80`, `sqrt(2)` | **Calculator**: sonuç en üstte | sonucu kopyalar |
+| `:` ile başlayan kelime (`:smile`, `:heart`) | **Emoji** | kopyalar (`Ctrl+V` ile yapıştır) |
+| `github.com` gibi bir adres | **Web**: adresi açar | |
+| herhangi bir şey | **Web**: en altta *Search the web* | tarayıcıda arar |
+
+- **Tuşlar:** `↑`/`↓` (ya da `Tab`, `Ctrl+N`/`Ctrl+P`) seçer, `Enter` açar, `Ctrl+Enter` dosyayı
+  klasöründe gösterir, `Esc` ya da kutunun dışına tıklamak kapatır. Hiçbir şey yazmadan açınca
+  bütün uygulamalar listelenir (sık kullandıkların üstte).
+- **Dosya araması** Fedora'nın `plocate` dizinini kullanır; bütün diski tarayan dizin günde bir
+  kez güncellenir (`plocate-updatedb.timer`). Yani bugün oluşturduğun bir dosya yarın bulunur,
+  açtığın dosyalar ise hemen (son açılanlar listesinden). Gizli klasörler (`.cache`, `.git`…)
+  ve derleme klasörleri (`node_modules`, `target`, `build`…) aranmaz.
+- **Hesap makinesi:** basit işlemleri anında kendisi yapar; birim, kur, yüzde ve fonksiyonlar için
+  `qalc` (paket: `qalculate`) kullanır. Döviz kurları haftada bir güncellenir. Bir şeyin kesin
+  hesap olarak alınmasını istersen başına `=` koy: `=pi`.
+- **Web araması:** Brave Search. Değiştirmek için `bin/.local/bin/launcher` → `SEARCH_URL`.
+- **Hafif ve hızlı:** pencere arka planda hazır bekler (`launcher.service`), `Super+D` ona yalnızca
+  bir sinyal gönderir; bu yüzden basar basmaz açılır. Beklerken yaklaşık 45 MB bellek kullanır,
+  işlemci kullanmaz. Servis çalışmıyorsa `Super+D` eskisi gibi fuzzel'i açar.
+- Sık kullanılan uygulama ve emoji kayıtları: `~/.local/state/launcher/history.json`. Silersen
+  sıralama sıfırlanır.
+
+---
+
 ## Kurulum (sıfırdan)
 
 ```bash
@@ -102,7 +138,7 @@ sudo dnf install --setopt=install_weak_deps=False \
     niri xwayland-satellite foot stow brightnessctl playerctl \
     waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
     network-manager-applet pavucontrol blueman cargo wlsunset \
-    swappy wf-recorder slurp
+    swappy wf-recorder slurp qalculate
 
 # 2) wallust — duvar kağıdından renk üretir (resmi repoda yok; crates.io'dan derlenir)
 cargo install --locked wallust          # → ~/.cargo/bin/wallust
@@ -159,7 +195,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 |---|---|
 | `waybar/.config/waybar/config.jsonc` | Panel: hangi modüller nerede, biçimleri, tıklama eylemleri |
 | `waybar/.config/waybar/style.css` | Panel görünümü (font, boşluk, durum renkleri) |
-| `fuzzel/.config/fuzzel/fuzzel.ini` | Uygulama başlatıcı |
+| `fuzzel/.config/fuzzel/fuzzel.ini` | Küçük menüler (tema seçici, onaylar) ve arama servisi çalışmıyorsa `Super+D` |
 | `swaync/.config/swaync/config.json` | Bildirimler ve hızlı ayarlar paneli: bölümler, düğmeler, zaman aşımları |
 | `swaync/.config/swaync/style.css` | Bildirimlerin ve panelin görünümü |
 | `mako/.config/mako/config` | Yedek bildirim programı (yalnızca swaync kaldırılırsa çalışır) |
@@ -199,6 +235,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `bin/.local/bin/night-light` | Gece ışığını açar/kapatır (`night-light.service`) |
 | `bin/.local/bin/screenshot-edit` | Alan seçtirip görüntüyü swappy'de açar (ya da son görüntüyü) |
 | `bin/.local/bin/screen-record` | Ekran kaydı (wf-recorder): başlat/durdur, Waybar'daki `REC` |
+| `bin/.local/bin/launcher` | Arama penceresi (`Super+D`), bkz. [Arama](#arama-superd) |
+| `systemd/.config/systemd/user/launcher.service` | Arama penceresini arka planda hazır tutar |
 | `bin/.local/bin/settings` | Ayarlar penceresi (`Super+S`), bkz. [Ayarlar uygulaması](#ayarlar-uygulaması) |
 | `bin/.local/share/applications/dotfiles.settings.desktop` | Ayarlar penceresinin başlatıcıdaki kaydı (KDE menüsünde gizli) |
 | `bin/.local/bin/displays` | Harici monitörün laptopa göre yeri (üst/alt/sol/sağ), her monitör için ayrı hatırlanır, bkz. [Ekranlar](#ekranlar) |
@@ -217,6 +255,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `~/.local/state/displays/` | `displays` komutunun hatırladığı monitör yerleri (`state.json`) ve niri'nin okuduğu `niri.kdl` |
 | `~/.local/state/settings/` | Ayarlar uygulamasının yazdıkları: touchpad (`niri.kdl`), kilit süresi ve gece ışığı sıcaklığı (`services.env`) |
 | `~/.cache/settings/` | Duvar kağıtlarının küçük resimleri (silinebilir, yeniden üretilir) |
+| `~/.local/state/launcher/` | Arama penceresinin hatırladığı sık kullanılan uygulamalar ve emojiler |
 | `~/.config/systemd/user/niri.service.wants/` | `install.sh`'nin oluşturduğu servis bağlantıları |
 | `~/.local/share/fonts/DepartureMono/` | Font |
 | `~/.cargo/bin/wallust` | wallust |
@@ -491,7 +530,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 | Kısayol | İş |
 |---|---|
 | `Super+Enter` | Terminal (foot) |
-| `Super+D` / `Super+Space` | Uygulama başlatıcı (fuzzel) |
+| `Super+D` / `Super+Space` | Arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji (bkz. [Arama](#arama-superd)) |
 | `Super+S` | Ayarlar penceresi (bkz. [Ayarlar uygulaması](#ayarlar-uygulaması)) |
 | `Super+Shift+T` | Renk teması seç: presetler ve `wallpapers/` içindeki resimler (resim seçilirse renkler ondan üretilir). Yazarak ara, ör. `light` ya da `wallpaper`. |
 | `Alt+Tab` / `Alt+Shift+Tab` | Son kullanılan pencereler arasında geçiş (niri). Seçili pencerenin vurgusu temanın rengini alır. `` Alt+` `` aynı uygulamanın pencereleri. |
@@ -886,7 +925,8 @@ Departure Mono **11 px ve katlarında** (22, 33…) piksel-mükemmel görünür.
 |---|---|
 | Terminal | `foot/.config/foot/foot.ini` → `font=`, `font-bold=`, `font-italic=`, `font-bold-italic=` |
 | Panel | `waybar/.config/waybar/style.css` → `font-family`, `font-size` |
-| Başlatıcı | `fuzzel/.config/fuzzel/fuzzel.ini` → `font=` |
+| Arama penceresi | `bin/.local/bin/launcher` → `CSS` (`font-family`, `font-size`) |
+| Menüler (fuzzel) | `fuzzel/.config/fuzzel/fuzzel.ini` → `font=` |
 | Bildirimler ve hızlı ayarlar paneli | `swaync/.config/swaync/style.css` → `font-family`, `font-size` |
 | Kilit ekranı | `themes/templates/swaylock.conf` → `font=`, `font-size=`, ardından `theme apply` |
 
@@ -999,9 +1039,13 @@ journalctl --user -b -u niri          # niri
 journalctl --user -b -u waybar        # panel
 journalctl --user -b -u layout-mode   # otomatik düzen
 journalctl --user -b -u swaync        # bildirimler ve hızlı ayarlar paneli
-systemctl --user status waybar swaync swaybg swayidle theme-apply niri-polkit layout-mode
+journalctl --user -b -u launcher      # arama penceresi (Super+D)
+systemctl --user status waybar swaync swaybg swayidle theme-apply niri-polkit layout-mode launcher
 systemctl --user restart waybar       # panel kaybolduysa
 ```
+
+**`Super+D` arama yerine fuzzel'i açıyorsa** arama servisi çalışmıyor demektir:
+`systemctl --user restart launcher`, olmazsa yukarıdaki günlüğe bak.
 
 **Pencereler garip davranıyorsa:** `Super+T` ile FREE'ye geç ya da
 `systemctl --user stop layout-mode` ile servisi bu oturum için kapat. niri o zaman kendi
@@ -1052,7 +1096,7 @@ rm -rf ~/.local/share/fonts/DepartureMono && fc-cache -f
 # 4) Paketler (sudo). stow ve cargo'yu başka işler için kullanıyorsan listeden çıkar.
 sudo dnf remove niri xwayland-satellite foot stow brightnessctl playerctl \
     waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
-    network-manager-applet pavucontrol blueman
+    network-manager-applet pavucontrol blueman qalculate
 
 # 5) Repo
 rm -rf ~/dotfiles
@@ -1076,7 +1120,7 @@ baştan beri değiştirilmediği için geri alınacak başka bir şey yok.
   - `app-…@autostart.service.d/not-in-niri.conf` (üç tane): KDE'nin de kullandığı autostart
     girdilerine `ConditionEnvironment=!XDG_CURRENT_DESKTOP=niri` koşulu ekliyor. KDE'de koşul
     sağlandığı için orada eskisi gibi başlıyorlar; yalnızca niri'de başlamıyorlar:
-    - **Cisco Secure Client**: niri'de gerektiğinde fuzzel'den açılır (`Super+D` → "Cisco").
+    - **Cisco Secure Client**: niri'de gerektiğinde aramadan açılır (`Super+D` → "Cisco").
     - **Xwayland Video Bridge**: yalnızca KWin için gerekli; niri'de boş bir pencere açıyordu.
     - **imsettings-start**: giriş yöntemini IBus'a geçiriyor ve "ibus start" uyarısı veriyordu.
 - **Başka bir autostart programını niri'de durdurmak:**

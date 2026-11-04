@@ -1,0 +1,1329 @@
+#!/usr/bin/python3
+# launcher — Super+D: tek arama kutusu. Yazdıkça uygulamalar, açık pencereler, ayarlar ve
+# eylemler, dosyalar, hesap makinesi ve web araması gelir; ":" ile başlayınca emoji.
+#
+#   launcher [toggle]    pencereyi aç/kapa
+#   launcher daemon      arka planda bekleyen pencere (launcher.service)
+#   launcher selftest    arayüzsüz arama mantığı testleri (check.sh)
+#
+# Pencere arka planda hazır bekler; tuşa basınca yalnızca görünür olur. Super+D bu betiği
+# değil doğrudan TOGGLE komutunu çalıştırır: servise SIGUSR1 gönderir (~6 ms; Python'u
+# başlatmak bile ~40 ms). Servis çalışmıyorsa fuzzel açılır.
+#
+# Kaynaklar:
+#   uygulamalar    .desktop kayıtları; en çok/son açılanlar üstte (~/.local/state/launcher)
+#   pencereler     niri msg windows; seçince o pencereye geçer
+#   ayarlar        Settings sayfaları, tema, duvar kağıdı, monitör yeri, hızlı ayar düğmeleri,
+#                  ekran görüntüsü, oturum (kilit, çıkış, yeniden başlat…)
+#   dosyalar       son açılanlar (recently-used.xbel) + plocate dizini: yalnızca ev klasörü,
+#                  gizli klasörler hariç. Dizin günde bir güncellenir (plocate-updatedb.timer).
+#   hesap makinesi basit işlemler (2*(3+4)) Python'la anında; birim, kur, yüzde, fonksiyon
+#                  (5 km to mi, 100 usd to eur, sqrt(2)) qalc ile. "=" ile başlamak zorlar.
+#   emoji          ":smile" — IBus'un emoji listesi; seçilen kopyalanır
+#   web            her sorgunun en altında; alan adı yazılırsa doğrudan açar
+#
+# Uzun yaşayan her şey (uygulamalar, kilit, wl-copy…) `niri msg action spawn` ile başlar:
+# servisin cgroup'una girmesin, servis yeniden başlayınca kapanmasın.
+# Ekrana yazılan her şey İngilizce (arayüz kuralı); açıklamalar Türkçe.
+
+import ast
+import json
+import math
+import operator
+import os
+import re
+import sys
+import time
+import unicodedata
+from pathlib import Path
+
+HOME = os.path.expanduser("~")
+# niri/binds.kdl'deki Super+D ile aynı komut.
+TOGGLE = ("systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null"
+          " || exec fuzzel")
+USAGE = "usage: launcher [toggle] | daemon | selftest"
+
+if __name__ == "__main__" and sys.argv[1:] in ([], ["toggle"]):
+    os.execvp("sh", ["sh", "-c", TOGGLE])
+
+
+# ── Arama mantığı (GTK'sız; selftest bunları dener) ───────────────────────
+
+SPLIT = re.compile(r"[\W_]+")
+
+
+def fold(text):
+    """Büyük/küçük harf ve aksan farkını siler: 'İstanbul Ayarları' → 'istanbul ayarlari'."""
+    text = (text or "").casefold().replace("ı", "i")
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+
+
+def word_score(word, text):
+    """Bir sorgu kelimesinin bir alana uyumu, 0..1."""
+    if not text or not word:
+        return 0.0
+    if text == word:
+        return 1.0
+    if text.startswith(word):
+        return 0.9
+    i = text.find(word)
+    if i < 0:
+        return 0.0
+    if not text[i - 1].isalnum():
+        return 0.8                       # bir kelimenin başı
+    return 0.55 if len(word) >= 2 else 0.0
+
+
+def initials(text):
+    return "".join(part[0] for part in SPLIT.split(text) if part)
+
+
+def match(words, fields):
+    """words: katlanmış kelimeler; fields: [(katlanmış metin, ağırlık)]. Hepsi eşleşmeli."""
+    if not words:
+        return 0.0
+    total = 0.0
+    for word in words:
+        best = max((word_score(word, text) * weight for text, weight in fields), default=0.0)
+        if not best:
+            return 0.0
+        total += best
+    return total / len(words)
+
+
+def name_match(words, name, fields):
+    """match + baş harfler: 'vsc' → Visual Studio Code."""
+    score = match(words, fields)
+    if len(words) == 1 and len(words[0]) >= 2 and initials(name).startswith(words[0]):
+        score = max(score, 0.75)
+    return score
+
+
+def frecency(entry, now):
+    """[kaç kez, son zaman] → 0..30 puan; yakın zamanda kullanılan daha ağır."""
+    if not entry:
+        return 0.0
+    count, last = entry
+    age = now - last
+    weight = 1.0 if age < 3 * 86400 else 0.7 if age < 14 * 86400 else 0.4
+    return min(30.0, 10 * math.log2(1 + count)) * weight
+
+
+# Hesap makinesi
+ARITH = re.compile(r"[\d\s.+\-*/^()×÷]+")
+NUMBER = re.compile(r"[-+]?\d+([.,]\d+)?")
+OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+       ast.Div: operator.truediv, ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod}
+BASES = {"bin", "binary", "hex", "hexadecimal", "oct", "octal", "dec", "decimal", "duo",
+         "roman", "base", "time", "fraction", "sci", "scientific", "utc", "bijective", "unicode"}
+
+
+def calc_kind(query):
+    """None | 'py' (anında) | 'qalc' (üstte gösterilir) | 'weak' (qalc, ama listenin altında)."""
+    q = query.strip()
+    if q.startswith("="):
+        return "qalc" if q[1:].strip() else None
+    if not re.search(r"\d", q) or NUMBER.fullmatch(q):
+        return None
+    if ARITH.fullmatch(q) and re.search(r"[\d)]\s*[-+*/^×÷]", q):
+        return "py"
+    if re.search(r"[-+*/^×÷%]|\bto\b|→|[a-z]\(", q, re.I):
+        return "qalc"
+    if re.search(r"\d\s*[^\W\d_]", q):
+        return "weak"                     # "5 km", "2fa": belki birim, belki uygulama adı
+    return None
+
+
+def py_calc(query):
+    expr = query.strip().replace("×", "*").replace("÷", "/").replace("^", "**")
+
+    def ev(node):
+        if isinstance(node, ast.Expression):
+            return ev(node.body)
+        if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+            return node.value
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = ev(node.operand)
+            return -value if isinstance(node.op, ast.USub) else value
+        if isinstance(node, ast.BinOp):
+            a, b = ev(node.left), ev(node.right)
+            if isinstance(node.op, ast.Pow):
+                if abs(b) > 1000 or (abs(a) > 10 and b > 300):
+                    raise ValueError("too big")
+                return a ** b
+            return OPS[type(node.op)](a, b)
+        raise ValueError("not arithmetic")
+
+    try:
+        value = ev(ast.parse(expr, mode="eval"))
+    except (SyntaxError, ValueError, KeyError, TypeError, ZeroDivisionError, OverflowError):
+        return None
+    return fmt_number(value)
+
+
+def fmt_number(value):
+    if isinstance(value, complex):
+        return None
+    if isinstance(value, float):
+        if math.isnan(value) or math.isinf(value):
+            return None
+        if value.is_integer() and abs(value) < 1e15:
+            value = int(value)
+    if isinstance(value, int):
+        text = str(value)
+        return text if len(text) <= 30 else f"{value:.10g}"
+    return f"{value:.10g}"
+
+
+def qalc_expr(query):
+    """qalc'ın anlamadığı ya da karışık birimle (3 mi + 188 yd…) cevapladığı kalıpları düzeltir."""
+    q = query.strip().lstrip("=").strip()
+    q = re.sub(r"(\d)\s*%\s*of\b", r"\1% *", q, flags=re.I)
+
+    def single_unit(m):
+        target = m.group(2)
+        return m.group(0) if target.lower() in BASES else f"{m.group(1)}-{target}"
+    return re.sub(r"(\bto\s+)([^\W\d][\w°]*)", single_unit, q)
+
+
+def qalc_result(query, output):
+    """qalc çıktısından gösterilecek sonuç; anlamsızsa None."""
+    lines = [line.strip() for line in (output or "").splitlines() if line.strip()]
+    if not lines or any(line.lower().startswith(("error", "warning")) for line in lines):
+        return None
+    result = lines[-1]
+    if len(result) >= 2 and result[0] == result[-1] == '"':
+        result = result[1:-1]
+
+    def norm(text):
+        return re.sub(r"\s+", "", text.replace("−", "-")).casefold()
+    if not result or norm(result) == norm(query.strip().lstrip("=")):
+        return None                       # "2fa" → "2 fa": qalc yalnızca tekrar etti
+    return result
+
+
+# Web
+TLDS = set("""com org net io dev app ai co de tr eu uk us ca fr it es nl ch at be se no dk fi
+pl cz ru jp cn in br au info edu gov me tv gg xyz sh so to ly fm page site online tech blog
+wiki""".split())
+DOMAIN = re.compile(r"(?:[\w-]+\.)+([a-z]{2,})(?::\d+)?(?:/\S*)?", re.I)
+
+
+def as_url(query):
+    q = query.strip()
+    if not q or " " in q:
+        return None
+    if re.match(r"https?://\S+$", q):
+        return q
+    m = DOMAIN.fullmatch(q)
+    if m and m.group(1).lower() in TLDS:
+        return "https://" + q
+    return None
+
+
+# Dosyalar
+# Derleme/bağımlılık klasörleri: aramada yalnızca gürültü.
+SKIP_DIRS = {"node_modules", "__pycache__", "site-packages", "dist-packages", "target", "build",
+             "dist", "venv", "vendor", "Pods", "DerivedData"}
+
+
+def rank_files(paths, words, recent, home, limit):
+    """plocate çıktısı → [(puan, yol)]: ev klasöründe, gizli/gürültülü klasörler hariç."""
+    seen, ranked = set(), []
+    prefix = home.rstrip("/") + "/"
+    for path in paths:
+        if not path.startswith(prefix) or path in seen:
+            continue
+        seen.add(path)
+        parts = path[len(prefix):].split("/")
+        if any(p.startswith(".") or p in SKIP_DIRS for p in parts):
+            continue
+        name = fold(parts[-1])
+        score = sum(word_score(w, name) for w in words) / max(len(words), 1) or 0.5
+        bonus = (8 if path in recent else 0) - min(len(parts), 10) * 0.5
+        ranked.append((score * 100 + bonus, path))
+    ranked.sort(key=lambda r: (-r[0], len(r[1])))
+    return ranked[:limit]
+
+
+def window_app_keys(app_id):
+    """niri app_id'sinden .desktop eşleştirme anahtarları."""
+    a = (app_id or "").lower()
+    return [k for k in (a, a.removesuffix(".desktop"), a.rsplit(".", 1)[-1]) if k]
+
+
+def selftest():
+    now = 1_000_000_000
+    firefox = [(fold("Firefox"), 1.0), (fold("Web Browser"), 0.7), (fold("internet www"), 0.7)]
+    vscode = [(fold("Visual Studio Code"), 1.0)]
+    cases = [
+        ("fold Turkish", fold("İstanbul AYARLARI ışık"), "istanbul ayarlari isik"),
+        ("prefix > contains", match(["fir"], firefox) > match(["fox"], firefox) > 0, True),
+        ("all words must match", match(["web", "fire"], firefox) > 0 and match(["web", "zzz"], firefox) == 0, True),
+        ("no match", match(["xyz"], firefox), 0.0),
+        ("initials", name_match(["vsc"], fold("Visual Studio Code"), vscode) >= 0.75, True),
+        ("frecency recent > old", frecency([5, now - 3600], now) > frecency([5, now - 30 * 86400], now) > 0, True),
+        ("frecency none", frecency(None, now), 0.0),
+        ("calc py", calc_kind("2*(3+4)"), "py"),
+        ("calc unit", calc_kind("5 km to mi"), "qalc"),
+        ("calc currency", calc_kind("100 usd to eur"), "qalc"),
+        ("calc func", calc_kind("sqrt(2)"), "qalc"),
+        ("calc forced", calc_kind("=pi"), "qalc"),
+        ("calc weak", calc_kind("2fa"), "weak"),
+        ("calc app name", calc_kind("firefox"), None),
+        ("calc lone number", calc_kind("2026"), None),
+        ("calc mp3", calc_kind("mp3"), None),
+        ("py 14", py_calc("2*(3+4)"), "14"),
+        ("py third", py_calc("1/3"), "0.3333333333"),
+        ("py caret", py_calc("2^10"), "1024"),
+        ("py big int", py_calc("2^64"), "18446744073709551616"),
+        ("py div0", py_calc("1/0"), None),
+        ("py huge", py_calc("9^99999"), None),
+        ("py float int", py_calc("0.5*4"), "2"),
+        ("qalc single unit", qalc_expr("5 km to mi"), "5 km to -mi"),
+        ("qalc base kept", qalc_expr("255 to hex"), "255 to hex"),
+        ("qalc percent of", qalc_expr("17% of 250"), "17% * 250"),
+        ("qalc forced", qalc_expr("= 2 pi"), "2 pi"),
+        ("qalc result", qalc_result("5 km to mi", "3.106855961 mi\n"), "3.106855961 mi"),
+        ("qalc echo hidden", qalc_result("2fa", "2 fa\n"), None),
+        ("qalc symbolic hidden", qalc_result("x-2", "x − 2\n"), None),
+        ("qalc quotes", qalc_result("today + 30 days", '"2026-12-04"\n'), "2026-12-04"),
+        ("qalc error", qalc_result("1+", "error: oops\n1\n"), None),
+        ("url domain", as_url("github.com/niri"), "https://github.com/niri"),
+        ("url scheme", as_url("http://localhost:8000"), "http://localhost:8000"),
+        ("url file ext", as_url("readme.md"), None),
+        ("url words", as_url("foo bar.com"), None),
+        ("files filtered/ranked", [p for _, p in rank_files(
+            ["/h/Documents/report.pdf", "/h/.cache/report.pdf", "/h/x/node_modules/report.js",
+             "/other/report.pdf", "/h/a/b/c/old-report.txt", "/h/Documents/report.pdf"],
+            ["report"], set(), "/h", 5)], ["/h/Documents/report.pdf", "/h/a/b/c/old-report.txt"]),
+        ("files recent first", rank_files(["/h/a/notes.md", "/h/b/notes.md"], ["notes"],
+                                          {"/h/b/notes.md"}, "/h", 5)[0][1], "/h/b/notes.md"),
+        ("window keys", window_app_keys("org.kde.dolphin"), ["org.kde.dolphin", "org.kde.dolphin", "dolphin"]),
+    ]
+    failed = [(name, got, want) for name, got, want in cases if got != want]
+    for name, got, want in failed:
+        print(f"FAIL {name}: got {got!r}, want {want!r}")
+    if failed:
+        sys.exit(1)
+    print(f"launcher: {len(cases)} checks ok")
+
+
+if __name__ == "__main__" and sys.argv[1:] == ["selftest"]:
+    selftest()
+    sys.exit(0)
+if __name__ == "__main__" and sys.argv[1:] != ["daemon"]:
+    sys.exit(USAGE)
+
+
+# ── Pencere (yalnızca daemon) ─────────────────────────────────────────────
+
+os.environ["GDK_BACKEND"] = "wayland"     # katman penceresi yalnızca Wayland'de anlamlı
+
+import ctypes  # noqa: E402
+import shlex  # noqa: E402
+import signal  # noqa: E402
+import threading  # noqa: E402
+import tomllib  # noqa: E402
+import urllib.parse  # noqa: E402
+
+import gi  # noqa: E402
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GtkLayerShell", "0.1")
+gi.require_version("Pango", "1.0")
+from gi.repository import Gdk, Gio, GLib, Gtk, GtkLayerShell, Pango  # noqa: E402
+
+try:                                    # GLib 2.86+: Gio.DesktopAppInfo'nun yeni yeri
+    gi.require_version("GioUnix", "2.0")
+    from gi.repository import GioUnix  # noqa: E402
+    DesktopAppInfo = GioUnix.DesktopAppInfo
+except (ValueError, ImportError):
+    DesktopAppInfo = Gio.DesktopAppInfo
+
+BIN = Path(__file__).resolve().parent              # theme, displays, settings… burada
+REPO = BIN.parents[2]
+PRESETS = REPO / "themes/presets"
+WALLPAPERS = REPO / "wallpapers"
+STATE_HOME = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state")
+THEME_STATE = STATE_HOME / "theme"
+PANEL_CSS = THEME_STATE / "panel.css"
+HISTORY = STATE_HOME / "launcher/history.json"
+EMOJI_DICT = "/usr/share/ibus/dicts/emoji-en.dict"
+QS = BIN / "quick-settings"
+TERMINAL = "foot"
+SEARCH_URL = "https://search.brave.com/search?q={}"   # web araması (Brave'in varsayılanı)
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+
+CARD_W = 640            # kutunun genişliği
+LIST_H = 400            # sonuç listesinin en fazla yüksekliği; fazlası kayar
+SHADOW = 18             # kutunun çevresinde gölgeye ayrılan boşluk
+MARGIN_TOP = 110        # ekranın (panelin) üstünden uzaklık
+DEBOUNCE = 110          # qalc ve plocate yazmayı bu kadar ms bekler
+ACTION_DELAY = 180      # eylemlerden önce pencere kapansın (ekran görüntüsüne girmesin)
+LIMITS = {"calc": 1, "apps": 6, "windows": 5, "actions": 6, "files": 7, "web": 2, "emoji": 60}
+TITLES = {"calc": "Calculator", "apps": "Applications", "windows": "Windows",
+          "actions": "Settings & actions", "files": "Files", "web": "Web", "emoji": "Emoji"}
+
+CSS = b"""
+.launcher-win, .backdrop { background: transparent; }
+.launcher * { font-family: "Departure Mono", monospace; font-size: 11px; }
+.launcher {
+    background: @panel_bg;
+    color: @panel_fg;
+    border: 1px solid @panel_border;
+    border-radius: 16px;
+    box-shadow: 0 6px 18px alpha(black, 0.45);
+}
+.launcher entry {
+    all: unset;
+    font-family: "Departure Mono", monospace;
+    font-size: 22px;
+    padding: 14px 18px 12px 18px;
+    color: @panel_fg;
+    caret-color: @panel_accent;
+}
+.launcher entry selection { background: @panel_accent; color: @panel_bg; }
+.launcher .sep { min-height: 1px; background: @panel_overlay; }
+.launcher list { background: transparent; padding: 4px 0 2px 0; }
+.launcher row { all: unset; }
+.launcher row.item { padding: 5px 12px; margin: 0 6px; border-radius: 10px; }
+.launcher row.item:hover { background: alpha(@panel_overlay, 0.55); }
+.launcher row.item:selected { background: @panel_overlay; }
+.launcher row.item:selected .title { color: @panel_accent; }
+.launcher row.item image { color: @panel_subtle; }
+.launcher row.item:selected image { color: @panel_accent; }
+.launcher .title { color: @panel_fg; }
+.launcher .sub { color: @panel_muted; }
+.launcher row.item:selected .sub { color: @panel_subtle; }
+.launcher row.header { padding: 8px 18px 3px 18px; }
+.launcher row.header label { color: @panel_muted; }
+.launcher .emoji { font-family: "Noto Color Emoji", sans-serif; font-size: 16px; }
+.launcher .calc .title { font-size: 22px; }
+.launcher .footer { padding: 6px 18px 9px 18px; }
+.launcher .footer label { color: @panel_muted; }
+.launcher scrollbar { background: transparent; border: none; }
+.launcher scrollbar slider { min-width: 4px; border-radius: 2px; background: @panel_overlay; border: none; }
+"""
+
+# panel.css yoksa (theme hiç çalışmadıysa) kullanılacak renkler.
+FALLBACK_COLORS = b"""
+@define-color panel_bg #1d1a21;
+@define-color panel_surface #26222b;
+@define-color panel_overlay #332d39;
+@define-color panel_fg #ede4ea;
+@define-color panel_muted #6f6577;
+@define-color panel_subtle #a397a8;
+@define-color panel_accent #f4a7b9;
+@define-color panel_border #f4a7b9;
+"""
+
+
+def read_json(path):
+    try:
+        return json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def tilde(path):
+    return "~" + path[len(HOME):] if path == HOME or path.startswith(HOME + "/") else path
+
+
+def run_async(argv, done=None, timeout=4000):
+    """Kısa komut; bitince done(çıktı ya da None). Dönen fonksiyon çağrılırsa iptal eder."""
+    flags = (Gio.SubprocessFlags.STDIN_PIPE | Gio.SubprocessFlags.STDOUT_PIPE
+             | Gio.SubprocessFlags.STDERR_SILENCE)
+    try:
+        proc = Gio.Subprocess.new([str(a) for a in argv], flags)
+    except GLib.Error:
+        if done:
+            done(None)
+        return lambda: None
+    state = {"cancelled": False, "timer": 0}
+
+    def kill():
+        state["timer"] = 0
+        proc.force_exit()
+        return False
+
+    def finished(p, result):
+        if state["timer"]:
+            GLib.source_remove(state["timer"])
+            state["timer"] = 0
+        try:
+            _, out, _ = p.communicate_utf8_finish(result)
+        except GLib.Error:
+            out = None
+        if done and not state["cancelled"]:
+            done(out if p.get_if_exited() and p.get_exit_status() == 0 else None)
+
+    def cancel():
+        state["cancelled"] = True
+        proc.force_exit()
+
+    state["timer"] = GLib.timeout_add(timeout, kill)
+    proc.communicate_utf8_async(None, None, finished)
+    return cancel
+
+
+def spawn(*argv):
+    """Uzun yaşayan programlar niri üzerinden başlar (bkz. dosyanın başı)."""
+    run_async(["niri", "msg", "action", "spawn", "--", *argv])
+
+
+def copy(text):
+    spawn("sh", "-c", 'printf %s "$1" | wl-copy', "sh", text)
+
+
+def themed(*names):
+    theme = Gtk.IconTheme.get_default()
+    for name in names:
+        if theme.has_icon(name):
+            return Gio.ThemedIcon.new(name)
+    return None
+
+
+def parse_bool(out):
+    text = (out or "").strip()
+    return True if text == "true" else False if text == "false" else None
+
+
+class Item:
+    __slots__ = ("group", "key", "title", "sub", "icon", "emoji", "score", "run", "hint",
+                 "alt", "alt_hint", "toggle", "pending")
+
+    def __init__(self, group, key, title, sub="", icon=None, score=0.0, run=None, hint="Open",
+                 alt=None, alt_hint="", toggle=None, emoji=None, pending=False):
+        self.group, self.key, self.title, self.sub = group, key, title, sub
+        self.icon, self.emoji, self.score = icon, emoji, score
+        self.run, self.hint, self.alt, self.alt_hint = run, hint, alt, alt_hint
+        self.toggle, self.pending = toggle, pending
+
+
+class App:
+    __slots__ = ("info", "id", "name", "sub", "fields", "fname")
+
+    def __init__(self, info):
+        self.info = info
+        self.id = info.get_id() or info.get_filename()
+        self.name = info.get_display_name() or info.get_name() or self.id
+        self.sub = info.get_generic_name() or ""
+        exe = os.path.basename(info.get_executable() or "")
+        stem = (info.get_id() or "").removesuffix(".desktop")
+        self.fname = fold(self.name)
+        self.fields = [(self.fname, 1.0), (fold(self.sub), 0.7),
+                       (fold(" ".join(info.get_keywords() or [])), 0.7),
+                       (fold(exe), 0.6), (fold(stem.replace(".", " ")), 0.5)]
+
+
+class Row(Gtk.ListBoxRow):
+    def __init__(self, item):
+        super().__init__()
+        self.item = item
+        style = self.get_style_context()
+        style.add_class("item")
+        if item.group == "calc":
+            style.add_class("calc")
+        box = Gtk.Box(spacing=10)
+        if item.emoji:
+            icon = Gtk.Label(label=item.emoji)
+            icon.get_style_context().add_class("emoji")
+        elif item.icon:
+            icon = Gtk.Image.new_from_gicon(item.icon, Gtk.IconSize.LARGE_TOOLBAR)
+            icon.set_pixel_size(20)
+        else:
+            icon = Gtk.Box()
+        icon.set_size_request(22, 22)
+        box.pack_start(icon, False, False, 0)
+        title = Gtk.Label(label=item.title, xalign=0, ellipsize=Pango.EllipsizeMode.END,
+                          width_chars=14)
+        title.get_style_context().add_class("title")
+        box.pack_start(title, True, True, 0)
+        self.sub = Gtk.Label(label=item.sub, xalign=1, max_width_chars=38,
+                             ellipsize=Pango.EllipsizeMode.START if item.group == "files"
+                             else Pango.EllipsizeMode.END)
+        self.sub.get_style_context().add_class("sub")
+        box.pack_end(self.sub, False, False, 0)
+        self.add(box)
+        self.show_all()
+
+    def set_sub(self, text):
+        self.item.sub = text
+        self.sub.set_text(text)
+
+
+class Header(Gtk.ListBoxRow):
+    def __init__(self, text):
+        super().__init__(selectable=False, activatable=False)
+        self.get_style_context().add_class("header")
+        self.add(Gtk.Label(label=text.upper(), xalign=0))
+        self.show_all()
+
+
+def layer_window(namespace, layer, keyboard):
+    win = Gtk.Window()
+    GtkLayerShell.init_for_window(win)
+    GtkLayerShell.set_namespace(win, namespace)
+    GtkLayerShell.set_layer(win, layer)
+    GtkLayerShell.set_keyboard_mode(win, keyboard)
+    visual = win.get_screen().get_rgba_visual()
+    if visual:
+        win.set_visual(visual)
+    win.set_app_paintable(True)
+    return win
+
+
+class History:
+    """Uygulama ve emoji kullanım sayıları: sık/son kullanılanlar üste çıksın."""
+
+    def __init__(self, path):
+        self.path = path
+        data = read_json(path)
+        self.data = data if isinstance(data, dict) else {}
+
+    def get(self, kind, key):
+        entry = self.data.get(kind, {}).get(key)
+        return entry if isinstance(entry, list) and len(entry) == 2 else None
+
+    def bump(self, kind, key):
+        table = self.data.setdefault(kind, {})
+        count = (self.get(kind, key) or [0, 0])[0]
+        table[key] = [count + 1, int(time.time())]
+        if len(table) > 300:
+            for old in sorted(table, key=lambda k: table[k][1])[:len(table) - 300]:
+                del table[old]
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self.data))
+            os.replace(tmp, self.path)
+        except OSError:
+            pass
+
+
+class Launcher:
+    def __init__(self):
+        self.history = History(HISTORY)
+        self.apps, self.app_keys, self.apps_dirty = [], {}, True
+        self.monitor = Gio.AppInfoMonitor.get()
+        self.monitor.connect("changed", lambda *_: setattr(self, "apps_dirty", True))
+        self.recent_manager = Gtk.RecentManager.get_default()
+        self.recent = []
+        self.emoji = None
+        self.windows = []
+        self.actions = []
+        self.toggles, self.toggle_wait = {}, set()
+        self.gen, self.timer, self.cancels = 0, 0, []
+        self.local, self.extra = {}, {}
+        self.items, self.rows, self.sel = [], [], -1
+        self.navigated = self.visible = self.pending_enter = False
+        self.css, self.css_stamp = None, None
+        self.build()
+        self.load_css()
+        self.load_apps()
+        self.update()
+        threading.Thread(target=self.load_emoji, daemon=True).start()
+
+    # ── Arayüz ──
+
+    def build(self):
+        # Ekranı kaplayan saydam katman: dışarı tıklayınca kapanır.
+        self.backdrop = layer_window("launcher-backdrop", GtkLayerShell.Layer.TOP,
+                                     GtkLayerShell.KeyboardMode.NONE)
+        for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM,
+                     GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
+            GtkLayerShell.set_anchor(self.backdrop, edge, True)
+        GtkLayerShell.set_exclusive_zone(self.backdrop, -1)
+        self.backdrop.get_style_context().add_class("backdrop")
+        self.backdrop.connect("button-press-event", lambda *_: self.hide())
+
+        # Pencerenin boyu sabit, yalnızca içindeki kutu büyür: niri boyu değişen katman
+        # penceresine yeni kare vermiyor (bkz. media-popup). Kutunun altı saydam.
+        self.win = layer_window("launcher", GtkLayerShell.Layer.OVERLAY,
+                                GtkLayerShell.KeyboardMode.EXCLUSIVE)
+        GtkLayerShell.set_anchor(self.win, GtkLayerShell.Edge.TOP, True)
+        GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.TOP, MARGIN_TOP - SHADOW)
+        self.win.get_style_context().add_class("launcher-win")
+        self.win.connect("key-press-event", self.on_key)
+        self.win.connect("button-press-event", self.on_click)
+
+        self.card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, valign=Gtk.Align.START,
+                            halign=Gtk.Align.CENTER, margin=SHADOW)
+        self.card.set_size_request(CARD_W, -1)
+        self.card.get_style_context().add_class("launcher")
+        self.entry = Gtk.Entry(placeholder_text="Search apps, windows, files, settings")
+        self.entry.connect("changed", lambda *_: self.update())
+        self.card.pack_start(self.entry, False, False, 0)
+        self.sep = Gtk.Box()
+        self.sep.get_style_context().add_class("sep")
+        self.card.pack_start(self.sep, False, False, 0)
+        self.list = Gtk.ListBox(selection_mode=Gtk.SelectionMode.SINGLE,
+                                activate_on_single_click=True)
+        self.list.connect("row-activated", lambda _lb, row: self.activate(row.item, False))
+        self.scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                           propagate_natural_height=True,
+                                           max_content_height=LIST_H)
+        self.scroller.add(self.list)
+        self.card.pack_start(self.scroller, False, False, 0)
+        self.footer = Gtk.Box(spacing=12)
+        self.footer.get_style_context().add_class("footer")
+        self.tip = Gtk.Label(xalign=0)
+        self.hint = Gtk.Label(xalign=1, ellipsize=Pango.EllipsizeMode.START)
+        self.footer.pack_start(self.tip, False, False, 0)
+        self.footer.pack_end(self.hint, True, True, 0)
+        self.card.pack_start(self.footer, False, False, 0)
+        self.win.add(self.card)
+        self.win.set_size_request(CARD_W + 2 * SHADOW, LIST_H + 140 + 2 * SHADOW)
+        self.card.show_all()
+
+    def load_css(self):
+        try:
+            colors = PANEL_CSS.read_bytes()
+        except OSError:
+            colors = FALLBACK_COLORS
+        if b"panel_subtle" not in colors:
+            colors += b"@define-color panel_subtle @panel_muted;\n"
+        if colors == self.css_stamp:
+            return
+        provider = Gtk.CssProvider()
+        provider.load_from_data(colors + CSS)
+        screen = Gdk.Screen.get_default()
+        if self.css:
+            Gtk.StyleContext.remove_provider_for_screen(screen, self.css)
+        Gtk.StyleContext.add_provider_for_screen(screen, provider,
+                                                 Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+        self.css, self.css_stamp = provider, colors
+
+    def show(self, text=""):
+        if self.visible:
+            return
+        self.load_css()
+        reloaded = self.apps_dirty
+        if reloaded:
+            self.load_apps()
+        self.actions = self.build_actions()
+        self.recent = self.load_recent()
+        self.toggles, self.toggle_wait = {}, set()
+        self.visible = True
+        self.backdrop.show()
+        self.win.show()
+        self.entry.grab_focus()
+        if self.entry.get_text() != text:
+            self.entry.set_text(text)
+            self.entry.set_position(-1)
+        elif reloaded:
+            self.update()
+        run_async(["niri", "msg", "--json", "windows"], self.windows_loaded)
+
+    def hide(self):
+        if not self.visible:
+            return
+        self.visible = False
+        self.win.hide()
+        self.backdrop.hide()
+        self.cancel_async()
+        GLib.idle_add(self.reset)
+
+    def reset(self):
+        """Kapanınca boş hale dön: bir sonraki açılış anında olsun."""
+        if not self.visible:
+            self.pending_enter = False
+            if self.entry.get_text():
+                self.entry.set_text("")
+            else:
+                self.update()
+            GLib.timeout_add(500, self.trim)
+        return False
+
+    def trim(self):
+        """Aramaların bıraktığı boş belleği sisteme geri ver (~10 MB); pencere beklerken küçük kalsın."""
+        if not self.visible:
+            try:
+                ctypes.CDLL("libc.so.6").malloc_trim(0)
+            except (OSError, AttributeError):
+                pass
+        return False
+
+    def on_click(self, _win, event):
+        alloc = self.card.get_allocation()
+        if not (alloc.x <= event.x <= alloc.x + alloc.width
+                and alloc.y <= event.y <= alloc.y + alloc.height):
+            self.hide()                     # kutunun altındaki saydam boşluk
+        return False
+
+    def on_key(self, _win, event):
+        key = event.keyval
+        ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
+        if key == Gdk.KEY_Escape:
+            self.hide()
+        elif key in (Gdk.KEY_Down, Gdk.KEY_Tab) or (ctrl and key in (Gdk.KEY_n, Gdk.KEY_j)):
+            self.move(1)
+        elif key in (Gdk.KEY_Up, Gdk.KEY_ISO_Left_Tab) or (ctrl and key in (Gdk.KEY_p, Gdk.KEY_k)):
+            self.move(-1)
+        elif key == Gdk.KEY_Page_Down:
+            self.move(6)
+        elif key == Gdk.KEY_Page_Up:
+            self.move(-6)
+        elif key in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            if 0 <= self.sel < len(self.items):
+                self.activate(self.items[self.sel], ctrl)
+        else:
+            if not self.entry.has_focus():
+                self.entry.grab_focus_without_selecting()
+            return False
+        return True
+
+    # ── Arama ──
+
+    def update(self):
+        self.gen += 1
+        self.cancel_async()
+        self.extra, self.navigated, self.pending_enter = {}, False, False
+        query = self.entry.get_text()
+        self.local = self.search_local(query)
+        self.render()
+        if query.strip() and not query.startswith(":"):
+            self.timer = GLib.timeout_add(DEBOUNCE, self.search_async, self.gen, query)
+
+    def cancel_async(self):
+        if self.timer:
+            GLib.source_remove(self.timer)
+            self.timer = 0
+        for cancel in self.cancels:
+            cancel()
+        self.cancels = []
+
+    def search_local(self, query):
+        if query.startswith(":"):
+            return {"emoji": self.search_emoji(fold(query[1:]).split())}
+        words = fold(query).split()
+        if not words:
+            return {"": self.all_apps()}
+        groups = {}
+        kind = calc_kind(query)
+        if kind == "py":
+            value = py_calc(query)
+            if value is not None:
+                groups["calc"] = [self.calc_item(value)]
+        elif kind == "qalc":
+            groups["calc"] = [Item("calc", ("calc",), "= …", "Calculating", pending=True,
+                                   icon=themed("accessories-calculator-symbolic",
+                                               "accessories-calculator"), hint="Copy")]
+        groups["apps"] = self.search_apps(words)
+        groups["windows"] = self.search_windows(words)
+        groups["actions"] = self.search_actions(words)
+        groups["files"] = self.search_recent(words) if len(query.strip()) >= 2 else []
+        groups["web"] = self.web_items(query)
+        return groups
+
+    def search_async(self, gen, query):
+        self.timer = 0
+        if gen != self.gen:
+            return False
+        kind = calc_kind(query)
+        if kind in ("qalc", "weak"):
+            def calc_done(out):
+                if gen != self.gen:
+                    return
+                result = qalc_result(query, out)
+                self.extra["calc"] = [self.calc_item(result)] if result else []
+                self.extra["calc_weak"] = kind == "weak"
+                self.render()
+                if self.pending_enter:
+                    self.pending_enter = False
+                    if result:
+                        self.activate(self.extra["calc"][0], False)
+            self.cancels.append(run_async(["qalc", "-t", "-s", "upxrates 7", qalc_expr(query)],
+                                          calc_done))
+        if len(query.strip()) >= 3 and kind != "py" and not as_url(query):
+            words = query.split()
+
+            def files_done(out):
+                if gen != self.gen:
+                    return
+                recent = {path for path, _ in self.recent}
+                ranked = rank_files((out or "").splitlines(), fold(query).split(), recent,
+                                    HOME, LIMITS["files"])
+                self.extra["files"] = [self.file_item(path, score) for score, path in ranked]
+                self.render()
+            self.cancels.append(run_async(["plocate", "-i", "-b", "-l", "4000", "--", *words],
+                                          files_done))
+        return False
+
+    def groups(self):
+        merged = dict(self.local)
+        if "calc" in self.extra:
+            merged["calc"] = self.extra["calc"]
+        if "files" in self.extra:
+            seen = {item.key for item in merged.get("files", [])}
+            files = merged.get("files", []) + [i for i in self.extra["files"] if i.key not in seen]
+            merged["files"] = sorted(files, key=lambda i: -i.score)
+        order = []
+        for n, (name, items) in enumerate(merged.items()):
+            if not items:
+                continue
+            items = items[:LIMITS.get(name, len(items))]
+            # Hesap (kesinse) en üstte; uygulama/pencere/eylem puana göre; dosyalar ve web altta.
+            if name == "calc":
+                rank = 1 if self.extra.get("calc_weak") else 0
+                best = 40 if rank else 0
+            else:
+                rank = {"files": 2, "web": 3}.get(name, 1)
+                best = max(item.score for item in items)
+            order.append((rank, -best, n, name, items))
+        order.sort(key=lambda g: g[:3])
+        return [(name, items) for *_, name, items in order]
+
+    def render(self):
+        previous = self.items[self.sel].key if self.navigated and 0 <= self.sel < len(self.items) else None
+        for child in self.list.get_children():
+            self.list.remove(child)
+            child.destroy()
+        self.items, self.rows = [], []
+        for name, items in self.groups():
+            if name:
+                self.list.add(Header(TITLES[name]))
+            for item in items:
+                row = Row(item)
+                self.list.add(row)
+                self.items.append(item)
+                self.rows.append(row)
+                if item.toggle:
+                    self.fetch_toggle(item.toggle)
+        keys = [item.key for item in self.items]
+        index = keys.index(previous) if previous in keys else 0
+        shown = bool(self.items)
+        self.sep.set_visible(shown)
+        self.scroller.set_visible(shown)
+        if not self.entry.get_text():
+            self.tip.set_text(":emoji   =calculate")
+        else:
+            self.tip.set_text("" if shown else "No results")
+        self.footer.set_visible(shown or bool(self.entry.get_text()))
+        self.sel = -1
+        if shown:
+            self.select(index)
+            if index == 0:
+                self.scroller.get_vadjustment().set_value(0)
+
+    def select(self, index):
+        if not self.items:
+            return
+        self.sel = max(0, min(index, len(self.items) - 1))
+        row = self.rows[self.sel]
+        self.list.select_row(row)
+        self.update_hint()
+        GLib.idle_add(self.scroll_to, row)
+
+    def scroll_to(self, row):
+        alloc = row.get_allocation()
+        adj = self.scroller.get_vadjustment()
+        if alloc.y < 0:
+            return False
+        top = alloc.y - (28 if self.sel == 0 or isinstance(self.prev_row(row), Header) else 0)
+        if top < adj.get_value():
+            adj.set_value(max(0, top))
+        elif alloc.y + alloc.height > adj.get_value() + adj.get_page_size():
+            adj.set_value(alloc.y + alloc.height - adj.get_page_size())
+        return False
+
+    def prev_row(self, row):
+        index = row.get_index()
+        return self.list.get_row_at_index(index - 1) if index > 0 else None
+
+    def move(self, delta):
+        if self.items:
+            self.navigated = True
+            self.select(self.sel + delta)
+
+    def update_hint(self):
+        if not 0 <= self.sel < len(self.items):
+            self.hint.set_text("")
+            return
+        item = self.items[self.sel]
+        hint = item.hint
+        if item.toggle:
+            state = self.toggles.get(item.toggle)
+            hint = "Toggle" if state is None else "Turn off" if state else "Turn on"
+        text = f"Enter {hint.lower()}"
+        if item.alt:
+            text += f"   Ctrl+Enter {item.alt_hint.lower()}"
+        self.hint.set_text(text)
+
+    def activate(self, item, alt):
+        if item.pending:
+            self.pending_enter = True       # qalc birazdan cevaplar
+            return
+        action = item.alt if alt and item.alt else item.run
+        if not action:
+            return
+        self.hide()
+        GLib.timeout_add(ACTION_DELAY if item.group == "actions" else 0,
+                         lambda: action() and False)
+
+    # ── Kaynaklar ──
+
+    def load_apps(self):
+        self.apps = [App(info) for info in Gio.AppInfo.get_all()
+                     if isinstance(info, DesktopAppInfo) and info.should_show()]
+        self.app_keys = {}
+        for app in self.apps:
+            info = app.info
+            keys = [(info.get_id() or "").removesuffix(".desktop").lower(),
+                    (info.get_startup_wm_class() or "").lower(),
+                    os.path.basename(info.get_executable() or "").lower()]
+            for key in keys:
+                if key:
+                    self.app_keys.setdefault(key, app)
+        self.apps_dirty = False
+
+    def app_item(self, app, score):
+        return Item("apps", ("app", app.id), app.name, app.sub, app.info.get_icon(), score,
+                    run=lambda: self.launch(app))
+
+    def all_apps(self):
+        now = time.time()
+        ranked = sorted(self.apps, key=lambda a: (-frecency(self.history.get("apps", a.id), now),
+                                                  a.fname))
+        return [self.app_item(app, 0) for app in ranked]
+
+    def search_apps(self, words):
+        now = time.time()
+        found = []
+        for app in self.apps:
+            score = name_match(words, app.fname, app.fields)
+            if score:
+                found.append(self.app_item(app, score * 100 + frecency(
+                    self.history.get("apps", app.id), now)))
+        return sorted(found, key=lambda i: -i.score)
+
+    def launch(self, app):
+        self.history.bump("apps", app.id)
+        info = app.info
+        if info.get_boolean("Terminal"):
+            try:
+                argv = [a for a in shlex.split(info.get_commandline() or "")
+                        if not (a.startswith("%") and len(a) == 2)]
+            except ValueError:
+                argv = []
+            if argv:
+                spawn(TERMINAL, *argv)
+            return
+        spawn("gio", "launch", info.get_filename())
+
+    def windows_loaded(self, out):
+        try:
+            windows = json.loads(out or "[]")
+        except ValueError:
+            windows = []
+        self.windows = windows if isinstance(windows, list) else []
+        if self.visible and self.entry.get_text().strip() and not self.entry.get_text().startswith(":"):
+            self.local["windows"] = self.search_windows(fold(self.entry.get_text()).split())
+            self.render()
+
+    def window_app(self, app_id):
+        for key in window_app_keys(app_id):
+            if key in self.app_keys:
+                return self.app_keys[key]
+        return None
+
+    def search_windows(self, words):
+        found = []
+        for w in self.windows:
+            app = self.window_app(w.get("app_id"))
+            app_name = app.name if app else (w.get("app_id") or "")
+            title = w.get("title") or app_name
+            score = match(words, [(fold(title), 1.0), (fold(app_name), 0.9),
+                                  (fold(w.get("app_id")), 0.8)])
+            if not score:
+                continue
+            ts = w.get("focus_timestamp") or {}
+            recency = (ts.get("secs", 0) or 0) / 1e10   # eşit puanda son odaklanan önde
+            wid = w.get("id")
+            found.append(Item("windows", ("window", wid), title, app_name,
+                              app.info.get_icon() if app else themed("window-symbolic"),
+                              score * 100 - 2 + recency, hint="Switch to",
+                              run=lambda wid=wid: run_async(
+                                  ["niri", "msg", "action", "focus-window", "--id", str(wid)])))
+        return sorted(found, key=lambda i: -i.score)
+
+    def load_recent(self):
+        items = []
+        for info in self.recent_manager.get_items():
+            uri = info.get_uri()
+            if not uri.startswith("file://"):
+                continue
+            path = GLib.filename_from_uri(uri)[0]
+            items.append((path, info.get_visited()))
+        items.sort(key=lambda r: -r[1])
+        return items[:400]
+
+    def search_recent(self, words):
+        found = []
+        for path, _visited in self.recent:
+            name = fold(os.path.basename(path))
+            score = match(words, [(name, 1.0)])
+            if score and os.path.exists(path):
+                found.append(self.file_item(path, score * 100 + 8))
+        return sorted(found, key=lambda i: -i.score)[:LIMITS["files"]]
+
+    def file_item(self, path, score):
+        is_dir = os.path.isdir(path)
+        if is_dir:
+            icon = themed("folder")
+        else:
+            content_type, _ = Gio.content_type_guess(path, None)
+            icon = Gio.content_type_get_icon(content_type)
+        return Item("files", ("file", path), os.path.basename(path) or path,
+                    tilde(os.path.dirname(path)), icon, score - 8,
+                    run=lambda: self.open_file(path),
+                    alt=None if is_dir else (lambda: self.reveal(path)), alt_hint="Show in folder")
+
+    def open_file(self, path):
+        uri = GLib.filename_to_uri(path)
+        if not os.path.isdir(path):
+            self.recent_manager.add_item(uri)
+        spawn("gio", "open", path)
+
+    def reveal(self, path):
+        """Dosya yöneticisinde klasörünü açıp dosyayı seçer (FileManager1); olmazsa klasörü açar."""
+        uri = GLib.filename_to_uri(path)
+
+        def done(bus, result):
+            try:
+                bus.call_finish(result)
+            except GLib.Error:
+                spawn("gio", "open", os.path.dirname(path))
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+        bus.call("org.freedesktop.FileManager1", "/org/freedesktop/FileManager1",
+                 "org.freedesktop.FileManager1", "ShowItems",
+                 GLib.Variant("(ass)", ([uri], "")), None, Gio.DBusCallFlags.NONE, 3000,
+                 None, done)
+
+    def calc_item(self, value):
+        return Item("calc", ("calc",), f"= {value}", "",
+                    themed("accessories-calculator-symbolic", "accessories-calculator"),
+                    hint="Copy", run=lambda: copy(value))
+
+    def web_items(self, query):
+        q = query.strip()
+        items = []
+        url = as_url(q)
+        if url:
+            items.append(Item("web", ("url",), f"Open {q}", "", themed("web-browser-symbolic",
+                              "web-browser"), hint="Open", run=lambda: spawn("gio", "open", url)))
+        if len(q) >= 2:
+            link = SEARCH_URL.format(urllib.parse.quote_plus(q))
+            items.append(Item("web", ("web",), f"Search the web for “{q}”", "",
+                              themed("system-search-symbolic", "edit-find-symbolic"),
+                              hint="Search", run=lambda: spawn("gio", "open", link)))
+        return items
+
+    # Ayarlar ve eylemler
+
+    def build_actions(self):
+        acts = []
+
+        def add(title, sub, icons, keywords, run, hint="Run", toggle=None):
+            icon = themed(*icons) if isinstance(icons, tuple) else themed(icons)
+            fields = [(fold(title), 1.0), (fold(keywords), 0.7), (fold(sub), 0.6)]
+            acts.append((title, sub, icon, fields, run, hint, toggle))
+
+        settings = BIN / "settings"
+        for page, title, keywords in (
+                ("appearance", "Appearance", "wallpaper background colors theme opacity transparency terminal look"),
+                ("displays", "Displays", "monitor screen external position arrange night light warmth"),
+                ("touchpad", "Touchpad", "mouse trackpad tap click natural scrolling pointer speed"),
+                ("lock", "Screen lock", "idle timeout lock after minutes screensaver")):
+            add(title, "Settings", ("preferences-system-symbolic", "preferences-system"),
+                keywords, lambda page=page: spawn(settings, page), "Open")
+
+        state = read_json(THEME_STATE / "state.json") or {}
+        from_wallpaper = state.get("source") == "wallpaper"
+        current = state.get("wallpaper")
+        for path in sorted(PRESETS.glob("*.toml")):
+            try:
+                data = tomllib.loads(path.read_text())
+            except (OSError, tomllib.TOMLDecodeError):
+                continue
+            name = data.get("name", path.stem)
+            add(name, "Color theme", ("preferences-desktop-theme-symbolic", "color-select-symbolic"),
+                f"theme colors scheme palette {data.get('variant', '')}",
+                lambda key=path.stem: spawn(BIN / "theme", "preset", key), "Apply")
+        if current and Path(current).exists():
+            add("Colors from wallpaper", "Color theme", ("preferences-desktop-theme-symbolic",),
+                "theme palette wallust generate", lambda: spawn(BIN / "theme", "wallpaper", current),
+                "Apply")
+        try:
+            walls = sorted(f for f in WALLPAPERS.iterdir()
+                           if f.is_file() and f.suffix.lower() in IMAGE_SUFFIXES)
+        except OSError:
+            walls = []
+        for wall in walls:
+            extra = [] if from_wallpaper else ["--keep-colors"]
+            add(wall.stem, "Wallpaper", ("preferences-desktop-wallpaper-symbolic", "image-x-generic"),
+                "wallpaper background image picture",
+                lambda wall=wall, extra=extra: spawn(BIN / "theme", "wallpaper", wall, *extra), "Apply")
+
+        for place, title in (("above", "Monitor above laptop"), ("below", "Monitor below laptop"),
+                             ("left", "Monitor left of laptop"), ("right", "Monitor right of laptop"),
+                             ("auto", "Monitor position: automatic")):
+            add(title, "Displays", ("video-display-symbolic", "video-display"),
+                "display external screen position arrange layout",
+                lambda place=place: spawn(BIN / "displays", place), "Apply")
+
+        for key, title, icons, keywords in (
+                ("wifi", "Wi-Fi", ("network-wireless-symbolic",), "wireless network internet wlan"),
+                ("bluetooth", "Bluetooth", ("bluetooth-active-symbolic", "bluetooth-symbolic"), "bt wireless headphones"),
+                ("dnd", "Do not disturb", ("notifications-disabled-symbolic", "notification-disabled-symbolic"), "notifications silent quiet dnd focus"),
+                ("night", "Night light", ("night-light-symbolic", "weather-clear-night-symbolic"), "warm blue light redshift evening"),
+                ("awake", "Stay awake", ("caffeine-cup-full-symbolic", "preferences-desktop-screensaver-symbolic"), "caffeine keep awake idle inhibit coffee"),
+                ("layout", "Auto layout", ("view-grid-symbolic",), "grid tiling auto free layout mode"),
+                ("mic", "Microphone", ("audio-input-microphone-symbolic",), "mic mute unmute input audio"),
+                ("power-saver", "Power saver", ("power-profile-power-saver-symbolic", "battery-symbolic"), "battery eco energy power profile"),
+                ("performance", "Performance mode", ("power-profile-performance-symbolic",), "power profile fast perf"),
+                ("record", "Screen recording", ("media-record-symbolic",), "record video capture screencast rec")):
+            add(title, "Quick settings", icons, keywords,
+                lambda key=key: self.run_toggle(key), toggle=key)
+
+        for key, title, icons, keywords in (
+                ("lock", "Lock screen", ("system-lock-screen-symbolic",), "lock"),
+                ("logout", "Log out", ("system-log-out-symbolic",), "logout sign out exit session quit"),
+                ("reboot", "Restart", ("system-reboot-symbolic",), "reboot restart"),
+                ("poweroff", "Shut down", ("system-shutdown-symbolic",), "power off poweroff shutdown turn off")):
+            add(title, "Session", icons, keywords, lambda key=key: spawn(QS, key))
+        add("Suspend", "Session", ("system-suspend-symbolic",), "sleep standby",
+            lambda: spawn("systemctl", "suspend"))
+
+        niri = ["niri", "msg", "action"]
+        add("Screenshot", "Tools", ("camera-photo-symbolic", "applets-screenshooter-symbolic"),
+            "screen capture snip print area region", lambda: run_async(niri + ["screenshot"]))
+        add("Screenshot of screen", "Tools", ("camera-photo-symbolic",),
+            "screen capture full whole print", lambda: run_async(niri + ["screenshot-screen"]))
+        add("Screenshot and edit", "Tools", ("document-edit-symbolic",),
+            "screen capture annotate swappy draw", lambda: spawn(BIN / "screenshot-edit"))
+        add("Edit last screenshot", "Tools", ("document-edit-symbolic",),
+            "screen capture annotate swappy draw", lambda: spawn(BIN / "screenshot-edit", "last"))
+        add("Keyboard shortcuts", "Tools", ("input-keyboard-symbolic",),
+            "keys hotkeys bindings help cheatsheet", lambda: run_async(niri + ["show-hotkey-overlay"]),
+            "Show")
+        add("Notifications", "Tools", ("preferences-system-notifications-symbolic", "notification-symbolic"),
+            "notification center panel messages quick settings",
+            lambda: spawn("swaync-client", "-t", "-sw"), "Show")
+        return acts
+
+    def search_actions(self, words):
+        found = []
+        for title, sub, icon, fields, run, hint, toggle in self.actions:
+            score = match(words, fields)
+            if score:
+                sub_text = sub
+                if toggle in self.toggles:
+                    sub_text = "On" if self.toggles[toggle] else "Off"
+                found.append(Item("actions", ("action", title, sub), title, sub_text, icon,
+                                  score * 100, run=run, hint=hint, toggle=toggle))
+        return sorted(found, key=lambda i: -i.score)
+
+    def fetch_toggle(self, key):
+        if key in self.toggles or key in self.toggle_wait:
+            return
+        self.toggle_wait.add(key)
+
+        def done(out):
+            self.toggle_wait.discard(key)
+            state = parse_bool(out)
+            if state is None:
+                return
+            self.toggles[key] = state
+            for row in self.rows:
+                if row.item.toggle == key:
+                    row.set_sub("On" if state else "Off")
+            self.update_hint()
+        run_async([QS, key, "status"], done)
+
+    def run_toggle(self, key):
+        def go(state):
+            if state is not None:
+                spawn("env", f"SWAYNC_TOGGLE_STATE={'false' if state else 'true'}", QS, key)
+        if key in self.toggles:
+            go(self.toggles[key])
+        else:
+            run_async([QS, key, "status"], lambda out: go(parse_bool(out)))
+
+    # Emoji
+
+    def load_emoji(self):
+        emoji, seen = [], set()
+        try:
+            gi.require_version("IBus", "1.0")
+            from gi.repository import IBus
+            for e in IBus.EmojiData.load(EMOJI_DICT):
+                char = e.get_emoji()
+                if any(0x1F3FB <= ord(c) <= 0x1F3FF for c in char):
+                    continue                  # ten rengi çeşitleri: listeyi kalabalıklaştırıyor
+                desc = e.get_description()
+                if desc in seen:
+                    continue                  # ☺ ve ☺️ gibi aynı emojinin iki yazılışı
+                seen.add(desc)
+                emoji.append((char, desc, fold(desc), fold(" ".join(e.get_annotations()))))
+        except (ValueError, ImportError, GLib.Error, TypeError):
+            pass
+        GLib.idle_add(self.emoji_loaded, emoji)
+
+    def emoji_loaded(self, emoji):
+        self.emoji = emoji
+        if self.visible and self.entry.get_text().startswith(":"):
+            self.update()
+        return False
+
+    def search_emoji(self, words):
+        if self.emoji is None:
+            return [Item("emoji", ("loading",), "Loading emoji…", hint="Wait")]
+        now = time.time()
+        found = []
+        for char, desc, fdesc, fann in self.emoji:
+            bonus = frecency(self.history.get("emoji", char), now)
+            if words:
+                score = match(words, [(fdesc, 1.0), (fann, 0.8)])
+                if not score:
+                    continue
+                score = score * 100 + bonus
+            else:
+                score = bonus
+            found.append((score, char, desc))
+        found.sort(key=lambda f: -f[0])
+        return [Item("emoji", ("emoji", char), desc, "", emoji=char, score=score, hint="Copy",
+                     run=lambda char=char: self.pick_emoji(char))
+                for score, char, desc in found[:LIMITS["emoji"]]]
+
+    def pick_emoji(self, char):
+        self.history.bump("emoji", char)
+        copy(char)
+
+    def on_signal(self):
+        # Bir sonraki döngü turunda: pencereyi göstermek gtk-layer-shell'e Wayland gidiş-dönüşü
+        # yaptırır; GDK'nın yarım kalmış bir okuması varken yapılırsa süreç kilitlenir.
+        GLib.idle_add(self.toggle)
+        return True
+
+    def toggle(self):
+        if self.visible:
+            self.hide()
+        else:
+            self.show()
+        return False
+
+
+def main():
+    launcher = Launcher()
+    # GDK'nın olay kaynağıyla aynı öncelik: daha yükseği GDK'nın okumasını yarım bırakabilir.
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, launcher.on_signal)
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, Gtk.main_quit)
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()

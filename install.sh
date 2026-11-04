@@ -22,12 +22,14 @@ NIRI_SERVICES=(
     swayidle.service
     swaybg.service
     layout-mode.service
+    launcher.service
 )
 
 WANTS_DIR="$HOME/.config/systemd/user/niri.service.wants"
 THEME_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/theme"
 DISPLAYS_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/displays"
 SETTINGS_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/settings"
+LAUNCHER_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/launcher"
 
 # Brave (Flatpak) şifre/çerez anahtarını niri'de de KDE'deki gibi KWallet'te arasın.
 # Flatpak sandbox'ı ~/dotfiles'ı göremez; bu yüzden symlink değil kopya.
@@ -75,11 +77,13 @@ do_uninstall() {
     rm -rf "$DISPLAYS_STATE"
     # Settings uygulamasının yazdıkları: touchpad, kilit süresi, gece ışığı sıcaklığı.
     rm -rf "$SETTINGS_STATE" "${XDG_CACHE_HOME:-$HOME/.cache}/settings"
+    # Arama penceresinin hatırladığı sık kullanılan uygulamalar ve emojiler.
+    rm -rf "$LAUNCHER_STATE"
     # Brave flags dosyası yalnızca bizim kopyamızsa silinir.
     if cmp -s "$BRAVE_FLAGS_SRC" "$BRAVE_FLAGS_DST" 2>/dev/null; then
         rm -f "$BRAVE_FLAGS_DST"
     fi
-    echo "Removed links, generated theme files, saved monitor positions and settings. The repo is still at: $DOTFILES"
+    echo "Removed links, generated theme files, saved monitor positions, settings and launcher history. The repo is still at: $DOTFILES"
 }
 
 case "${1:-install}" in
