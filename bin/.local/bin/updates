@@ -1,0 +1,44 @@
+#!/bin/sh
+# updates — güncelleme göstergesi (Waybar'daki UPD) ve tek tuşla güncelleme.
+#
+#   updates label   Waybar için JSON: "UPD 47"; güncelleme yoksa boş (modül gizlenir)
+#   updates run     terminalde dnf + Flatpak güncellemesi (onayı sen verirsin), sonra yeniden sayar
+#   updates count   yalnızca sayılar: "dnf flatpak"
+#
+# Ağ kullanmadan sayar: dnf'nin sistem önbelleği (-C; Fedora'nın dnf-makecache.timer'ı birkaç
+# saatte bir tazeler). Flatpak için uzak deponun özeti indirilir (~10 sn, az veri).
+# Waybar bunu 3 saatte bir çalıştırır; sağ tık hemen yeniden sayar (SIGRTMIN+13).
+
+count() {
+    # dnf -q çıktısı: "ad.mimari  sürüm  depo"; başka satırlar (Obsoleting…) sayılmaz.
+    sys=$(dnf check-upgrade -C -q 2>/dev/null | awk 'NF == 3 && $1 ~ /\./' | wc -l)
+    flat=$(timeout 60 flatpak remote-ls --updates --columns=application 2>/dev/null | grep -c .)
+    echo "${sys:-0} ${flat:-0}"
+}
+
+case ${1:-} in
+    count)
+        count ;;
+    label)
+        set -- $(count)
+        total=$(($1 + $2))
+        if [ "$total" -eq 0 ]; then
+            printf '%s\n' '{"text":""}'
+        else
+            printf '{"text":"UPD %d","class":"updates","tooltip":"%d system packages · %d Flatpak\\nClick: update in a terminal · right click: check again"}\n' \
+                "$total" "$1" "$2"
+        fi ;;
+    run)
+        # Terminal niri üzerinden açılır (Waybar'ın ya da aramanın alt süreci olmasın).
+        exec niri msg action spawn -- foot --title "System update" sh -c '
+            printf "\033[1mSystem packages (dnf)\033[0m\n"
+            sudo dnf upgrade --refresh
+            printf "\n\033[1mFlatpak apps\033[0m\n"
+            flatpak update
+            pkill -RTMIN+13 -x waybar
+            printf "\nDone. Press Enter to close. (Kernel updated? Restart when convenient.)\n"
+            read -r _' ;;
+    *)
+        echo "usage: updates label | run | count" >&2
+        exit 2 ;;
+esac

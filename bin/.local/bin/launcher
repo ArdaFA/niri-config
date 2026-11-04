@@ -1563,6 +1563,10 @@ class Launcher:
                 "usb drive disk stick removable eject unmount remove safely",
                 lambda uri=uri, name=name: self.eject(uri, name), "Eject")
 
+        add("Update system", "Tools", ("system-software-update-symbolic", "software-update-available-symbolic"),
+            "updates upgrade dnf flatpak packages software", lambda: run_async([BIN / "updates", "run"]),
+            "Open")
+
         add("Pick color", "Tools", ("color-select-symbolic", "color-picker", "applications-graphics-symbolic"),
             "color colour picker eyedropper hex rgb screen pipette", self.pick_color)
 
