@@ -1,0 +1,14 @@
+# Pil azalınca bildirim — yalnızca niri oturumu (KDE'de Plasma'nın kendi uyarısı var).
+# Eşikler UPower'ın: /etc/UPower/UPower.conf (Fedora: %20 düşük, %5 kritik).
+# Ayrıntı: README → Pil uyarıları
+
+[Unit]
+Description=Low battery notifications for the niri session
+PartOf=graphical-session.target
+After=graphical-session.target swaync.service
+Requisite=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/bin/battery-notify
+Restart=on-failure
+RestartSec=2
