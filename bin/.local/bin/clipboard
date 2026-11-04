@@ -1,0 +1,135 @@
+#!/usr/bin/python3
+# clipboard — pano geçmişi. Super+Ctrl+V geçmişi arama penceresinde (launcher) açar.
+#
+#   clipboard store      yeni kopyalanan metni kaydeder; wl-paste --watch çağırır
+#                        (clipboard-history.service), metin stdin'den gelir
+#   clipboard list       kayıtları JSON olarak yazar (en yenisi önce)
+#   clipboard clear      geçmişi siler
+#   clipboard selftest   arayüzsüz testler (check.sh)
+#
+# Yalnızca metin. En fazla 50 kayıt, her biri en fazla 64 KB.
+# Gizlilik: geçmiş $XDG_RUNTIME_DIR'da, yani RAM'de durur; diske yazılmaz, oturum kapanınca ya da
+# bilgisayar yeniden başlayınca silinir. Parola yöneticilerinin "gizli" diye işaretlediği
+# kopyalamalar (x-kde-passwordManagerHint: KeePassXC, KDE Wallet…) hiç kaydedilmez.
+
+import fcntl
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+HISTORY = Path(os.environ.get("CLIPBOARD_HISTORY") or RUNTIME / "clipboard/history.json")
+MAX_ITEMS = 50
+MAX_BYTES = 64 * 1024          # wl-copy'ye argüman olarak verilebilecek boyutun güvenli yarısı
+SECRET_HINT = "x-kde-passwordmanagerhint"
+
+
+def read(path=HISTORY):
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return []
+    return [h for h in data if isinstance(h, dict) and isinstance(h.get("text"), str)] \
+        if isinstance(data, list) else []
+
+
+def write(items, path=HISTORY):
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    tmp = path.with_suffix(".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(items, f)
+    os.replace(tmp, path)
+
+
+def add(items, text, now):
+    """Yeni metni başa ekler; aynısı varsa yukarı taşır. (yeni liste, eklendi mi)"""
+    if not text.strip() or len(text.encode()) > MAX_BYTES:
+        return items, False
+    items = [h for h in items if h["text"] != text]
+    items.insert(0, {"text": text, "time": int(now)})
+    return items[:MAX_ITEMS], True
+
+
+def is_secret(types):
+    return any(t.strip().lower().startswith(SECRET_HINT) for t in types)
+
+
+def store():
+    if os.environ.get("CLIPBOARD_STATE", "data") != "data":
+        return                                   # boş/temizlenmiş/gizli
+    data = sys.stdin.buffer.read(MAX_BYTES + 1)
+    try:
+        types = subprocess.run(["wl-paste", "--list-types"], capture_output=True, text=True,
+                               timeout=2).stdout.splitlines()
+    except (OSError, subprocess.TimeoutExpired):
+        types = []
+    if is_secret(types):
+        return
+    try:
+        text = data.decode()
+    except UnicodeDecodeError:
+        return
+    HISTORY.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    with open(HISTORY.with_suffix(".lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)         # art arda kopyalamalar birbirini ezmesin
+        items, changed = add(read(), text, time.time())
+        if changed:
+            write(items)
+
+
+def selftest():
+    import tempfile
+    now = 1000
+    items, ok1 = add([], "hello", now)
+    items, ok2 = add(items, "world", now + 1)
+    items, ok3 = add(items, "hello", now + 2)          # tekrar: başa taşınır
+    _, ok4 = add(items, "   \n", now)                   # boş
+    _, ok5 = add(items, "x" * (MAX_BYTES + 1), now)     # çok büyük
+    many = []
+    for n in range(MAX_ITEMS + 5):
+        many, _ = add(many, f"item {n}", n)
+    with tempfile.TemporaryDirectory() as d:
+        path = Path(d) / "sub/history.json"
+        write(items, path)
+        back = read(path)
+        mode = oct(path.stat().st_mode & 0o777)
+    cases = [
+        ("add", (ok1, ok2, ok3), (True, True, True)),
+        ("dedupe to top", [h["text"] for h in items], ["hello", "world"]),
+        ("blank skipped", ok4, False),
+        ("huge skipped", ok5, False),
+        ("limit", (len(many), many[0]["text"]), (MAX_ITEMS, f"item {MAX_ITEMS + 4}")),
+        ("roundtrip", back, items),
+        ("private file", mode, "0o600"),
+        ("secret hint", is_secret(["text/plain", "x-kde-passwordManagerHint"]), True),
+        ("no secret", is_secret(["text/plain;charset=utf-8", "UTF8_STRING"]), False),
+    ]
+    failed = [(n, g, w) for n, g, w in cases if g != w]
+    for n, g, w in failed:
+        print(f"FAIL {n}: got {g!r}, want {w!r}")
+    if failed:
+        sys.exit(1)
+    print(f"clipboard: {len(cases)} checks ok")
+
+
+def main():
+    cmd = sys.argv[1:]
+    if cmd == ["store"]:
+        store()
+    elif cmd == ["list"]:
+        json.dump(read(), sys.stdout, ensure_ascii=False, indent=1)
+        print()
+    elif cmd == ["clear"]:
+        write([])
+    elif cmd == ["selftest"]:
+        selftest()
+    else:
+        sys.exit("usage: clipboard store | list | clear | selftest")
+
+
+if __name__ == "__main__":
+    main()

@@ -183,6 +183,7 @@ check "media popup rules" python3 -I "$DOTFILES/bin/.local/bin/media-popup" self
 check "monitor placement" python3 -I "$DOTFILES/bin/.local/bin/displays" selftest
 check "settings files"    python3 -I "$DOTFILES/bin/.local/bin/settings" selftest
 check "launcher search"   python3 -I "$DOTFILES/bin/.local/bin/launcher" selftest
+check "clipboard history" python3 -I "$DOTFILES/bin/.local/bin/clipboard" selftest
 check "desktop entries"   desktop-file-validate "$DOTFILES"/bin/.local/share/applications/*.desktop
 check "presets"           presets
 check "systemd units"     units

@@ -1,0 +1,14 @@
+# Pano geçmişi (Super+V) — yalnızca niri oturumu. Kopyalanan her metni `clipboard store`'a verir.
+# Geçmiş RAM'de durur ($XDG_RUNTIME_DIR/clipboard), oturum kapanınca silinir.
+# Ayrıntı: README → Pano geçmişi
+
+[Unit]
+Description=Clipboard history for the niri session (Super+V)
+PartOf=graphical-session.target
+After=graphical-session.target
+Requisite=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/wl-paste --type text --watch %h/.local/bin/clipboard store
+Restart=on-failure
+RestartSec=1

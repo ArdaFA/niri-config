@@ -23,6 +23,7 @@ NIRI_SERVICES=(
     swaybg.service
     layout-mode.service
     launcher.service
+    clipboard-history.service
 )
 
 WANTS_DIR="$HOME/.config/systemd/user/niri.service.wants"

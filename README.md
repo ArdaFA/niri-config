@@ -47,6 +47,7 @@ GDM son seçilen oturumu hatırlar. KDE'ye dönmek için aynı menüden **Plasma
 |---|---|
 | `Super+Enter` | terminal (foot) |
 | `Super+D` | arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji |
+| `Super+Ctrl+V` | pano geçmişi: son kopyaladığın 50 metin |
 | `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, kilit süresi |
 | `Super+Q` | pencereyi kapat |
 | `Super+Shift+ß` (yani `Super+?`) | ekranda kısayol listesi |
@@ -127,6 +128,24 @@ gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
   işlemci kullanmaz. Servis çalışmıyorsa `Super+D` eskisi gibi fuzzel'i açar.
 - Sık kullanılan uygulama ve emoji kayıtları: `~/.local/state/launcher/history.json`. Silersen
   sıralama sıfırlanır.
+
+### Pano geçmişi (Super+Ctrl+V)
+
+`Super+Ctrl+V` aynı pencereyi **pano modunda** açar: son kopyaladığın metinler, en yenisi üstte.
+Yazarak içinde ara, `Enter` seçileni tekrar panoya koyar, sonra `Ctrl+V` ile yapıştır.
+Arama açıkken `Super+Ctrl+V` pano moduna geçer; aramada "clipboard" yazıp **Clipboard history**
+seçmek de aynı şeyi yapar. (`Super+V` niri'nin "pencereyi yüzdür" kısayolu, o yüzden `Ctrl` var.)
+
+- **Ne kaydedilir:** yalnızca metin (resim yok), en fazla 50 kayıt, her biri en fazla 64 KB. Aynı
+  metni tekrar kopyalarsan yeni kayıt açılmaz, eskisi en üste çıkar.
+- **Gizlilik:** geçmiş diske yazılmaz. `$XDG_RUNTIME_DIR/clipboard/` RAM'dedir; oturumu kapatınca
+  ya da bilgisayarı yeniden başlatınca silinir. Dosya yalnızca sana okunur (`600`). Parola
+  yöneticilerinin "gizli" diye işaretlediği kopyalamalar (KeePassXC, KDE Wallet…) hiç
+  kaydedilmez. Hemen silmek için aramada **Clear clipboard history** ya da `clipboard clear`.
+- **Nasıl çalışıyor:** `clipboard-history.service` arka planda `wl-paste --watch` çalıştırır; her
+  kopyalamada `clipboard store` metni geçmişe ekler. Pencere `launcher`'ın kendisi
+  (`SIGUSR2` ile pano modunda açılır), ayrı bir program yok. KDE oturumunda çalışmaz; orada
+  KDE'nin kendi pano geçmişi (Klipper) var.
 
 ---
 
@@ -237,6 +256,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `bin/.local/bin/screen-record` | Ekran kaydı (wf-recorder): başlat/durdur, Waybar'daki `REC` |
 | `bin/.local/bin/launcher` | Arama penceresi (`Super+D`), bkz. [Arama](#arama-superd) |
 | `systemd/.config/systemd/user/launcher.service` | Arama penceresini arka planda hazır tutar |
+| `bin/.local/bin/clipboard` | Pano geçmişini tutar (`store`, `list`, `clear`), bkz. [Pano geçmişi](#pano-geçmişi-superctrlv) |
+| `systemd/.config/systemd/user/clipboard-history.service` | Her kopyalamayı `clipboard store`'a verir (`wl-paste --watch`) |
 | `bin/.local/bin/settings` | Ayarlar penceresi (`Super+S`), bkz. [Ayarlar uygulaması](#ayarlar-uygulaması) |
 | `bin/.local/share/applications/dotfiles.settings.desktop` | Ayarlar penceresinin başlatıcıdaki kaydı (KDE menüsünde gizli) |
 | `bin/.local/bin/displays` | Harici monitörün laptopa göre yeri (üst/alt/sol/sağ), her monitör için ayrı hatırlanır, bkz. [Ekranlar](#ekranlar) |
@@ -256,6 +277,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `~/.local/state/settings/` | Ayarlar uygulamasının yazdıkları: touchpad (`niri.kdl`), kilit süresi ve gece ışığı sıcaklığı (`services.env`) |
 | `~/.cache/settings/` | Duvar kağıtlarının küçük resimleri (silinebilir, yeniden üretilir) |
 | `~/.local/state/launcher/` | Arama penceresinin hatırladığı sık kullanılan uygulamalar ve emojiler |
+| `$XDG_RUNTIME_DIR/clipboard/` | Pano geçmişi (RAM'de, oturum kapanınca silinir) |
 | `~/.config/systemd/user/niri.service.wants/` | `install.sh`'nin oluşturduğu servis bağlantıları |
 | `~/.local/share/fonts/DepartureMono/` | Font |
 | `~/.cargo/bin/wallust` | wallust |
@@ -531,6 +553,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 |---|---|
 | `Super+Enter` | Terminal (foot) |
 | `Super+D` / `Super+Space` | Arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji (bkz. [Arama](#arama-superd)) |
+| `Super+Ctrl+V` | Pano geçmişi (bkz. [Pano geçmişi](#pano-geçmişi-superctrlv)) |
 | `Super+S` | Ayarlar penceresi (bkz. [Ayarlar uygulaması](#ayarlar-uygulaması)) |
 | `Super+Shift+T` | Renk teması seç: presetler ve `wallpapers/` içindeki resimler (resim seçilirse renkler ondan üretilir). Yazarak ara, ör. `light` ya da `wallpaper`. |
 | `Alt+Tab` / `Alt+Shift+Tab` | Son kullanılan pencereler arasında geçiş (niri). Seçili pencerenin vurgusu temanın rengini alır. `` Alt+` `` aynı uygulamanın pencereleri. |
@@ -1040,12 +1063,18 @@ journalctl --user -b -u waybar        # panel
 journalctl --user -b -u layout-mode   # otomatik düzen
 journalctl --user -b -u swaync        # bildirimler ve hızlı ayarlar paneli
 journalctl --user -b -u launcher      # arama penceresi (Super+D)
-systemctl --user status waybar swaync swaybg swayidle theme-apply niri-polkit layout-mode launcher
+journalctl --user -b -u clipboard-history   # pano geçmişi
+systemctl --user status waybar swaync swaybg swayidle theme-apply niri-polkit layout-mode launcher clipboard-history
 systemctl --user restart waybar       # panel kaybolduysa
 ```
 
 **`Super+D` arama yerine fuzzel'i açıyorsa** arama servisi çalışmıyor demektir:
 `systemctl --user restart launcher`, olmazsa yukarıdaki günlüğe bak.
+
+**Arama penceresi açılıp hemen kapanıyorsa** neden kapandığını günlüğe yazdır:
+`systemctl --user set-environment LAUNCHER_DEBUG=1 && systemctl --user restart launcher`, sorunu
+tekrarla, `journalctl --user -u launcher -n 30`'a bak ("hide: escape", "hide: click outside"…).
+Yazdığın metin günlüğe girmez. Bitince `systemctl --user unset-environment LAUNCHER_DEBUG`.
 
 **Pencereler garip davranıyorsa:** `Super+T` ile FREE'ye geç ya da
 `systemctl --user stop layout-mode` ile servisi bu oturum için kapat. niri o zaman kendi

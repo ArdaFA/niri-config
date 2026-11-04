@@ -23,6 +23,8 @@
 #   hesap makinesi basit işlemler (2*(3+4)) Python'la anında; birim, kur, yüzde, fonksiyon
 #                  (5 km to mi, 100 usd to eur, sqrt(2)) qalc ile. "=" ile başlamak zorlar.
 #   emoji          ":smile" — IBus'un emoji listesi; seçilen kopyalanır
+#   pano geçmişi   Super+Ctrl+V (SIGUSR2) pencereyi pano modunda açar; kayıtları `clipboard`
+#                  tutar (clipboard-history.service, RAM'de)
 #   web            her sorgunun en altında; alan adı yazılırsa doğrudan açar
 #
 # Uzun yaşayan her şey (uygulamalar, kilit, wl-copy…) `niri msg action spawn` ile başlar:
@@ -361,6 +363,10 @@ PANEL_CSS = THEME_STATE / "panel.css"
 HISTORY = STATE_HOME / "launcher/history.json"
 EMOJI_DICT = "/usr/share/ibus/dicts/emoji-en.dict"
 QS = BIN / "quick-settings"
+RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
+CLIPBOARD = Path(os.environ.get("CLIPBOARD_HISTORY") or RUNTIME / "clipboard/history.json")
+PLACEHOLDERS = {"search": "Search apps, windows, files, settings",
+                "clipboard": "Search clipboard history"}
 TERMINAL = "foot"
 SEARCH_URL = "https://search.brave.com/search?q={}"   # web araması (Brave'in varsayılanı)
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
@@ -436,6 +442,26 @@ def read_json(path):
         return None
 
 
+def read_clips():
+    try:
+        data = json.loads(CLIPBOARD.read_text())
+    except (OSError, ValueError):
+        return []
+    return [c for c in data if isinstance(c, dict) and isinstance(c.get("text"), str)] \
+        if isinstance(data, list) else []
+
+
+def ago(seconds):
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return "just now"
+    if seconds < 3600:
+        return f"{seconds // 60} min ago"
+    if seconds < 86400:
+        return f"{seconds // 3600} h ago"
+    return f"{seconds // 86400} d ago"
+
+
 def tilde(path):
     return "~" + path[len(HOME):] if path == HOME or path.startswith(HOME + "/") else path
 
@@ -501,7 +527,7 @@ def parse_bool(out):
 
 class Item:
     __slots__ = ("group", "key", "title", "sub", "icon", "emoji", "score", "run", "hint",
-                 "alt", "alt_hint", "toggle", "pending")
+                 "alt", "alt_hint", "toggle", "pending", "stay")
 
     def __init__(self, group, key, title, sub="", icon=None, score=0.0, run=None, hint="Open",
                  alt=None, alt_hint="", toggle=None, emoji=None, pending=False):
@@ -509,6 +535,7 @@ class Item:
         self.icon, self.emoji, self.score = icon, emoji, score
         self.run, self.hint, self.alt, self.alt_hint = run, hint, alt, alt_hint
         self.toggle, self.pending = toggle, pending
+        self.stay = False                   # True: pencere kapanmadan çalışır (ör. moda geçiş)
 
 
 class App:
@@ -628,6 +655,8 @@ class Launcher:
         self.local, self.extra = {}, {}
         self.items, self.rows, self.sel = [], [], -1
         self.navigated = self.visible = self.pending_enter = False
+        self.mode = "search"                # ya da "clipboard"
+        self.clips = []
         self.css, self.css_stamp = None, None
         self.build()
         self.load_css()
@@ -711,10 +740,11 @@ class Launcher:
                                                  Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
         self.css, self.css_stamp = provider, colors
 
-    def show(self, text=""):
-        debug("show")
+    def show(self, text="", mode="search"):
+        debug("show", mode)
         if self.visible:
             return
+        self.set_mode(mode)
         self.load_css()
         reloaded = self.apps_dirty
         if reloaded:
@@ -729,7 +759,7 @@ class Launcher:
         if self.entry.get_text() != text:
             self.entry.set_text(text)
             self.entry.set_position(-1)
-        elif reloaded:
+        elif reloaded or mode != "search":
             self.update()
         run_async(["niri", "msg", "--json", "windows"], self.windows_loaded)
 
@@ -743,10 +773,18 @@ class Launcher:
         self.cancel_async()
         GLib.idle_add(self.reset)
 
+    def set_mode(self, mode):
+        self.mode = mode
+        self.entry.set_placeholder_text(PLACEHOLDERS[mode])
+        if mode == "clipboard":
+            self.clips = read_clips()
+
     def reset(self):
         """Kapanınca boş hale dön: bir sonraki açılış anında olsun."""
         if not self.visible:
             self.pending_enter = False
+            if self.mode != "search":
+                self.set_mode("search")
             if self.entry.get_text():
                 self.entry.set_text("")
             else:
@@ -803,7 +841,7 @@ class Launcher:
         query = self.entry.get_text()
         self.local = self.search_local(query)
         self.render()
-        if query.strip() and not query.startswith(":"):
+        if self.mode == "search" and query.strip() and not query.startswith(":"):
             self.timer = GLib.timeout_add(DEBOUNCE, self.search_async, self.gen, query)
 
     def cancel_async(self):
@@ -815,6 +853,8 @@ class Launcher:
         self.cancels = []
 
     def search_local(self, query):
+        if self.mode == "clipboard":
+            return {"": self.search_clipboard(fold(query).split())}
         if query.startswith(":"):
             return {"emoji": self.search_emoji(fold(query[1:]).split())}
         words = fold(query).split()
@@ -916,7 +956,10 @@ class Launcher:
         shown = bool(self.items)
         self.sep.set_visible(shown)
         self.scroller.set_visible(shown)
-        if not self.entry.get_text():
+        if self.mode == "clipboard":
+            self.tip.set_text("Kept in memory until you log out" if shown or self.entry.get_text()
+                              else "Clipboard history is empty")
+        elif not self.entry.get_text():
             self.tip.set_text(":emoji   =calculate")
         else:
             self.tip.set_text("" if shown else "No results")
@@ -977,6 +1020,9 @@ class Launcher:
             return
         action = item.alt if alt and item.alt else item.run
         if not action:
+            return
+        if item.stay:
+            action()
             return
         self.hide("activated " + item.title)
         GLib.timeout_add(ACTION_DELAY if item.group == "actions" else 0,
@@ -1145,10 +1191,10 @@ class Launcher:
     def build_actions(self):
         acts = []
 
-        def add(title, sub, icons, keywords, run, hint="Run", toggle=None):
+        def add(title, sub, icons, keywords, run, hint="Run", toggle=None, stay=False):
             icon = themed(*icons) if isinstance(icons, tuple) else themed(icons)
             fields = [(fold(title), 1.0), (fold(keywords), 0.7), (fold(sub), 0.6)]
-            acts.append((title, sub, icon, fields, run, hint, toggle))
+            acts.append((title, sub, icon, fields, run, hint, toggle, stay))
 
         settings = BIN / "settings"
         for page, title, keywords in (
@@ -1216,6 +1262,12 @@ class Launcher:
         add("Suspend", "Session", ("system-suspend-symbolic",), "sleep standby",
             lambda: spawn("systemctl", "suspend"))
 
+        add("Clipboard history", "Tools", ("edit-paste-symbolic",),
+            "clipboard paste copy history pano", lambda: self.toggle("clipboard"), "Show",
+            stay=True)
+        add("Clear clipboard history", "Tools", ("edit-clear-all-symbolic", "edit-clear-symbolic"),
+            "clipboard paste copy history delete forget", lambda: spawn(BIN / "clipboard", "clear"))
+
         niri = ["niri", "msg", "action"]
         add("Screenshot", "Tools", ("camera-photo-symbolic", "applets-screenshooter-symbolic"),
             "screen capture snip print area region", lambda: run_async(niri + ["screenshot"]))
@@ -1235,14 +1287,16 @@ class Launcher:
 
     def search_actions(self, words):
         found = []
-        for title, sub, icon, fields, run, hint, toggle in self.actions:
+        for title, sub, icon, fields, run, hint, toggle, stay in self.actions:
             score = match(words, fields)
             if score:
                 sub_text = sub
                 if toggle in self.toggles:
                     sub_text = "On" if self.toggles[toggle] else "Off"
-                found.append(Item("actions", ("action", title, sub), title, sub_text, icon,
-                                  score * 100, run=run, hint=hint, toggle=toggle))
+                item = Item("actions", ("action", title, sub), title, sub_text, icon,
+                            score * 100, run=run, hint=hint, toggle=toggle)
+                item.stay = stay
+                found.append(item)
         return sorted(found, key=lambda i: -i.score)
 
     def fetch_toggle(self, key):
@@ -1321,24 +1375,48 @@ class Launcher:
         self.history.bump("emoji", char)
         copy(char)
 
-    def on_signal(self):
+    # Pano geçmişi
+
+    def search_clipboard(self, words):
+        now = time.time()
+        found = []
+        for clip in self.clips:
+            text = clip["text"]
+            if words and not match(words, [(fold(text), 1.0)]):
+                continue
+            lines = text.strip().splitlines() or [""]
+            title = " ".join(lines[0].split())[:200] or "(whitespace)"
+            sub = ago(now - clip.get("time", now))
+            if len(lines) > 1:
+                sub = f"{len(lines)} lines · {sub}"
+            found.append(Item("clipboard", ("clip", text), title, sub,
+                              themed("edit-paste-symbolic", "edit-copy-symbolic"), hint="Copy",
+                              run=lambda text=text: copy(text)))
+        return found
+
+    def on_signal(self, mode):
         # Bir sonraki döngü turunda: pencereyi göstermek gtk-layer-shell'e Wayland gidiş-dönüşü
         # yaptırır; GDK'nın yarım kalmış bir okuması varken yapılırsa süreç kilitlenir.
-        GLib.idle_add(self.toggle)
+        GLib.idle_add(self.toggle, mode)
         return True
 
-    def toggle(self):
-        if self.visible:
+    def toggle(self, mode="search"):
+        if not self.visible:
+            self.show(mode=mode)
+        elif self.mode == mode:
             self.hide("toggle")
-        else:
-            self.show()
+        else:                               # açıkken öbür kısayol: o moda geç
+            self.set_mode(mode)
+            self.entry.set_text("")
+            self.update()
         return False
 
 
 def main():
     launcher = Launcher()
     # GDK'nın olay kaynağıyla aynı öncelik: daha yükseği GDK'nın okumasını yarım bırakabilir.
-    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, launcher.on_signal)
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, launcher.on_signal, "search")
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR2, launcher.on_signal, "clipboard")
     for sig in (signal.SIGTERM, signal.SIGINT):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, Gtk.main_quit)
     Gtk.main()
