@@ -64,7 +64,7 @@ Ayrıntılar ilgili bölümlerde.
 
 | Ne | Nasıl kullanılır | Bölüm |
 |---|---|---|
-| **Super+D düzeltmesi** | Tuşu basılı tutunca pencere art arda açılıp kapanıyordu (tuş tekrarı). Artık tek basış = tek aç/kapa. | [Arama](#arama-superd) |
+| **Super+D düzeltmesi** | Esc ya da Enter ile kapattıktan sonra pencere bazen her açılışta anında kapanıyordu. Sebep: pencere tuş bırakılmadan kapanınca GTK'nın tuş tekrarı arka planda durmadan sahte Esc üretiyordu. Artık pencere önce klavyeyi bırakıyor, sonra kapanıyor. | [Arama](#arama-superd) |
 | **Pano geçmişi** | `Super+Ctrl+V`: son 50 kopyalama, yazarak ara, `Enter` tekrar kopyalar. RAM'de durur, parola yöneticisi kopyaları kaydedilmez. | [Pano geçmişi](#pano-geçmişi-superctrlv) |
 | **Varsayılan uygulamalar** | `Super+S` → **Default apps**: tarayıcı, dosya yöneticisi, resim, PDF, video, müzik, arşiv, e-posta. Yalnızca niri'de geçerli. | [Ayarlar](#ayarlar-uygulaması) |
 | **Aramada renk** | `#f4a7b9` / `rgb(…)` / `hsl(…)` yaz: örnek + üç biçim. `pick color`: ekrandan renk al. | [Arama](#arama-superd) |
@@ -1168,7 +1168,9 @@ systemctl --user restart waybar       # panel kaybolduysa
 **Arama penceresi açılıp hemen kapanıyorsa** neden kapandığını günlüğe yazdır:
 `systemctl --user set-environment LAUNCHER_DEBUG=1 && systemctl --user restart launcher`, sorunu
 tekrarla, `journalctl --user -u launcher -n 30`'a bak ("hide: escape", "hide: click outside"…).
-Yazdığın metin günlüğe girmez. Bitince `systemctl --user unset-environment LAUNCHER_DEBUG`.
+Her kapanıştan sonra "unmap: keyboard released" gelmeli; "unmap: timeout" görürsen niri klavye
+odağını geri almamış demektir. Yazdığın ve kopyaladığın metin günlüğe girmez. Bitince
+`systemctl --user unset-environment LAUNCHER_DEBUG && systemctl --user restart launcher`.
 
 **Pencereler garip davranıyorsa:** `Super+T` ile FREE'ye geç ya da
 `systemctl --user stop layout-mode` ile servisi bu oturum için kapat. niri o zaman kendi

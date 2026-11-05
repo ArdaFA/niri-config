@@ -807,6 +807,9 @@ class Header(Gtk.ListBoxRow):
         self.show_all()
 
 
+HIDE_WAIT = 300     # ms: kapanırken niri'nin "klavye odağı gitti" haberini en çok bu kadar bekle
+
+
 def layer_window(namespace, layer, keyboard):
     win = Gtk.Window()
     GtkLayerShell.init_for_window(win)
@@ -900,6 +903,8 @@ class Launcher:
         GtkLayerShell.set_margin(self.win, GtkLayerShell.Edge.TOP, MARGIN_TOP - SHADOW)
         self.win.get_style_context().add_class("launcher-win")
         self.win.connect("key-press-event", self.on_key)
+        self.win.connect("focus-out-event", self.on_focus_out)
+        self.hiding = 0                     # kapanış sürüyorsa zaman aşımı kaynağı
         self.win.connect("button-press-event", self.on_click)
         if DEBUG:
             for widget, name in ((self.win, "box"), (self.backdrop, "backdrop")):
@@ -958,6 +963,9 @@ class Launcher:
         debug("show", mode)
         if self.visible:
             return
+        if self.hiding:                     # kapanırken yeniden açıldı
+            GLib.source_remove(self.hiding)
+            self.finish_hide("reopened")
         self.set_mode(mode)
         self.load_css()
         reloaded = self.apps_dirty
@@ -984,10 +992,35 @@ class Launcher:
         if not self.visible:
             return
         self.visible = False
-        self.win.hide()
-        self.backdrop.hide()
         self.cancel_async()
+        self.backdrop.hide()
+        if not self.win.is_active():
+            self.finish_hide("not focused")
+            return
+        # Yüzey hemen yok edilmez. Esc/Enter'a basılınca kapanıyoruz; tuş henüz bırakılmadı ve
+        # GTK tuş tekrarını kendisi yapıyor (Wayland). Yüzey yok edilirse niri ölü yüzeye
+        # "tuş bırakıldı"/"odak gitti" göndermez, GTK'nın tekrar zamanlayıcısı hiç durmaz:
+        # arka planda saniyede 25 sahte Esc üretir ve pencere bir sonraki açılışta anında
+        # kapanır. O yüzden önce kutu gizlenir ve klavye bırakılır; niri odağı alınca normal
+        # bir "odak gitti" yollar (GTK tekrarı durdurur), yüzey ondan sonra kalkar.
+        self.card.hide()
+        GtkLayerShell.set_keyboard_mode(self.win, GtkLayerShell.KeyboardMode.NONE)
+        self.hiding = GLib.timeout_add(HIDE_WAIT, self.finish_hide, "timeout")
+
+    def on_focus_out(self, *_args):
+        if self.hiding:
+            GLib.source_remove(self.hiding)
+            self.finish_hide("keyboard released")
+        return False
+
+    def finish_hide(self, why):
+        debug("unmap:", why)
+        self.hiding = 0
+        self.win.hide()
+        self.card.show()
+        GtkLayerShell.set_keyboard_mode(self.win, GtkLayerShell.KeyboardMode.EXCLUSIVE)
         GLib.idle_add(self.reset)
+        return False
 
     def set_mode(self, mode):
         self.mode = mode
@@ -1025,6 +1058,8 @@ class Launcher:
         return False
 
     def on_key(self, _win, event):
+        if not self.visible:                # kapanıyor: basılı tutulan Enter iki kez çalıştırmasın
+            return True
         key = event.keyval
         ctrl = bool(event.state & Gdk.ModifierType.CONTROL_MASK)
         if DEBUG and not Gdk.keyval_to_unicode(key):     # yalnızca özel tuşlar; yazılanlar günlüğe girmez
@@ -1253,7 +1288,7 @@ class Launcher:
         if item.stay:
             action()
             return
-        self.hide("activated " + item.title)
+        self.hide(f"activated ({item.group or self.mode})")   # başlık değil: pano metni günlüğe girmesin
         GLib.timeout_add(ACTION_DELAY if item.group == "actions" else 0,
                          lambda: action() and False)
 
