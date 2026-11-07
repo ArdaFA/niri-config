@@ -13,7 +13,8 @@ binds {
     // Arama: uygulama, pencere, dosya, ayar, hesap, emoji (bin/.local/bin/launcher).
     // Arka planda bekleyen pencereye sinyal gönderir; servis çalışmıyorsa fuzzel açılır.
     // repeat=false: basılı tutunca tekrar tekrar aç/kapa yapmasın.
-    Mod+D repeat=false hotkey-overlay-title="Search: apps, windows, files, settings" { spawn-sh "systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null || exec fuzzel"; }
+    // Alt+Space: KDE'deki KRunner ile aynı tuş. Super+Space de aynı pencereyi açar (aşağıda).
+    Alt+Space repeat=false hotkey-overlay-title="Search: apps, windows, files, settings" { spawn-sh "systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null || exec fuzzel"; }
     // Pano geçmişi: aynı pencere, pano modunda (SIGUSR2). Super+V niri'nin "yüzen pencere" kısayolu.
     Mod+Ctrl+V repeat=false hotkey-overlay-title="Clipboard history" { spawn-sh "systemctl --user kill --kill-whom=main --signal=USR2 launcher.service"; }
     Mod+Space repeat=false { spawn-sh "systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null || exec fuzzel"; }

@@ -18,7 +18,7 @@ sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü.
 1. [Hızlı başlangıç](#hızlı-başlangıç)
    - [Yenilikler (5 Kasım 2026)](#yenilikler-5-kasım-2026)
 2. [Ayarlar uygulaması](#ayarlar-uygulaması)
-3. [Arama (Super+D)](#arama-superd)
+3. [Arama (Alt+Space)](#arama-altspace)
 4. [Kurulum (sıfırdan)](#kurulum-sıfırdan)
 5. [Hangi dosya neyi kontrol ediyor](#hangi-dosya-neyi-kontrol-ediyor)
 6. [Oturum nasıl başlıyor](#oturum-nasıl-başlıyor)
@@ -47,7 +47,7 @@ GDM son seçilen oturumu hatırlar. KDE'ye dönmek için aynı menüden **Plasma
 | Kısayol | İş |
 |---|---|
 | `Super+Enter` | terminal (foot) |
-| `Super+D` | arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji, renk, zamanlayıcı, `>` komut, Bluetooth/Wi-Fi/ses |
+| `Alt+Space` | arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji, renk, zamanlayıcı, `>` komut, Bluetooth/Wi-Fi/ses |
 | `Super+Ctrl+V` | pano geçmişi: son kopyaladığın 50 metin |
 | `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, klavye (Türkçe harfler), kilit süresi, varsayılan uygulamalar |
 | `Super+Q` | pencereyi kapat |
@@ -64,14 +64,14 @@ Ayrıntılar ilgili bölümlerde.
 
 | Ne | Nasıl kullanılır | Bölüm |
 |---|---|---|
-| **Super+D düzeltmesi** | Esc ya da Enter ile kapattıktan sonra pencere bazen her açılışta anında kapanıyordu. Sebep: pencere tuş bırakılmadan kapanınca GTK'nın tuş tekrarı arka planda durmadan sahte Esc üretiyordu. Artık pencere önce klavyeyi bırakıyor, sonra kapanıyor. | [Arama](#arama-superd) |
+| **Arama düzeltmesi** | Esc ya da Enter ile kapattıktan sonra pencere bazen her açılışta anında kapanıyordu. Sebep: pencere tuş bırakılmadan kapanınca GTK'nın tuş tekrarı arka planda durmadan sahte Esc üretiyordu. Artık pencere önce klavyeyi bırakıyor, sonra kapanıyor. | [Arama](#arama-altspace) |
 | **Pano geçmişi** | `Super+Ctrl+V`: son 50 kopyalama, yazarak ara, `Enter` tekrar kopyalar. RAM'de durur, parola yöneticisi kopyaları kaydedilmez. | [Pano geçmişi](#pano-geçmişi-superctrlv) |
 | **Varsayılan uygulamalar** | `Super+S` → **Default apps**: tarayıcı, dosya yöneticisi, resim, PDF, video, müzik, arşiv, e-posta. Yalnızca niri'de geçerli. | [Ayarlar](#ayarlar-uygulaması) |
-| **Aramada renk** | `#f4a7b9` / `rgb(…)` / `hsl(…)` yaz: örnek + üç biçim. `pick color`: ekrandan renk al. | [Arama](#arama-superd) |
-| **Aramada komut** | `> komut`: terminalde çalıştırır (`Ctrl+Enter` arka planda); yalnızca `>` son komutlar. | [Arama](#arama-superd) |
-| **Zamanlayıcı** | `timer 10m tea`, `remind me in 20 min to stretch`. Süre dolunca sesli bildirim; panelde `TMR 4:32` geri sayım. | [Arama](#arama-superd) |
-| **Cihazlar aramada** | `bluetooth` / kulaklığın adı → bağlan; `wifi` / ağın adı → bağlan; `sound` → ses çıkışını seç. | [Arama](#arama-superd) |
-| **Pencere kapatma** | Aramada bir pencere seçiliyken `Ctrl+Enter` onu kapatır. | [Arama](#arama-superd) |
+| **Aramada renk** | `#f4a7b9` / `rgb(…)` / `hsl(…)` yaz: örnek + üç biçim. `pick color`: ekrandan renk al. | [Arama](#arama-altspace) |
+| **Aramada komut** | `> komut`: terminalde çalıştırır (`Ctrl+Enter` arka planda); yalnızca `>` son komutlar. | [Arama](#arama-altspace) |
+| **Zamanlayıcı** | `timer 10m tea`, `remind me in 20 min to stretch`. Süre dolunca sesli bildirim; panelde `TMR 4:32` geri sayım. | [Arama](#arama-altspace) |
+| **Cihazlar aramada** | `bluetooth` / kulaklığın adı → bağlan; `wifi` / ağın adı → bağlan; `sound` → ses çıkışını seç. | [Arama](#arama-altspace) |
+| **Pencere kapatma** | Aramada bir pencere seçiliyken `Ctrl+Enter` onu kapatır. | [Arama](#arama-altspace) |
 | **Pil uyarıları** | %20'de "Battery low", %5'te kalıcı "critically low"; şarja takınca kaybolur. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
 | **USB disk bildirimi** | Disk takılınca **Open** / **Eject** düğmeli bildirim; aramada `eject`. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
 | **Ekran paylaşırken** | Açılır bildirimler bekletilir (panelde `QUIET`); parola yöneticisi, arama penceresi ve bildirimler yayında siyah görünür. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
@@ -124,9 +124,9 @@ değiştirilebiliyor:
 
 ---
 
-## Arama (Super+D)
+## Arama (Alt+Space)
 
-`Super+D` (ya da `Super+Space`) ekranın üstünde tek bir arama kutusu açar. Yazdıkça sonuçlar
+`Alt+Space` (ya da `Super+Space`) ekranın üstünde tek bir arama kutusu açar. Yazdıkça sonuçlar
 gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
 
 | Yazınca | Çıkan | `Enter` |
@@ -168,9 +168,9 @@ gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
   `systemctl --user list-timers 'launcher-timer-*'`.
   Çalışan zamanlayıcının geri sayımı panelde görünür (`TMR 4:32`).
 - **Web araması:** Brave Search. Değiştirmek için `bin/.local/bin/launcher` → `SEARCH_URL`.
-- **Hafif ve hızlı:** pencere arka planda hazır bekler (`launcher.service`), `Super+D` ona yalnızca
+- **Hafif ve hızlı:** pencere arka planda hazır bekler (`launcher.service`), `Alt+Space` ona yalnızca
   bir sinyal gönderir; bu yüzden basar basmaz açılır. Beklerken yaklaşık 45 MB bellek kullanır,
-  işlemci kullanmaz. Servis çalışmıyorsa `Super+D` eskisi gibi fuzzel'i açar.
+  işlemci kullanmaz. Servis çalışmıyorsa `Alt+Space` eskisi gibi fuzzel'i açar.
 - Sık kullanılan uygulama, emoji ve `>` komut kayıtları: `~/.local/state/launcher/history.json`.
   Silersen sıralama sıfırlanır. (Komut geçmişi kabuk geçmişi gibidir: içine parola yazdığın
   bir komutu `>` ile çalıştırma.)
@@ -260,7 +260,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 |---|---|
 | `waybar/.config/waybar/config.jsonc` | Panel: hangi modüller nerede, biçimleri, tıklama eylemleri |
 | `waybar/.config/waybar/style.css` | Panel görünümü (font, boşluk, durum renkleri) |
-| `fuzzel/.config/fuzzel/fuzzel.ini` | Küçük menüler (tema seçici, onaylar) ve arama servisi çalışmıyorsa `Super+D` |
+| `fuzzel/.config/fuzzel/fuzzel.ini` | Küçük menüler (tema seçici, onaylar) ve arama servisi çalışmıyorsa `Alt+Space` |
 | `swaync/.config/swaync/config.json` | Bildirimler ve hızlı ayarlar paneli: bölümler, düğmeler, zaman aşımları |
 | `swaync/.config/swaync/style.css` | Bildirimlerin ve panelin görünümü |
 | `mako/.config/mako/config` | Yedek bildirim programı (yalnızca swaync kaldırılırsa çalışır) |
@@ -301,7 +301,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `bin/.local/bin/night-light` | Gece ışığını açar/kapatır (`night-light.service`) |
 | `bin/.local/bin/screenshot-edit` | Alan seçtirip görüntüyü swappy'de açar (ya da son görüntüyü) |
 | `bin/.local/bin/screen-record` | Ekran kaydı (wf-recorder): başlat/durdur, Waybar'daki `REC` |
-| `bin/.local/bin/launcher` | Arama penceresi (`Super+D`), bkz. [Arama](#arama-superd) |
+| `bin/.local/bin/launcher` | Arama penceresi (`Alt+Space`), bkz. [Arama](#arama-altspace) |
 | `systemd/.config/systemd/user/launcher.service` | Arama penceresini arka planda hazır tutar |
 | `bin/.local/bin/updates` | Panelde `UPD` sayısı ve "Update system" (terminalde dnf + Flatpak) |
 | `bin/.local/bin/timer-status` | Panelde `TMR` geri sayımı (aramadan kurulan zamanlayıcılar) |
@@ -610,7 +610,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 | Kısayol | İş |
 |---|---|
 | `Super+Enter` | Terminal (foot) |
-| `Super+D` / `Super+Space` | Arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji (bkz. [Arama](#arama-superd)) |
+| `Alt+Space` / `Super+Space` | Arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji (bkz. [Arama](#arama-altspace)) |
 | `Super+Ctrl+V` | Pano geçmişi (bkz. [Pano geçmişi](#pano-geçmişi-superctrlv)) |
 | `Super+S` | Ayarlar penceresi (bkz. [Ayarlar uygulaması](#ayarlar-uygulaması)) |
 | `Super+Shift+T` | Renk teması seç: presetler ve `wallpapers/` içindeki resimler (resim seçilirse renkler ondan üretilir). Yazarak ara, ör. `light` ya da `wallpaper`. |
@@ -970,14 +970,14 @@ niri'de yapan yoktu):
   "can be removed" yazar; disk meşgulse nedenini ve **Try again** düğmesini gösterir. Disk
   kendiliğinden bağlanmaz. Disk çıkarılınca bildirim kaybolur. Ağ klasörleri (GNOME Online
   Accounts), iç diskler ve telefonlar sayılmaz.
-- Takılı diskler aramada da var: `Super+D` → diskin adı ya da `eject` → **Open …** / **Eject …**.
+- Takılı diskler aramada da var: `Alt+Space` → diskin adı ya da `eject` → **Open …** / **Eject …**.
 - İkisi tek bir küçük süreçte (~15 MB): `bin/.local/bin/device-notify`.
 
 **Bilinen sınırlar:**
 
 - Hızlı ayarlar ve bildirim geçmişi **aynı panelde**. swaync tek panel kullanıyor; GNOME'daki
   gibi iki ayrı menü yok.
-- Panelde **Wi-Fi ağ listesi yok**. Ağ seçmek için: `Super+D` → `wifi` (ya da ağın adı), tepsideki
+- Panelde **Wi-Fi ağ listesi yok**. Ağ seçmek için: `Alt+Space` → `wifi` (ya da ağın adı), tepsideki
   Wi-Fi simgesi (nm-applet) ya da `Settings ▼` → Network.
 - Düğmelerin açık/kapalı hali panel açılırken okunur. Panel açıkken Power saver'dan doğrudan
   Performance'a geçersen Power saver düğmesi panel kapanıp açılana kadar yanık görünür. Wi-Fi'yi
@@ -1156,13 +1156,13 @@ journalctl --user -b -u niri          # niri
 journalctl --user -b -u waybar        # panel
 journalctl --user -b -u layout-mode   # otomatik düzen
 journalctl --user -b -u swaync        # bildirimler ve hızlı ayarlar paneli
-journalctl --user -b -u launcher      # arama penceresi (Super+D)
+journalctl --user -b -u launcher      # arama penceresi (Alt+Space)
 journalctl --user -b -u clipboard-history   # pano geçmişi
 systemctl --user status waybar swaync swaybg swayidle theme-apply niri-polkit layout-mode launcher clipboard-history device-notify
 systemctl --user restart waybar       # panel kaybolduysa
 ```
 
-**`Super+D` arama yerine fuzzel'i açıyorsa** arama servisi çalışmıyor demektir:
+**`Alt+Space` arama yerine fuzzel'i açıyorsa** arama servisi çalışmıyor demektir:
 `systemctl --user restart launcher`, olmazsa yukarıdaki günlüğe bak.
 
 **Arama penceresi açılıp hemen kapanıyorsa** neden kapandığını günlüğe yazdır:
@@ -1245,7 +1245,7 @@ baştan beri değiştirilmediği için geri alınacak başka bir şey yok.
   - `app-…@autostart.service.d/not-in-niri.conf` (üç tane): KDE'nin de kullandığı autostart
     girdilerine `ConditionEnvironment=!XDG_CURRENT_DESKTOP=niri` koşulu ekliyor. KDE'de koşul
     sağlandığı için orada eskisi gibi başlıyorlar; yalnızca niri'de başlamıyorlar:
-    - **Cisco Secure Client**: niri'de gerektiğinde aramadan açılır (`Super+D` → "Cisco").
+    - **Cisco Secure Client**: niri'de gerektiğinde aramadan açılır (`Alt+Space` → "Cisco").
     - **Xwayland Video Bridge**: yalnızca KWin için gerekli; niri'de boş bir pencere açıyordu.
     - **imsettings-start**: giriş yöntemini IBus'a geçiriyor ve "ibus start" uyarısı veriyordu.
 - **Başka bir autostart programını niri'de durdurmak:**

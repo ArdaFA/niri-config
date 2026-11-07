@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# launcher — Super+D: tek arama kutusu. Yazdıkça uygulamalar, açık pencereler, ayarlar ve
+# launcher — Alt+Space: tek arama kutusu. Yazdıkça uygulamalar, açık pencereler, ayarlar ve
 # eylemler, dosyalar, hesap makinesi ve web araması gelir; ":" ile başlayınca emoji.
 #
 #   launcher [toggle]    pencereyi aç/kapa
@@ -9,7 +9,7 @@
 # Hata ayıklama: systemctl --user set-environment LAUNCHER_DEBUG=1 && systemctl --user restart
 # launcher → açılıp kapanmalar ve nedenleri `journalctl --user -u launcher`'da (yazılan metin hariç).
 #
-# Pencere arka planda hazır bekler; tuşa basınca yalnızca görünür olur. Super+D bu betiği
+# Pencere arka planda hazır bekler; tuşa basınca yalnızca görünür olur. Alt+Space bu betiği
 # değil doğrudan TOGGLE komutunu çalıştırır: servise SIGUSR1 gönderir (~6 ms; Python'u
 # başlatmak bile ~40 ms). Servis çalışmıyorsa fuzzel açılır.
 #
@@ -51,7 +51,7 @@ import unicodedata
 from pathlib import Path
 
 HOME = os.path.expanduser("~")
-# niri/binds.kdl'deki Super+D ile aynı komut.
+# niri/binds.kdl'deki Alt+Space ile aynı komut.
 TOGGLE = ("systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null"
           " || exec fuzzel")
 USAGE = "usage: launcher [toggle] | daemon | selftest"

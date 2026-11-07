@@ -1,9 +1,9 @@
-# Arama penceresi (Super+D) — yalnızca niri oturumu. Pencere arka planda hazır bekler,
-# Super+D ona SIGUSR1 gönderir (niri/binds.kdl), böylece tuşa basınca anında açılır.
-# Ayrıntı: README → Arama (Super+D)
+# Arama penceresi (Alt+Space) — yalnızca niri oturumu. Pencere arka planda hazır bekler,
+# Alt+Space ona SIGUSR1 gönderir (niri/binds.kdl), böylece tuşa basınca anında açılır.
+# Ayrıntı: README → Arama (Alt+Space)
 
 [Unit]
-Description=Search launcher for the niri session (Super+D)
+Description=Search launcher for the niri session (Alt+Space)
 PartOf=graphical-session.target
 After=graphical-session.target
 Requisite=graphical-session.target
