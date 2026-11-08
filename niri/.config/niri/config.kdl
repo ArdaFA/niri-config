@@ -3,9 +3,11 @@
 // Ayarlar konularına göre ayrı dosyalarda duruyor; bu dosya onları sırayla dahil eder.
 // "include" konumsaldır: sonra dahil edilen dosya, öncekinin aynı ayarını ezer.
 //
-//   input.kdl    klavye düzeni, touchpad
-//   ~/.local/state/settings/niri.kdl  touchpad — Settings uygulaması üretir (Super+S)
-//   outputs.kdl  ekranlar: ölçek, konum, harici monitör
+//   input.kdl    touchpad, fare, klavye (düzen sistemden gelir)
+//   ~/.config/niri/local.kdl  BU BİLGİSAYARA ÖZEL: laptop ekranının ölçeği, klavye düzeni,
+//                imleç teması. Repoda değil; install.sh şablondan (examples/niri-local.kdl) bir kez
+//                oluşturur, git pull dokunmaz.
+//   ~/.local/state/settings/niri.kdl  touchpad, klavye — Settings uygulaması üretir (Super+S)
 //   ~/.local/state/displays/niri.kdl  harici monitörlerin yeri — `displays` komutu üretir (Super+P)
 //   layout.kdl   boşluklar, sütun genişlikleri, odak halkası
 //   binds.kdl    kısayollar
@@ -16,8 +18,8 @@
 // Kaydettiğin her değişiklik anında uygulanır. Hata kontrolü için: niri validate
 
 include "input.kdl"
+include optional=true "~/.config/niri/local.kdl"
 include optional=true "~/.local/state/settings/niri.kdl"
-include "outputs.kdl"
 include optional=true "~/.local/state/displays/niri.kdl"
 include "layout.kdl"
 include "binds.kdl"
@@ -35,9 +37,8 @@ hotkey-overlay {
     skip-at-startup
 }
 
-// KDE'dekiyle aynı imleç teması (~/.icons içinde kurulu).
+// İmleç teması bilgisayara özel: ~/.config/niri/local.kdl
 cursor {
-    xcursor-theme "Layan-border-cursors"
     xcursor-size 24
     hide-when-typing
 }

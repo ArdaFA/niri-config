@@ -1,0 +1,50 @@
+// Bu bilgisayara özel niri ayarları: ~/.config/niri/local.kdl
+//
+// Bu dosya repoda değil. install.sh ilk kurulumda examples/niri-local.kdl şablonundan
+// oluşturur, sonra hiç dokunmaz; `git pull` da değiştirmez. Ekran ölçeği, klavye düzeni,
+// imleç teması gibi bilgisayardan bilgisayara değişen şeyler buraya.
+//
+// config.kdl bunu input.kdl'den sonra okur; aynı ayar burada yazılıysa buradaki geçerli olur.
+// Kaydettiğin her değişiklik anında uygulanır. Hata kontrolü için: niri validate
+
+// ── Laptop ekranı ────────────────────────────────────────────────────────
+// Adı ve ölçeği görmek için: niri msg outputs
+// Konum (0,0) kalmalı: `displays` (Super+P) harici monitörü laptopa göre buna yerleştirir.
+// Ölçek yazılmazsa niri ekranın boyutuna ve çözünürlüğüne bakıp kendisi seçer.
+// Masaüstü bilgisayarda bu blok bir şey yapmaz (öyle adlı bir ekran yoksa yok sayılır).
+output "@LAPTOP@" {
+    // scale 2          // ör. 3200x1800 ekran: 2 · 2560x1600: 1.5 · 1920x1080: 1 ya da 1.25
+    position x=0 y=0
+}
+
+// ── Harici monitöre özel ayar ────────────────────────────────────────────
+// Konumu `displays` (Super+P) ayarlar; burada yalnızca mod ya da ölçek gerekirse yaz.
+// Adı `niri msg outputs` çıktısındaki "Marka Model Seri". Örnek:
+//
+// output "Dell Inc. DELL U2415 XXXXXXXX" {
+//     mode "1920x1080@120.000"
+//     scale 1
+// }
+//
+// Dikkat: `displays` ile yerini ayarladığın bir monitörü burada da tanımlarsan niri iki
+// bloğu birleştirmez, yalnızca birini kullanır; o monitörün konumunu ya da modunu kaybedersin.
+
+// ── Klavye düzeni ────────────────────────────────────────────────────────
+// Yazılmazsa sistemin düzeni kullanılır (localectl status → "X11 Layout"), yani
+// giriş ekranındaki ve KDE/GNOME'daki düzenin aynısı. Farklı bir düzen istersen:
+//
+// input {
+//     keyboard {
+//         xkb {
+//             layout "tr"          // Türkçe Q; Türkçe F için: layout "tr" + variant "f"
+//         }
+//     }
+// }
+
+// ── İmleç teması ─────────────────────────────────────────────────────────
+// ~/.icons ya da /usr/share/icons altında kurulu bir temanın klasör adı.
+// Yazılmazsa sistemin varsayılan teması (Fedora'da Adwaita).
+//
+// cursor {
+//     xcursor-theme "Adwaita"
+// }

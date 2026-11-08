@@ -1,12 +1,10 @@
 // Giriş aygıtları: klavye, touchpad, fare.
 
 input {
-    keyboard {
-        xkb {
-            // KDE ile aynı: Almanca, varyant ve ek seçenek yok.
-            layout "de"
-        }
-    }
+    // Klavye düzeni burada yazılı değil: niri sistemin düzenini kullanır (localectl status →
+    // "X11 Layout"), yani giriş ekranındaki ve KDE/GNOME'daki düzenin aynısı. Başka bir düzen
+    // istersen bilgisayara özel dosyaya yaz: ~/.config/niri/local.kdl
+    // Settings → Keyboard (Türkçe harfler, tuş tekrarı) ~/.local/state/settings/niri.kdl'ye yazar.
 
     // Settings uygulaması (Super+S → Touchpad) kullanıldıysa bu blok yerine onun yazdığı
     // ~/.local/state/settings/niri.kdl geçerlidir (niri touchpad bloklarını birleştirmez).

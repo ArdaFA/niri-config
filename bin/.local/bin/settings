@@ -7,7 +7,7 @@
   Appearance   wallpaper, colors (a preset or taken from the wallpaper), terminal opacity
   Displays     where the external monitor sits, night light and its warmth
   Touchpad     tap to click, natural scrolling, pointer speed
-  Keyboard     Turkish letters on the German layout (AltGr), key repeat
+  Keyboard     key repeat; Turkish letters (AltGr) when the system layout is German
   Screen lock  how long the computer may stay idle before it locks
   Default apps which app opens web links, folders, images, PDFs, videos… in this session
 
@@ -21,7 +21,7 @@ Every change applies at once; there is no Apply button.
 #   gece ışığı aç/kapa      → `night-light` komutu
 #   terminal saydamlığı    → foot.ini'deki `alpha=` satırı (repo'daki dosya)
 #   touchpad, klavye, kilit süresi, gece ışığı → ~/.local/state/settings:
-#       niri.kdl       touchpad ve klavye blokları; config.kdl input.kdl'den sonra okur, niri
+#       niri.kdl       touchpad ve klavye blokları; config.kdl input.kdl ve local.kdl'den sonra okur, niri
 #                      anında uygular (yalnızca niri; KDE ve giriş ekranı kendi ayarında kalır)
 #       services.env   swayidle.service ve night-light.service okur (EnvironmentFile)
 #       settings.json  bu pencerenin hatırladığı değerler
@@ -44,6 +44,7 @@ import subprocess
 import sys
 import threading
 import tomllib
+from functools import cache
 from pathlib import Path
 
 import gi
@@ -79,9 +80,10 @@ DEFAULTS = {"tap": True, "natural_scroll": False, "pointer_speed": 0.0,
             "turkish_letters": False, "repeat_delay": 600, "repeat_rate": 25}
 TOUCHPAD_KEYS = ("tap", "natural_scroll", "pointer_speed")
 KEYBOARD_KEYS = ("turkish_letters", "repeat_delay", "repeat_rate")
-# input.kdl'deki düzen. "tr" varyantı Almanca düzene AltGr ile ş ğ ı ç ekler (xkb: de(tr)),
-# başka hiçbir tuşu değiştirmez.
-KEYBOARD_LAYOUT = "de"
+# Klavye düzeni sistemden gelir (systemd-localed; niri de xkb ayarı boşken onu kullanır).
+# "Turkish letters" yalnızca sistem düzeni Almancaysa sunulur: xkb'deki hazır de(tr) varyantı
+# Almanca düzene AltGr ile ş ğ ı ç ekler, başka hiçbir tuşu değiştirmez.
+TURKISH_BASE = "de"
 REPEAT_DELAY = (200, 1000)      # ms
 REPEAT_RATE = (10, 60)          # karakter/sn
 LOCK_CHOICES = ((60, "1 min"), (120, "2 min"), (300, "5 min"), (600, "10 min"),
@@ -169,21 +171,45 @@ def load_settings():
     return s
 
 
-def render_niri(s):
+@cache
+def system_xkb():
+    """systemd-localed'deki X11 klavye ayarı: {layout, variant, options, model}; okunamazsa boş."""
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        reply = bus.call_sync("org.freedesktop.locale1", "/org/freedesktop/locale1",
+                              "org.freedesktop.DBus.Properties", "GetAll",
+                              GLib.Variant("(s)", ("org.freedesktop.locale1",)),
+                              GLib.VariantType("(a{sv})"), Gio.DBusCallFlags.NONE, 2000, None)
+    except GLib.Error:
+        return {}
+    props = reply.unpack()[0]
+    return {k: str(props.get("X11" + k.capitalize(), "")) for k in ("layout", "variant", "options", "model")}
+
+
+def turkish_letters_possible(xkb):
+    return xkb.get("layout") == TURKISH_BASE and not xkb.get("variant")
+
+
+def render_niri(s, xkb):
     # niri'de touchpad bölümü include'lar arasında birleşmez: bu blok input.kdl'dekinin
     # tamamen yerine geçer, o yüzden dwt de burada yazılı.
     lines = ["// Settings uygulamasının ürettiği dosya (Settings → Touchpad, Keyboard); elle düzenleme.",
-             "// input.kdl'deki touchpad bloğunun yerine geçer; klavye bloğu (varsa) onunkini ezer.",
+             "// input.kdl'deki touchpad bloğunun yerine geçer; klavye ayarları (varsa) öncekileri ezer.",
              "",
              "input {"]
     if any(s[k] != DEFAULTS[k] for k in KEYBOARD_KEYS):
-        lines += ["    keyboard {",
-                  "        xkb {",
-                  f'            layout "{KEYBOARD_LAYOUT}"']
-        if s["turkish_letters"]:
-            lines.append('            variant "tr"     // AltGr + s g i c → ş ğ ı ç')
-        lines += ["        }",
-                  f"        repeat-delay {s['repeat_delay']}",
+        lines.append("    keyboard {")
+        # xkb yalnızca Türkçe harfler için yazılır; yoksa boş kalır ve niri sistemin düzenini
+        # kullanmaya devam eder. Sistemdeki ek seçenekler (options, model) korunur.
+        if s["turkish_letters"] and turkish_letters_possible(xkb):
+            lines += ["        xkb {",
+                      f'            layout "{TURKISH_BASE}"',
+                      '            variant "tr"     // AltGr + s g i c → ş ğ ı ç']
+            for key in ("options", "model"):
+                if xkb.get(key):
+                    lines.append(f"            {key} {json.dumps(xkb[key])}")
+            lines.append("        }")
+        lines += [f"        repeat-delay {s['repeat_delay']}",
                   f"        repeat-rate {s['repeat_rate']}",
                   "    }"]
     lines.append("    touchpad {")
@@ -208,13 +234,15 @@ def render_env(s):
             f"NIGHT_AUTO={int(s['night_auto'])}\n")
 
 
-def save_settings(s):
+def save_settings(s, xkb=None):
     write_atomic(STATE / "settings.json", json.dumps(s, indent=2, sort_keys=True) + "\n")
     write_atomic(STATE / "services.env", render_env(s))
     # Touchpad'e hiç dokunulmadıysa input.kdl geçerli kalsın.
     niri = STATE / "niri.kdl"
     if niri.exists() or any(s[k] != DEFAULTS[k] for k in TOUCHPAD_KEYS + KEYBOARD_KEYS):
-        write_atomic(niri, render_niri(s))
+        if xkb is None:
+            xkb = system_xkb() if s["turkish_letters"] else {}
+        write_atomic(niri, render_niri(s, xkb))
 
 
 ALPHA_RE = re.compile(r"^([ \t]*alpha[ \t]*=[ \t]*)([0-9.]+)[ \t]*$", re.M)
@@ -1265,9 +1293,11 @@ class Window(Gtk.ApplicationWindow):
     def page_keyboard(self, title):
         page = self.page(title)
         self.turkish = Switch(lambda on: self.save("turkish_letters", on))
-        page.add(row("Turkish letters", self.turkish,
-                     "AltGr + S, G, I, C types ş ğ ı ç; with Shift: Ş Ğ İ Ç. "
-                     "Every other key stays the same"))
+        # Yalnızca Almanca düzende (de(tr) varyantı); başka düzenlerde satır gizli.
+        self.turkish_row = row("Turkish letters", self.turkish,
+                               "AltGr + S, G, I, C types ş ğ ı ç; with Shift: Ş Ğ İ Ç. "
+                               "Every other key stays the same")
+        page.add(self.turkish_row)
         self.try_entry = Gtk.Entry(placeholder_text="Type here to try", width_chars=24)
         page.add(row("Try it", self.try_entry))
         page.add(label("Key repeat", "heading"))
@@ -1277,11 +1307,12 @@ class Window(Gtk.ApplicationWindow):
                                   self.later(300, lambda v: self.save("repeat_rate", int(v))))
         page.add(row("Delay", self.repeat_delay, "How long to hold a key before it repeats"))
         page.add(row("Speed", self.repeat_rate, "Characters per second while you hold it"))
-        page.add(note("These apply to the niri session only. KDE and the login screen keep "
-                      "their own keyboard settings."))
+        page.add(note("The layout is the system's (localectl status). These apply to the niri "
+                      "session only; KDE and the login screen keep their own keyboard settings."))
         return page, self.refresh_keyboard
 
     def refresh_keyboard(self):
+        self.turkish_row.set_visible(turkish_letters_possible(system_xkb()))
         self.turkish.set(self.settings["turkish_letters"])
         self.repeat_delay.set(self.settings["repeat_delay"])
         self.repeat_rate.set(self.settings["repeat_rate"])
@@ -1410,11 +1441,20 @@ def selftest():
             assert "        tap\n" in kdl and "natural" not in kdl and "accel" not in kdl, kdl
             assert "keyboard" not in kdl, kdl          # varsayılan klavye: input.kdl geçerli
             assert load_settings() == s
+            de = {"layout": "de", "variant": "", "options": "caps:escape", "model": ""}
             s.update(turkish_letters=True, repeat_rate=40)
-            save_settings(s)
+            save_settings(s, de)
             kdl = (STATE / "niri.kdl").read_text()
             assert 'layout "de"' in kdl and 'variant "tr"' in kdl, kdl
+            assert 'options "caps:escape"' in kdl and "model" not in kdl, kdl
             assert "repeat-delay 600" in kdl and "repeat-rate 40" in kdl, kdl
+            # Başka düzende (ör. Türkçe Q) xkb hiç yazılmaz: sistemin düzeni geçerli kalır.
+            save_settings(s, {"layout": "tr", "variant": ""})
+            kdl = (STATE / "niri.kdl").read_text()
+            assert "xkb" not in kdl and "repeat-rate 40" in kdl, kdl
+            assert not turkish_letters_possible({}) and not turkish_letters_possible(
+                {"layout": "de", "variant": "nodeadkeys"})
+            save_settings(s, de)
             assert load_settings() == s
             (STATE / "settings.json").write_text(json.dumps(dict(s, repeat_delay=5, repeat_rate=900)))
             assert load_settings()["repeat_delay"] == REPEAT_DELAY[0]
