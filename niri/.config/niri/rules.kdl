@@ -15,9 +15,10 @@ window-rule {
     }
 }
 
-// Yönetici şifresi soran KDE polkit penceresi yüzen (floating) açılsın.
+// Yönetici şifresi soran polkit penceresi yüzen (floating) açılsın
+// (KDE'nin ajanı ya da mate-polkit, xfce-polkit, lxpolkit; bkz. niri-polkit.service).
 window-rule {
-    match app-id=r#"^org\.kde\.polkit-kde-authentication-agent-1$"#
+    match app-id=r#"polkit"#
     open-floating true
 }
 

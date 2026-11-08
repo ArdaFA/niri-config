@@ -2,13 +2,17 @@
 //
 // "Mod" = Super (Windows) tuşu. niri KDE içinde pencere olarak açıkken Mod = Alt olur.
 // Almanca klavyede AltGr/Shift isteyen [ ] / = tuşları bilerek kullanılmadı.
-// Ekranda kısayol listesi: Super+Shift+ß (yani Super+?)
+// niri kısayolu tuşun Shift'siz karakterine göre eşler; o yüzden klavyeye göre değişen
+// tuşların (?, +) başka düzenler için gizli eşleri var: ABD ve Türkçe Q.
+// Ekranda kısayol listesi: Super+? (Almanca Super+Shift+ß, ABD Super+Shift+/, Türkçe Q Super+Shift+*)
 //
 // Kalıp:  Mod+Ctrl  = taşı,  Mod+Shift = monitör / dikey,  Mod+Shift+Ctrl = monitöre taşı
 
 binds {
     // ── Genel ────────────────────────────────────────────────────────────
     Mod+Shift+ssharp hotkey-overlay-title="Show this list" { show-hotkey-overlay; }
+    Mod+Shift+Slash hotkey-overlay-title=null { show-hotkey-overlay; }      // ABD düzeni
+    Mod+Shift+Asterisk hotkey-overlay-title=null { show-hotkey-overlay; }   // Türkçe Q
     Mod+Return hotkey-overlay-title="Terminal (foot)" { spawn "foot"; }
     // Arama: uygulama, pencere, dosya, ayar, hesap, emoji (bin/.local/bin/launcher).
     // Arka planda bekleyen pencereye sinyal gönderir; servis çalışmıyorsa fuzzel açılır.
@@ -139,6 +143,9 @@ binds {
     Mod+Plus        { set-column-width "+10%"; }
     Mod+Shift+Minus { set-window-height "-10%"; }
     Mod+Shift+Plus  { set-window-height "+10%"; }
+    // ABD düzeninde + ayrı bir tuş değil (Shift+=); orada = tuşu.
+    Mod+Equal       { set-column-width "+10%"; }
+    Mod+Shift+Equal { set-window-height "+10%"; }
 
     Mod+V       hotkey-overlay-title="Toggle floating" { toggle-window-floating; }
     Mod+Shift+V { switch-focus-between-floating-and-tiling; }

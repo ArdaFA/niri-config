@@ -1,14 +1,21 @@
-# KDE'nin polkit kimlik doğrulama ajanı, yalnızca niri oturumunda.
+# Polkit kimlik doğrulama ajanı (yönetici şifresi soran pencere), yalnızca niri oturumunda.
 # (KDE'nin kendi plasma-polkit-agent.service dosyasına dokunmamak için ayrı birim.)
 # install.sh bunu `systemctl --user add-wants niri.service` ile niri'ye bağlar.
+#
+# Kurulu olan ilk ajan kullanılır: KDE Plasma varsa onunki, yoksa (ör. Fedora Workstation/GNOME)
+# mate-polkit: sudo dnf install mate-polkit. Hiçbiri yoksa servis hata vermeden atlanır.
 
 [Unit]
-Description=Polkit authentication agent (KDE) for the niri session
+Description=Polkit authentication agent for the niri session
 PartOf=graphical-session.target
 After=graphical-session.target
 Requisite=graphical-session.target
+ConditionPathExists=|/usr/libexec/kf6/polkit-kde-authentication-agent-1
+ConditionPathExists=|/usr/libexec/polkit-mate-authentication-agent-1
+ConditionPathExists=|/usr/libexec/xfce-polkit
+ConditionPathExists=|/usr/bin/lxpolkit
 
 [Service]
-ExecStart=/usr/libexec/kf6/polkit-kde-authentication-agent-1
+ExecStart=/bin/sh -c 'for a in /usr/libexec/kf6/polkit-kde-authentication-agent-1 /usr/libexec/polkit-mate-authentication-agent-1 /usr/libexec/xfce-polkit /usr/bin/lxpolkit; do [ -x "$a" ] && exec "$a"; done; exit 1'
 Slice=background.slice
 Restart=on-failure
