@@ -210,7 +210,7 @@ kurmak en kolayı (niri ilk açılışta kendi varsayılan ayar dosyasını yaza
 
 ```bash
 # 0) Repoyu indir (git yoksa: sudo dnf install git)
-git clone https://codeberg.org/ArdaFA/niri-dotfiles.git ~/dotfiles
+git clone https://github.com/ArdaFA/niri-dotfiles.git ~/dotfiles
 cd ~/dotfiles
 
 # 1) Paketler — hepsi resmi Fedora reposundan (sudo gerekir)
@@ -296,7 +296,7 @@ cd ~/dotfiles && git pull && ./install.sh
 ```
 
 Değişiklik yapmak istersen bilgisayarına özel olanları `local.kdl`'ye yaz; ona `git pull`
-dokunmaz. Repodaki dosyaları değiştirirsen `git pull` çakışabilir. O zaman Codeberg'de reponun
+dokunmaz. Repodaki dosyaları değiştirirsen `git pull` çakışabilir. O zaman GitHub'da reponun
 bir kopyasını (**Fork**) alıp kendi kopyanda çalışmak daha rahat.
 
 ---
