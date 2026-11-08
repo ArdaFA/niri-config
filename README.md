@@ -3,8 +3,13 @@
 Fedora 43'te KDE Plasma'nın **yanında**, giriş ekranından ayrı bir oturum olarak seçilen,
 sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü.
 
+**Kendi bilgisayarına kurmak için:** [Kurulum](#kurulum-sıfırdan). Fedora 43'te KDE Plasma ya da
+GNOME, fark etmez; mevcut masaüstün olduğu gibi kalır. Lisans: [MIT](LICENSE).
+
 - Bütün ayarlar bu repoda. GNU stow ile `~/.config` (ve `~/.local/bin`) altına symlink olarak bağlanır.
-- KDE ayarlarına, giriş ekranına (GDM) ve varsayılan kabuğa (zsh) dokunulmaz.
+- KDE/GNOME ayarlarına, giriş ekranına ve varsayılan kabuğa dokunulmaz.
+- Bilgisayardan bilgisayara değişenler (ekran ölçeği, klavye düzeni, imleç teması) repoda değil,
+  her bilgisayarın kendi `~/.config/niri/local.kdl` dosyasında (bkz. [Kurulum](#bu-bilgisayara-özel-ayarlar-localkdl)).
 - Renkler tek kaynaktan gelir: `theme` komutu (preset ya da duvar kağıdı).
 - Font: Departure Mono (piksel). Köşeler 6 px, boşluklar 12 px, animasyonlar kısa ve sekmesiz.
 - **Arayüz İngilizce:** Saat, takvim, panel etiketleri, bildirimler, kilit ekranı, kısayol
@@ -41,8 +46,9 @@ sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü.
 
 ## Hızlı başlangıç
 
-**Oturuma girmek:** GDM'de kullanıcı adına tıkla → sağ alttaki ⚙️ → **Niri** → şifre.
-GDM son seçilen oturumu hatırlar. KDE'ye dönmek için aynı menüden **Plasma**'yı seç.
+**Oturuma girmek:** Giriş ekranında oturum seçiciden **Niri**'yi seç, sonra şifreni gir
+(GDM'de: kullanıcı adına tıkla → sağ alttaki ⚙️). Giriş ekranı son seçilen oturumu hatırlar.
+Eski masaüstüne dönmek için aynı menüden **Plasma**'yı (ya da **GNOME**'u) seç.
 
 | Kısayol | İş |
 |---|---|
@@ -51,7 +57,7 @@ GDM son seçilen oturumu hatırlar. KDE'ye dönmek için aynı menüden **Plasma
 | `Super+Ctrl+V` | pano geçmişi: son kopyaladığın 50 metin |
 | `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, klavye (Türkçe harfler), kilit süresi, varsayılan uygulamalar |
 | `Super+Q` | pencereyi kapat |
-| `Super+Shift+ß` (yani `Super+?`) | ekranda kısayol listesi |
+| `Super+?` (Almanca `Super+Shift+ß`, Türkçe Q `Super+Shift+*`, ABD `Super+Shift+/`) | ekranda kısayol listesi |
 | `Super+Shift+E` | oturumu kapat |
 
 **KDE içinde pencere olarak denemek:** Konsole'da `niri` yaz. Bu modda Mod tuşu **Alt**'tır.
@@ -76,7 +82,7 @@ Ayrıntılar ilgili bölümlerde.
 | **USB disk bildirimi** | Disk takılınca **Open** / **Eject** düğmeli bildirim; aramada `eject`. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
 | **Ekran paylaşırken** | Açılır bildirimler bekletilir (panelde `QUIET`); parola yöneticisi, arama penceresi ve bildirimler yayında siyah görünür. | [Bildirimler](#hızlı-ayarlar-ve-bildirimler) |
 | **Güncellemeler** | Panelde `UPD 47`: tıkla → terminalde dnf + Flatpak güncellemesi (onayı sen verirsin). | [Waybar modülleri](#waybar-modülleri) |
-| **Türkçe harfler** | `Super+S` → **Keyboard** → *Turkish letters*: Alman klavyede `AltGr+S/G/I/C` → ş ğ ı ç (`Shift` ile Ş Ğ İ Ç). Başka hiçbir tuş değişmez. Varsayılan kapalı. | [Ayarlar](#ayarlar-uygulaması) |
+| **Türkçe harfler** | `Super+S` → **Keyboard** → *Turkish letters* (yalnızca sistemin klavye düzeni Almancaysa görünür): Alman klavyede `AltGr+S/G/I/C` → ş ğ ı ç (`Shift` ile Ş Ğ İ Ç). Başka hiçbir tuş değişmez. Varsayılan kapalı. | [Ayarlar](#ayarlar-uygulaması) |
 | **Otomatik gece ışığı** | `Super+S` → Displays → **Turn on automatically**: 19:00'da açılır, 07:00'de kapanır. Varsayılan kapalı. | [Hızlı ayarlar](#hızlı-ayarlar-ve-bildirimler) |
 | **Auto açık/koyu renkler** | `Super+S` → Appearance → Wallpaper colors → **Auto**: 07:00 açık, 19:00 koyu. Varsayılan kapalı. | [Renkler](#renkler-theme-komutu) |
 | **Video PiP** | Tarayıcıdaki resim-içinde-resim videosu sağ altta küçük yüzen pencere olarak açılır. | [Hangi dosya…](#hangi-dosya-neyi-kontrol-ediyor) |
@@ -94,7 +100,7 @@ All settings. Her değişiklik anında uygulanır, "Apply" düğmesi yok. `Esc` 
 | **Appearance** | Duvar kağıdı (küçük resimlerle; *Add…* kendi resmini `wallpapers/`'a kopyalar), renkler (bir preset ya da *From wallpaper*; duvar kağıdından gelen renklerin açık/koyu hali ya da *Auto*: gündüz açık, akşam koyu), terminal saydamlığı |
 | **Displays** | Harici monitörün laptopa göre yeri (`Super+P` ile aynı, her monitör hatırlanır), gece ışığı, sıcaklığı ve **Turn on automatically** (19:00'da açılır, 07:00'de kapanır) |
 | **Touchpad** | Dokunarak tıklama, doğal kaydırma, imleç hızı |
-| **Keyboard** | **Turkish letters**: Almanca düzen aynen kalır, ek olarak `AltGr+S` → ş, `AltGr+G` → ğ, `AltGr+I` → ı, `AltGr+C` → ç; `Shift` eklersen Ş Ğ İ Ç. Hemen yanında deneme kutusu. Tuş tekrarı: bekleme süresi ve hızı. |
+| **Keyboard** | **Turkish letters** (yalnızca sistemin düzeni Almancaysa görünür; Türkçe klavyede zaten gerek yok): Almanca düzen aynen kalır, ek olarak `AltGr+S` → ş, `AltGr+G` → ğ, `AltGr+I` → ı, `AltGr+C` → ç; `Shift` eklersen Ş Ğ İ Ç. Hemen yanında deneme kutusu. Tuş tekrarı: bekleme süresi ve hızı. |
 | **Screen lock** | Kaç dakika boşta kalınca kilitlensin (ekran 30 sn sonra kapanır) |
 | **Default apps** | Hangi uygulama açsın: web bağlantıları, klasörler, metin, resim, PDF, video, müzik, arşiv, e-posta. Liste o türü açabilen kurulu uygulamalardan gelir. |
 
@@ -107,7 +113,7 @@ değiştirilebiliyor:
 | Monitörün yeri | `displays` komutu (bkz. [Ekranlar](#ekranlar)) |
 | Gece ışığı aç/kapa | `night-light` komutu |
 | Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir) |
-| Touchpad, klavye | `~/.local/state/settings/niri.kdl`. Klavye bloğu yalnızca varsayılandan farklıysa yazılır (`layout "de"` + `variant "tr"`, yani xkb'deki hazır *Turkish (Germany)* düzeni). Yalnızca niri'de geçerli; KDE ve giriş ekranı kendi ayarında kalır. `config.kdl` bunu `input.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
+| Touchpad, klavye | `~/.local/state/settings/niri.kdl`. Klavye bloğu yalnızca varsayılandan farklıysa yazılır. Klavye düzeni sistemden gelir (`localectl status`); yalnızca *Turkish letters* açıksa `layout "de"` + `variant "tr"` yazılır (xkb'deki hazır *Turkish (Germany)* düzeni, sistemdeki ek seçenekler korunur). Yalnızca niri'de geçerli; KDE ve giriş ekranı kendi ayarında kalır. `config.kdl` bunu `input.kdl` ve `local.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
 | Kilit süresi, gece ışığının sıcaklığı ve otomatiği | `~/.local/state/settings/services.env`. `swayidle.service` ve `night-light.service` okur; dosya yoksa servis dosyalarındaki varsayılanlar geçerli (5 dk, 4000 K). |
 | Varsayılan uygulamalar | `~/.config/niri-mimeapps.list`. XDG kuralı: `XDG_CURRENT_DESKTOP=niri` olan oturum bu dosyayı `mimeapps.list`'ten önce okur, KDE hiç okumaz. Yani KDE'deki seçimlerin değişmez; niri'de seçmediğin türler KDE'deki gibi kalır. Bir kategori seçilince o uygulamanın desteklediği bütün türleri yazılır (ör. Images → png, jpeg, webp…). Elle de düzenlenebilir; silersen niri yine KDE'nin seçimlerine döner. |
 
@@ -197,13 +203,28 @@ seçmek de aynı şeyi yapar. (`Super+V` niri'nin "pencereyi yüzdür" kısayolu
 
 ## Kurulum (sıfırdan)
 
+Fedora 43 için. KDE Plasma ya da GNOME kurulu olması fark etmez; niri giriş ekranına ayrı bir
+oturum olarak eklenir, mevcut masaüstün olduğu gibi kalır. **niri'ye ilk kez girmeden önce**
+kurmak en kolayı (niri ilk açılışta kendi varsayılan ayar dosyasını yazar; o zaman 4. adımda
+`--backup` gerekir).
+
 ```bash
+# 0) Repoyu indir (git yoksa: sudo dnf install git)
+git clone https://codeberg.org/ArdaFA/niri-dotfiles.git ~/dotfiles
+cd ~/dotfiles
+
 # 1) Paketler — hepsi resmi Fedora reposundan (sudo gerekir)
 sudo dnf install --setopt=install_weak_deps=False \
     niri xwayland-satellite foot stow brightnessctl playerctl \
     waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
     network-manager-applet pavucontrol blueman cargo wlsunset \
-    swappy wf-recorder slurp qalculate
+    swappy wf-recorder slurp qalculate \
+    xdg-desktop-portal-gnome xdg-desktop-portal-gtk nautilus \
+    python3-gobject python3-pillow gtk-layer-shell
+
+# 1b) Yalnızca KDE Plasma kurulu DEĞİLSE (ör. Fedora Workstation/GNOME):
+#     yönetici şifresi soran pencere için bir polkit ajanı
+sudo dnf install mate-polkit
 
 # 2) wallust — duvar kağıdından renk üretir (resmi repoda yok; crates.io'dan derlenir)
 cargo install --locked wallust          # → ~/.cargo/bin/wallust
@@ -217,21 +238,66 @@ install -D -m 644 -t ~/.local/share/fonts/DepartureMono \
     DepartureMono-1.500/DepartureMono-Regular.otf DepartureMono-1.500/LICENSE
 fc-cache -f
 
-# 4) Bağla, servisleri kaydet, temayı üret (sudo yok)
-~/dotfiles/install.sh
+# 4) Bağla, bu bilgisayarın local.kdl'sini oluştur, servisleri kaydet, temayı üret (sudo yok)
+cd ~/dotfiles
+./install.sh
+#    Aynı adda dosyaların varsa (ör. kendi ~/.config/foot/foot.ini'n ya da niri'nin
+#    varsayılan config'i) hiçbir şeyi değiştirmeden durur ve listeler. Onları
+#    ~/.local/state/dotfiles-backup/<tarih>/ altına taşıyıp devam etmek için:
+#    ./install.sh --backup
 
 # 5) Kontrol
-~/dotfiles/check.sh
+./check.sh
 ```
+
+Sonra oturumu kapat ve giriş ekranında **Niri**'yi seç (bkz. [Hızlı başlangıç](#hızlı-başlangıç)).
+İlk iş `Super+?` ile kısayol listesine, `Super+S` ile ayarlara bak.
 
 `--setopt=install_weak_deps=False` niri'nin önerdiği alacritty'nin ve Waybar'ın önerdiği
 fontawesome'un kurulmasını engeller. mako, SwayNotificationCenter kaldırılırsa devreye giren
 yedek bildirim programı (bkz. [Hızlı ayarlar ve bildirimler](#hızlı-ayarlar-ve-bildirimler)).
+xdg-desktop-portal-gnome ekran paylaşımı ve ekran görüntüsü izni için, nautilus da niri'de
+dosya seçme penceresi için gerekli (niri'nin portal ayarı onu kullanır). Zaten kurulu olanları
+dnf atlar.
 
-Fedora Workstation'da zaten gelenler: xdg-desktop-portal-gnome/-gtk, gnome-keyring, nautilus
-(dosya seçici), polkit-kde, wireplumber, wl-clipboard, libnotify, python3, python3-pillow.
+Fedora'da zaten gelenler: wireplumber, wl-clipboard, libnotify, python3, ibus, plocate.
+Polkit ajanı: KDE Plasma varsa onunki kullanılır, yoksa 1b'deki mate-polkit
+(`niri-polkit.service` kurulu olan ilkini seçer).
 
 `install.sh` tekrar tekrar çalıştırılabilir. Repo'ya yeni dosya eklediğinde de yeniden çalıştır.
+
+### Bu bilgisayara özel ayarlar (`local.kdl`)
+
+`install.sh` ilk çalıştığında `~/.config/niri/local.kdl` dosyasını oluşturur (şablonu:
+`examples/niri-local.kdl`). Bu dosya repoda değil: `git pull` ona hiç dokunmaz, bir daha
+`install.sh` çalıştırınca da üstüne yazılmaz. Kaydettiğin an niri uygular.
+
+| Ayar | Varsayılan (dosyada yazmıyorsa) | Ne zaman değiştirirsin |
+|---|---|---|
+| Laptop ekranının **ölçeği** (`scale`) | niri ekranın boyutuna ve çözünürlüğüne göre seçer | Her şey çok büyük ya da çok küçükse. Ekranın adı (`eDP-1` gibi) kurulumda bulunup yazılır. |
+| **Klavye düzeni** | Sistemin düzeni (`localectl status` → X11 Layout), yani giriş ekranındakiyle aynı | niri'de başka bir düzen istersen (ör. Türkçe F) |
+| **İmleç teması** | Sistemin varsayılanı (Fedora'da Adwaita) | Başka bir imleç teması kurduysan |
+
+Harici monitörün **yeri** buraya yazılmaz, `Super+P` ile seçilir (bkz. [Ekranlar](#ekranlar)).
+
+**Klavyeye göre değişen kısayollar.** niri kısayolu tuşun Shift'siz karakterine göre tanır.
+Kısayol listesi: Almanca `Super+Shift+ß`, Türkçe Q `Super+Shift+*`, ABD `Super+Shift+/`.
+Sütun genişliği `Super+-` / `Super++` (ABD'de `+` yerine `=`; Türkçe Q'da `+` ayrı bir tuş
+olmadığı için genişletmek için `Super+R` ya da `Super` + sağ tıkla sürükle). Geri kalanlar harf,
+rakam ve ok tuşları; her düzende aynı.
+
+**Duvar kağıdı** repoda yok: `Super+S` → Appearance → **Add…** ile kendi resmini ekle.
+O zamana kadar arka plan temanın düz rengi.
+
+### Güncellemek
+
+```bash
+cd ~/dotfiles && git pull && ./install.sh
+```
+
+Değişiklik yapmak istersen bilgisayarına özel olanları `local.kdl`'ye yaz; ona `git pull`
+dokunmaz. Repodaki dosyaları değiştirirsen `git pull` çakışabilir. O zaman Codeberg'de reponun
+bir kopyasını (**Fork**) alıp kendi kopyanda çalışmak daha rahat.
 
 ---
 
@@ -245,8 +311,8 @@ Repo'daki her üst klasör bir **stow paketidir**: içindeki yol `~` altına ayn
 | Dosya | Ne yapar |
 |---|---|
 | `niri/.config/niri/config.kdl` | Ana dosya: diğerlerini sırayla dahil eder, imleç, ekran görüntüsü yolu, ortam değişkenleri |
-| `niri/.config/niri/input.kdl` | Klavye düzeni (`de`), touchpad (dokunarak tıklama, yazarken kapanma), odağın fareyi takip etmesi, sürüklerken kenarda kaymama, sol üst köşe |
-| `niri/.config/niri/outputs.kdl` | Ekranlar: ölçek, konum, harici monitör |
+| `niri/.config/niri/input.kdl` | Klavye (düzen sistemden gelir), touchpad (dokunarak tıklama, yazarken kapanma), odağın fareyi takip etmesi, sürüklerken kenarda kaymama, sol üst köşe |
+| `~/.config/niri/local.kdl` (repoda değil) | Bu bilgisayara özel: laptop ekranının ölçeği ve konumu, klavye düzeni, imleç teması. Şablonu `examples/niri-local.kdl`, bkz. [local.kdl](#bu-bilgisayara-özel-ayarlar-localkdl) |
 | `niri/.config/niri/layout.kdl` | Boşluklar, sütun genişlikleri, odak halkası kalınlığı, gölge, yedek renkler |
 | `niri/.config/niri/binds.kdl` | Bütün kısayollar |
 | `niri/.config/niri/rules.kdl` | Pencere kuralları: yuvarlak köşeler, yüzen pencerelere gölge, hangi pencereler yüzen açılır, video PiP sağ altta, ekran paylaşırken gizlenenler |
@@ -280,7 +346,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 
 | Dosya | Ne yapar |
 |---|---|
-| `systemd/.config/systemd/user/niri-polkit.service` | KDE'nin polkit (yönetici şifresi) penceresi, yalnızca niri'de |
+| `systemd/.config/systemd/user/niri-polkit.service` | Polkit (yönetici şifresi) penceresi, yalnızca niri'de: KDE'ninki, yoksa mate-polkit, xfce-polkit ya da lxpolkit |
 | `systemd/.config/systemd/user/theme-apply.service` | Oturum açılışında kayıtlı temayı uygular |
 | `systemd/.config/systemd/user/swaybg.service` | Duvar kağıdı |
 | `systemd/.config/systemd/user/swayidle.service` | Boşta kalınca kilit ve ekran kapatma (süre: Settings → Screen lock) |
@@ -313,15 +379,19 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `systemd/.config/systemd/user/night-light.service` | Gece ışığı: wlsunset ile sıcak ekran rengi. Oturum açılışında kendiliğinden başlamaz. |
 | `systemd/.config/systemd/user/night-light-auto.timer`, `night-light-auto.service` | Otomatik gece ışığı: 19:00'da açar, 07:00'de kapatır, oturum açılışında saate göre ayarlar. Otomatik kapalıyken hiçbir şey yapmaz. |
 | `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
-| `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)) |
+| `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)). Yalnızca KWallet kullanılıyorsa kopyalanır. |
 | `wallpapers/` | Duvar kağıtların. İçindekiler git'e girmez (bkz. [Duvar kağıdı](#duvar-kağıdı)). |
-| `install.sh` | Bağlar, servisleri kaydeder, temayı üretir. `uninstall` ile geri alır. |
+| `install.sh` | Bağlar, `local.kdl`'yi (yoksa) oluşturur, servisleri kaydeder, temayı üretir. `--backup`: aynı adda dosyaları önce yedeğe taşır. `uninstall` ile geri alır. |
+| `examples/niri-local.kdl` | `~/.config/niri/local.kdl`'nin şablonu (install.sh yalnızca dosya yoksa kullanır) |
 | `check.sh` | Bütün config'leri programları çalıştırmadan doğrular |
+| `LICENSE` | MIT lisansı |
 
 ### Repo dışında kalanlar (üretilen ya da kopyalanan)
 
 | Yol | Nedir |
 |---|---|
+| `~/.config/niri/local.kdl` | Bu bilgisayara özel niri ayarları; `install.sh` bir kez oluşturur, sonra senin |
+| `~/.local/state/dotfiles-backup/` | `install.sh --backup`'ın taşıdığı eski dosyalar (tarihli klasörler) |
 | `~/.local/state/theme/` | `theme` komutunun ürettiği renk dosyaları, kayıtlı seçim, duvar kağıdı bağlantısı |
 | `~/.local/state/displays/` | `displays` komutunun hatırladığı monitör yerleri (`state.json`) ve niri'nin okuduğu `niri.kdl` |
 | `~/.local/state/settings/` | Ayarlar uygulamasının yazdıkları: touchpad ve klavye (`niri.kdl`), kilit süresi ve gece ışığı (`services.env`) |
@@ -602,7 +672,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 - **Mod** = Super (Windows tuşu). KDE içinde pencere olarak açıkken Mod = Alt.
 - Kalıp: **Ctrl** = taşı, **Shift** = monitör ya da dikey, **Shift+Ctrl** = monitöre taşı.
 - Almanca klavyede AltGr isteyen `[ ] / =` tuşları bilerek kullanılmadı.
-- Ekranda liste: `Super+Shift+ß` (Super+?). Listedeki açıklamalar İngilizce; `binds.kdl`'de
+- Ekranda liste: `Super+?` (Almanca `Super+Shift+ß`, Türkçe Q `Super+Shift+*`, ABD `Super+Shift+/`). Listedeki açıklamalar İngilizce; `binds.kdl`'de
   `hotkey-overlay-title="…"` ile yazılıyor.
 
 ### Genel
@@ -617,7 +687,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 | `Alt+Tab` / `Alt+Shift+Tab` | Son kullanılan pencereler arasında geçiş (niri). Seçili pencerenin vurgusu temanın rengini alır. `` Alt+` `` aynı uygulamanın pencereleri. |
 | `Super+Q` | Pencereyi kapat |
 | `Super+O` | Genel bakış (overview). Sol üst köşeye fareyle gitmek de açar. |
-| `Super+Shift+ß` | Kısayol listesi |
+| `Super+?` | Kısayol listesi (Almanca `Super+Shift+ß`, Türkçe Q `Super+Shift+*`, ABD `Super+Shift+/`) |
 | `Super+Alt+L` | Ekranı kilitle |
 | `Super+Shift+P` | Ekranları kapat (fare/klavye ile açılır) |
 | `Super+P` | Harici monitör laptopun neresinde: üstte, altta, solda, sağda (bkz. [Ekranlar](#ekranlar)) |
@@ -1075,9 +1145,12 @@ Terminalin zemini yarı saydamdır. Arkada duvar kağıdı bulanık görünür, 
 
 ## Ekranlar
 
-Dosya: `niri/.config/niri/outputs.kdl`. Bağlı ekranları görmek için: `niri msg outputs`.
+Dosya: `~/.config/niri/local.kdl` (bu bilgisayara özel, repoda değil; bkz.
+[local.kdl](#bu-bilgisayara-özel-ayarlar-localkdl)). Bağlı ekranları görmek için: `niri msg outputs`.
 
-- **Laptop ekranı (`eDP-1`):** Ölçek **2**, mantıksal 1600×900. Daha fazla alan için `scale 1.85` yaz (KDE'deki değer); piksel font o zaman biraz yumuşar.
+- **Laptop ekranı (`eDP-1`):** Konumu (0,0). Ölçek yazılı değilse niri ekranın boyutuna göre
+  seçer. Bu bilgisayarda ölçek **2**, mantıksal 1600×900. Daha fazla alan için `scale 1.85` yaz
+  (KDE'deki değer); piksel font o zaman biraz yumuşar.
 - **Harici monitörün yeri:** Settings → Displays (`Super+S`) ya da `Super+P` ile açılan menü:
   *Above / Below / Left of / Right of the laptop* ve *Automatic (right)*. Seçtiğin anda uygulanır.
   - **Her monitör kendi yerini hatırlar.** niri monitörleri marka, model ve seri numarasıyla
@@ -1101,7 +1174,7 @@ Dosya: `niri/.config/niri/outputs.kdl`. Bağlı ekranları görmek için: `niri 
   servis sütunları ekrana sığdırır; FREE modunda ya da servis kapalıyken şerit niri'nin
   bildiği gibi çalışır. Gezinmek için `Super+H/L`, `Super+Home/End` ya da `Super+O` (genel bakış). Pencere sürüklerken ekran kenarında görünümün kayması kapalı
   (`input.kdl` → `dnd-edge-view-scroll`, `trigger-width 0`). niri varsayılanına dönmek için o bloğu sil.
-- **Belirli bir monitöre özel ayar** (ör. 120 Hz modu): `outputs.kdl`'ye `niri msg outputs` çıktısındaki marka-model-seri adıyla ekle:
+- **Belirli bir monitöre özel ayar** (ör. 120 Hz modu): `local.kdl`'ye `niri msg outputs` çıktısındaki marka-model-seri adıyla ekle:
 
   ```kdl
   output "Dell Inc. DELL XXXX ABC123" {
@@ -1113,8 +1186,9 @@ Dosya: `niri/.config/niri/outputs.kdl`. Bağlı ekranları görmek için: `niri 
   Dikkat: yerini `displays` ile ayarladığın bir monitörü buraya da yazarsan niri iki bloğu
   birleştirmez, yalnızca birini kullanır; o monitörün ya konumu ya modu kaybolur.
 
-Touchpad (dokunarak tıklama, doğal kaydırma, imleç hızı): Settings → Touchpad. Klavye düzeni ve
-touchpad'in varsayılanları: `niri/.config/niri/input.kdl`.
+Touchpad (dokunarak tıklama, doğal kaydırma, imleç hızı): Settings → Touchpad. Touchpad'in
+varsayılanları: `niri/.config/niri/input.kdl`. Klavye düzeni sistemden gelir; başka bir düzen
+için `local.kdl`.
 
 ---
 
@@ -1193,12 +1267,16 @@ git revert <commit>             # bir commit'i geri alan yeni commit
 Aşamalar ayrı commit'ler hâlinde duruyor. Örneğin `git log --oneline` ile Aşama 3'ün
 commit'ini bulup o andaki dosyayı görebilirsin: `git show <commit>:niri/.config/niri/binds.kdl`.
 
-**6. niri oturumu hiç açılmıyor:** GDM'de ⚙️ → **Plasma** ile KDE'ye gir; KDE bundan etkilenmez.
-Sonra Konsole'da `~/dotfiles/check.sh` ve `journalctl --user -b -1 -u niri` (bir önceki açılışın
+**6. niri oturumu hiç açılmıyor:** Giriş ekranında **Plasma**'yı (ya da **GNOME**'u) seçip eski
+masaüstüne gir; o bundan etkilenmez. Sonra terminalde `~/dotfiles/check.sh` ve `journalctl --user -b -1 -u niri` (bir önceki açılışın
 günlüğü). Grafik arayüz hiç gelmezse `Ctrl+Alt+F3` ile metin konsoluna geçebilirsin.
 
 **7. Brave'de oturumlar kapanmış:** `~/.var/app/com.brave.Browser/config/brave-flags.conf`
-dosyasında `--password-store=kwallet6` olmalı. `./install.sh` bu dosyayı yeniden yazar.
+dosyasında `--password-store=kwallet6` olmalı. `./install.sh` bu dosyayı yeniden yazar
+(yalnızca KWallet kullanılıyorsa; GNOME'da Brave zaten gnome-keyring'i kullanır).
+
+**8. Her şey çok büyük ya da çok küçük, klavye yanlış:** `~/.config/niri/local.kdl`
+(bkz. [local.kdl](#bu-bilgisayara-özel-ayarlar-localkdl)).
 
 ---
 
@@ -1210,6 +1288,10 @@ Plasma oturumundayken yap.
 # 1) Bağlantılar, niri servis kayıtları, autostart girdileri, üretilmiş tema dosyaları,
 #    Brave flags kopyası (yalnızca bizimkiyse)
 ~/dotfiles/install.sh uninstall
+#    Senin dosyaların silinmez: bu bilgisayara özel ayarlar ve (varsa) kurulumda yedeğe
+#    taşınanlar. İstersen:
+rm -f ~/.config/niri/local.kdl
+ls ~/.local/state/dotfiles-backup/     # eski dosyaların; geri koymak istersen buradan
 
 # 2) wallust ve önbelleği
 cargo uninstall wallust
@@ -1222,13 +1304,14 @@ rm -rf ~/.local/share/fonts/DepartureMono && fc-cache -f
 sudo dnf remove niri xwayland-satellite foot stow brightnessctl playerctl \
     waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
     network-manager-applet pavucontrol blueman qalculate
+#    (1b'de kurduysan: mate-polkit; portal ve python paketlerini başka programlar da kullanır)
 
 # 5) Repo
 rm -rf ~/dotfiles
 ```
 
-niri paketi kaldırılınca GDM'deki **Niri** oturumu da kaybolur. KDE, GDM ve zsh ayarları
-baştan beri değiştirilmediği için geri alınacak başka bir şey yok.
+niri paketi kaldırılınca giriş ekranındaki **Niri** oturumu da kaybolur. KDE/GNOME, giriş
+ekranı ve kabuk ayarları baştan beri değiştirilmediği için geri alınacak başka bir şey yok.
 
 ---
 
@@ -1261,3 +1344,6 @@ baştan beri değiştirilmediği için geri alınacak başka bir şey yok.
   İkinci bir `gestures` bloğu açma, aynı dosyada mevcut olanı kullan.
 - **Güç tuşu** niri'de bilgisayarı kapatmaz, uyutur (niri varsayılanı).
 - niri belgeleri: <https://github.com/niri-wm/niri/wiki>.
+- **Lisans:** [MIT](LICENSE). Renk presetleri adlarını taşıdıkları açık kaynak temalardan
+  (Catppuccin, Rosé Pine, Gruvbox, Nord, Tokyo Night, Kanagawa, Everforest) alınan renklerle
+  yazıldı; Departure Mono fontu SIL OFL 1.1 ile ayrı indirilir, repoda yok.
