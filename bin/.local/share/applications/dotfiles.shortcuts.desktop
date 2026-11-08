@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Shortcuts
+GenericName=Keyboard shortcuts
+Comment=Every keyboard shortcut of this desktop, searchable
+# ~/.local/bin niri'nin PATH'inde yok: yol kabukla çözülür. KDE'nin kendi kısayol ayarları var, orada gizli.
+# Keywords: aramada Türkçe kelimelerle de bulunsun (kısayollar, tuşlar…).
+Exec=sh -c "\\$HOME/.local/bin/shortcuts"
+Icon=preferences-desktop-keyboard-shortcuts
+Categories=Settings;
+Keywords=keys;keyboard;hotkeys;keybindings;cheat sheet;help;kısayollar;kısayol;tuşlar;klavye;
+NotShowIn=KDE;
+StartupNotify=false

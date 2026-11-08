@@ -182,6 +182,7 @@ check "bar status rules"  python3 -I "$DOTFILES/bin/.local/bin/bar-status" selft
 check "media popup rules" python3 -I "$DOTFILES/bin/.local/bin/media-popup" selftest
 check "monitor placement" python3 -I "$DOTFILES/bin/.local/bin/displays" selftest
 check "settings files"    python3 -I "$DOTFILES/bin/.local/bin/settings" selftest
+check "shortcuts list"    python3 -I "$DOTFILES/bin/.local/bin/shortcuts" selftest
 check "launcher search"   python3 -I "$DOTFILES/bin/.local/bin/launcher" selftest
 check "clipboard history" python3 -I "$DOTFILES/bin/.local/bin/clipboard" selftest
 check "device notify"     python3 -I "$DOTFILES/bin/.local/bin/device-notify" selftest

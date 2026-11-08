@@ -1,0 +1,615 @@
+#!/usr/bin/env python3
+"""shortcuts — every keyboard shortcut of this niri desktop in one searchable window.
+
+  shortcuts            open the window (Alt+Space → "Shortcuts")
+  shortcuts list       print the same list in the terminal
+  shortcuts selftest   check the binds.kdl reader (check.sh)
+
+The list is read from niri's binds.kdl (and binds in local.kdl), so it is always up to date.
+"""
+# Not: Ekranda görünen metinler İngilizce; yorumlar Türkçe.
+#
+# Liste elle yazılmıyor, ~/.config/niri/binds.kdl'den okunuyor: yeni bir kısayol eklenince
+# kendiliğinden görünür. Açıklama sırası: kısayolun hotkey-overlay-title'ı → ACTIONS (niri
+# eylemleri) → COMMANDS (başlatılan komutlar) → eylemin adından üretilen metin. Aynı işi yapan
+# kısayollar tek satırda birleşir (Super+Left / Super+H), Super+1…9 gibi rakamlar da tek satır.
+# niri'nin Super+? listesi yalnızca başlık verilmiş kısayolları gösterir; burada hepsi var.
+
+import os
+import re
+import shlex
+import sys
+import unicodedata
+from pathlib import Path
+
+HOME = Path.home()
+NIRI_DIR = HOME / ".config" / "niri"                  # install.sh stow'u hep ~/.config'e bağlar
+REPO = Path(__file__).resolve().parents[3]            # ~/dotfiles
+STATE_HOME = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local" / "state")
+THEME_STATE = STATE_HOME / "theme"
+APP_ID = "dotfiles.shortcuts"
+RANGE = "1–9"                                         # Super+1…9 gibi satırlarda
+
+
+def binds_files():
+    """(dosya, bölüm adı ya da None) — binds.kdl'nin kendi bölümleri var, local.kdl'ninki tek."""
+    main = NIRI_DIR / "binds.kdl"
+    if not main.exists():
+        main = REPO / "niri" / ".config" / "niri" / "binds.kdl"
+    return ((main, None), (NIRI_DIR / "local.kdl", "This computer"))
+
+
+# ── binds.kdl okuma ───────────────────────────────────────────────────────
+
+SECTION_RE = re.compile(r"^\s*//\s*──\s*(.+?)\s*─")
+BIND_RE = re.compile(r"^\s*([A-Za-z0-9_]+(?:\+[A-Za-z0-9_]+)*)\s+(.*?)\{(.*)\}\s*(?://.*)?$")
+PROP_RE = re.compile(r'([a-z-]+)=("(?:[^"\\]|\\.)*"|[^\s{]+)')
+BINDS_START_RE = re.compile(r"^\s*binds\s*\{\s*$")
+
+# binds.kdl'deki Türkçe bölüm başlıkları → ekranda görünen ad (başlangıcına göre eşleşir).
+SECTIONS = (
+    ("Genel", "General"),
+    ("Odak", "Focus"),
+    ("Taşı", "Move windows"),
+    ("Monitörler", "Monitors"),
+    ("Workspace", "Workspaces"),
+    ("Fare tekerleği", "Mouse wheel"),
+    ("Sütun ve pencere boyutu", "Size and layout"),
+    ("Ekran görüntüsü", "Screenshots"),
+    ("Ekran kaydı", "Screen recording"),
+    ("Bildirimler", "Notifications and quick settings"),
+    ("Ses, medya", "Volume, media, brightness"),
+)
+BUILT_IN = "Built into niri"
+# niri'nin kendi bildiği, binds.kdl'de olmayanlar.
+BUILT_IN_ROWS = (
+    (("Alt+Tab", "Alt+Shift+Tab"), "Switch between recent windows"),
+    (("Alt+`",), "Recent windows of the same app"),
+    (("Super + left drag",), "Move a window (also to another monitor or workspace)"),
+    (("Super + right drag",), "Resize a window"),
+    (("Top-left corner",), "Overview (move the mouse there)"),
+)
+
+
+def section_name(raw):
+    for prefix, name in SECTIONS:
+        if raw.startswith(prefix):
+            return name
+    return re.sub(r"\s*\(.*\)$", "", raw)
+
+
+def first_action(body):
+    """'spawn-sh "a; b"; close-window;' → ("spawn-sh", ["a; b"])"""
+    lex = shlex.shlex(body, posix=True, punctuation_chars=";")
+    lex.whitespace_split = True
+    words = []
+    for token in lex:
+        if token == ";":
+            if words:
+                break
+            continue
+        words.append(token)
+    return (words[0], words[1:]) if words else ("", [])
+
+
+def parse(text, fixed_section=None):
+    """→ [{key, title, action, args, section}]; title: str, None (yok) ya da False (=null)."""
+    binds, section, inside = [], fixed_section or "General", False
+    for line in text.splitlines():
+        if not inside:
+            inside = bool(BINDS_START_RE.match(line))
+            continue
+        if re.match(r"^\}\s*$", line):
+            inside = False
+            continue
+        m = SECTION_RE.match(line)
+        if m and not fixed_section:
+            section = section_name(m.group(1))
+            continue
+        if line.lstrip().startswith("//"):
+            continue
+        m = BIND_RE.match(line)
+        if not m:
+            continue
+        props = dict(PROP_RE.findall(m.group(2)))
+        title = props.get("hotkey-overlay-title")
+        if title == "null":
+            title = False
+        elif title is not None:
+            title = shlex.split(title)[0] if title.startswith('"') else title
+        action, args = first_action(m.group(3))
+        binds.append({"key": m.group(1), "title": title, "action": action,
+                      "args": args, "section": section})
+    return binds
+
+
+def read_binds():
+    binds = []
+    for path, section in binds_files():
+        try:
+            binds += parse(path.read_text(encoding="utf-8"), section)
+        except OSError:
+            pass
+    # Aynı tuş sonradan yeniden tanımlandıysa (local.kdl) niri sonuncuyu kullanır.
+    last = {b["key"]: b for b in binds}
+    return [b for b in binds if last[b["key"]] is b]
+
+
+# ── Açıklamalar ───────────────────────────────────────────────────────────
+
+def _directions(fmt):
+    return {d: fmt.format(d=d, where={"left": "on the left", "right": "on the right",
+                                      "up": "above", "down": "below"}[d])
+            for d in ("left", "right", "up", "down")}
+
+
+ACTIONS = {
+    "show-hotkey-overlay": "Show niri's short list of shortcuts",
+    "focus-column-first": "Focus the first window",
+    "focus-column-last": "Focus the last window",
+    "move-window-up": "Move the window up in its column",
+    "move-window-down": "Move the window down in its column",
+    "move-column-to-first": "Move the window to the start",
+    "move-column-to-last": "Move the window to the end",
+    "focus-workspace-down": "Next workspace (below)",
+    "focus-workspace-up": "Previous workspace (above)",
+    "move-column-to-workspace-down": "Move the window to the workspace below",
+    "move-column-to-workspace-up": "Move the window to the workspace above",
+    "move-workspace-down": "Move the whole workspace down",
+    "move-workspace-up": "Move the whole workspace up",
+    "focus-workspace-previous": "Back to the previous workspace",
+    "focus-workspace": "Go to workspace {}",
+    "move-column-to-workspace": "Move the window to workspace {}",
+    "consume-or-expel-window-left": "Stack the window into the column on the left (or take it out)",
+    "consume-or-expel-window-right": "Stack the window into the column on the right (or take it out)",
+    "switch-preset-window-height": "Window height: 1/3 · 1/2 · 2/3",
+    "reset-window-height": "Reset the window height",
+    "expand-column-to-available-width": "Fill the free width",
+    "center-column": "Center the window",
+    "center-visible-columns": "Center all visible windows",
+    "switch-focus-between-floating-and-tiling": "Switch focus between floating and tiled windows",
+    "screenshot": "Screenshot (select area)",
+    "screenshot-screen": "Screenshot of the whole screen",
+    "screenshot-window": "Screenshot of the focused window",
+    "toggle-keyboard-shortcuts-inhibit": "Take the shortcuts back from an app (e.g. a virtual machine)",
+    **{f"focus-column-{d}": t for d, t in _directions("Focus the window {where}").items()},
+    **{f"focus-column-or-monitor-{d}": t
+       for d, t in _directions("Focus the window {where} (at the edge: the next monitor)").items()},
+    **{f"focus-window-{d}": t for d, t in _directions("Focus the window {where}").items()},
+    **{f"focus-monitor-{d}": t for d, t in _directions("Focus the monitor {where}").items()},
+    **{f"move-column-to-monitor-{d}": t
+       for d, t in _directions("Move the window to the monitor {where}").items()},
+}
+SIZES = {("set-column-width", "-10%"): "Narrower window (-10%)",
+         ("set-column-width", "+10%"): "Wider window (+10%)",
+         ("set-window-height", "-10%"): "Shorter window (-10%)",
+         ("set-window-height", "+10%"): "Taller window (+10%)"}
+# Başlatılan komutun içinde geçen metin → açıklama.
+COMMANDS = (
+    ("osd volume up", "Volume up"),
+    ("osd volume down", "Volume down"),
+    ("osd volume mute", "Mute"),
+    ("osd mic mute", "Mute the microphone"),
+    ("osd brightness up", "Brighter screen"),
+    ("osd brightness down", "Darker screen"),
+    ("playerctl play-pause", "Play / pause"),
+    ("playerctl next", "Next track"),
+    ("playerctl previous", "Previous track"),
+)
+# Ekranda yazmayan arama kelimeleri: "desktop" ya da "masaüstü" yazınca workspace'ler de çıksın.
+SYNONYMS = {
+    "workspace": "desktop masaustu calisma alani",
+    "monitor": "screen display ekran",
+    "window": "pencere app",
+    "screenshot": "ekran goruntusu capture",
+    "record": "kayit video",
+    "volume": "ses sound audio",
+    "brightness": "parlaklik",
+    "notification": "bildirim",
+    "close": "kapat quit",
+    "move": "tasi",
+    "focus": "odak git switch",
+    "lock": "kilit",
+    "search": "ara arama launcher",
+    "settings": "ayarlar",
+    "theme": "tema renk color",
+    "clipboard": "pano copy paste",
+    "media": "muzik music",
+    "fullscreen": "tam ekran",
+    "height": "boy yukseklik size",
+    "width": "genislik size",
+}
+
+
+def describe(action, args, title):
+    """→ (açıklama, yedek mi). Yedek = hiçbir listede yok, eylemin adından üretildi."""
+    if action == "show-hotkey-overlay":
+        return ACTIONS[action], False          # niri'deki başlığı ("Show this list") burada yanıltır
+    if title:
+        return title, False
+    if (action, *args) in SIZES:
+        return SIZES[(action, *args)], False
+    if action in ACTIONS:
+        return ACTIONS[action].replace("{}", RANGE if args == ["#"] else " ".join(args)), False
+    if action in ("spawn", "spawn-sh"):
+        cmd = " ".join(args)
+        for needle, text in COMMANDS:
+            if needle in cmd:
+                return text, False
+        return "Run: " + cmd.replace("~/.local/bin/", ""), True
+    words = action.replace("-", " ").capitalize()
+    return (f"{words} {' '.join(args)}" if args else words), True
+
+
+KEY_NAMES = {
+    "Mod": "Super", "Ctrl": "Ctrl", "Shift": "Shift", "Alt": "Alt", "Super": "Super",
+    "Return": "Enter", "Escape": "Esc", "Space": "Space", "Tab": "Tab", "Print": "Print",
+    "Home": "Home", "End": "End", "Page_Down": "PgDn", "Page_Up": "PgUp",
+    "Left": "Left", "Right": "Right", "Up": "Up", "Down": "Down",
+    "ssharp": "ß", "Slash": "/", "Asterisk": "*", "Plus": "+", "Minus": "-", "Equal": "=",
+    "Comma": ",", "Period": ".", "grave": "`",
+    "WheelScrollDown": "Wheel down", "WheelScrollUp": "Wheel up",
+    "WheelScrollLeft": "Wheel left", "WheelScrollRight": "Wheel right",
+    "XF86AudioRaiseVolume": "Volume up key", "XF86AudioLowerVolume": "Volume down key",
+    "XF86AudioMute": "Mute key", "XF86AudioMicMute": "Mic mute key",
+    "XF86MonBrightnessUp": "Brightness up key", "XF86MonBrightnessDown": "Brightness down key",
+    "XF86AudioPlay": "Play key", "XF86AudioPause": "Pause key",
+    "XF86AudioNext": "Next key", "XF86AudioPrev": "Previous key",
+    "#": RANGE,
+}
+
+
+def key_parts(key):
+    """'Mod+Shift+ssharp' → ['Super', 'Shift', 'ß']"""
+    return [KEY_NAMES.get(p, p) for p in key.split("+")]
+
+
+def key_text(key):
+    return "+".join(key_parts(key))
+
+
+def fold(text):
+    """Büyük/küçük harf ve aksan farkını siler: 'Masaüstü TAŞI' → 'masaustu tasi'."""
+    text = (text or "").casefold().replace("ı", "i")
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+
+
+def build(binds):
+    """→ [(bölüm, [satır])]; satır: {keys, text, search, fallback}. Dosyadaki sıra korunur."""
+    groups, order = {}, []
+    for b in binds:
+        key, args = b["key"], list(b["args"])
+        parts = key.split("+")
+        # Super+1…9 → focus-workspace N: rakam tuşu eylemin argümanıysa tek satıra topla.
+        if parts[-1].isdigit() and args == [parts[-1]]:
+            key, args = "+".join(parts[:-1] + ["#"]), ["#"]
+        gid = (b["section"], b["action"], tuple(args))
+        g = groups.get(gid)
+        if g is None:
+            g = groups[gid] = {"section": b["section"], "action": b["action"], "args": args,
+                               "keys": [], "title": None}
+            order.append(gid)
+        if key not in g["keys"]:
+            g["keys"].append(key)
+        if b["title"] and not g["title"]:
+            g["title"] = b["title"]
+
+    sections = {}
+    for gid in order:
+        g = groups[gid]
+        text, fallback = describe(g["action"], g["args"], g["title"])
+        keys = [key_parts(k) for k in g["keys"]]
+        words = fold(" ".join([g["section"], text] + ["+".join(k) for k in keys] + g["keys"]))
+        extra = " ".join(v for k, v in SYNONYMS.items() if k in words)
+        sections.setdefault(g["section"], []).append(
+            {"keys": keys, "text": text, "search": f"{words} {extra}", "fallback": fallback})
+
+    built_in = [{"keys": [k.split("+") if "+" in k and " " not in k else [k] for k in ks],
+                 "text": text, "fallback": False,
+                 "search": fold(f"{BUILT_IN} {text} {' '.join(ks)}")} for ks, text in BUILT_IN_ROWS]
+    for row in built_in:
+        row["search"] += " " + " ".join(v for k, v in SYNONYMS.items() if k in row["search"])
+    result = list(sections.items())
+    # niri'nin kendi kısayolları "General"ın hemen ardından.
+    at = 1 if result and result[0][0] == "General" else 0
+    result.insert(at, (BUILT_IN, built_in))
+    return result
+
+
+def matches(row, query):
+    return all(w in row["search"] for w in fold(query).split())
+
+
+# ── Terminal ──────────────────────────────────────────────────────────────
+
+def print_list():
+    for section, rows in build(read_binds()):
+        print(f"\n{section}")
+        for row in rows:
+            keys = " / ".join("+".join(k) for k in row["keys"])
+            print(f"  {keys:<34} {row['text']}")
+
+
+# ── Pencere ───────────────────────────────────────────────────────────────
+
+FALLBACK_COLORS = b"""
+@define-color panel_bg #1d1a21;
+@define-color panel_surface #26222b;
+@define-color panel_overlay #332d39;
+@define-color panel_fg #ede4ea;
+@define-color panel_muted #6f6577;
+@define-color panel_subtle #a397a8;
+@define-color panel_accent #f4a7b9;
+"""
+
+CSS = b"""
+.shortcuts, .shortcuts * { font-family: "Departure Mono", monospace; font-size: 11px; }
+.shortcuts { background-color: @panel_bg; color: @panel_fg; }
+.shortcuts label { color: inherit; text-shadow: none; }
+.shortcuts .title { color: @panel_accent; font-size: 22px; }
+.shortcuts .hint { color: @panel_muted; }
+.shortcuts .heading { color: @panel_accent; margin-top: 18px; margin-bottom: 2px; }
+.shortcuts .row { padding: 6px 0; border-bottom: 1px solid alpha(@panel_overlay, 0.7); }
+.shortcuts .key {
+    background-color: @panel_surface; color: @panel_fg; border: 1px solid @panel_overlay;
+    border-bottom-width: 2px; border-radius: 5px; padding: 1px 7px; min-width: 10px;
+}
+.shortcuts .or { color: @panel_muted; }
+.shortcuts .empty { color: @panel_muted; margin-top: 24px; }
+.shortcuts entry {
+    background-color: @panel_surface; color: @panel_fg; background-image: none;
+    border: 1px solid @panel_overlay; border-radius: 8px; padding: 6px 10px;
+    box-shadow: none; caret-color: @panel_accent;
+}
+.shortcuts entry:focus { border-color: @panel_accent; }
+.shortcuts entry selection { background-color: @panel_accent; color: @panel_bg; }
+.shortcuts entry image { color: @panel_muted; }
+.shortcuts scrollbar { background: transparent; border: none; }
+.shortcuts scrollbar slider { background-color: @panel_overlay; border: none; border-radius: 4px; min-width: 6px; }
+.shortcuts undershoot, .shortcuts overshoot { background: none; }
+"""
+
+
+def theme_css():
+    try:
+        colors = (THEME_STATE / "panel.css").read_bytes()
+    except OSError:
+        colors = FALLBACK_COLORS
+    if b"panel_subtle" not in colors:             # eski panel.css: theme apply çalışmadan önce
+        colors += b"@define-color panel_subtle @panel_muted;\n"
+    return colors + CSS
+
+
+def gui():
+    import gi
+    gi.require_version("Gtk", "3.0")
+    gi.require_version("Gdk", "3.0")
+    from gi.repository import GLib
+    # GTK3 Wayland'de app_id program adıdır; niri'nin yüzen pencere kuralı bununla eşleşir.
+    GLib.set_prgname(APP_ID)
+    from gi.repository import Gdk, Gio, Gtk
+
+    def label(text, cls=None, **kw):
+        w = Gtk.Label(label=text, **{"xalign": 0, **kw})
+        if cls:
+            w.get_style_context().add_class(cls)
+        return w
+
+    class Window(Gtk.ApplicationWindow):
+        def __init__(self, app):
+            super().__init__(application=app, title="Shortcuts")
+            self.app = app
+            self.set_default_size(700, 660)
+            self.get_style_context().add_class("shortcuts")
+            self.stamp = None
+            self.sections = []                 # [(başlık, [(satır, widget)])]
+
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=20,
+                          margin_start=26, margin_end=26)
+            box.add(label("Shortcuts", "title"))
+            box.add(label("Super is the Windows key. Type to search, Esc closes.", "hint"))
+            self.search = Gtk.SearchEntry(placeholder_text="e.g. workspace, screenshot, monitor",
+                                          margin_top=8)
+            self.search.connect("search-changed", lambda *_: self.filter())
+            box.add(self.search)
+
+            self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_bottom=22,
+                                margin_end=8)
+            scroller = Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER,
+                                          margin_top=4)
+            scroller.add(self.list)
+            outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            outer.add(box)
+            scroller.set_margin_start(26)
+            scroller.set_margin_end(18)
+            outer.pack_start(scroller, True, True, 0)
+            self.add(outer)
+
+            self.connect("key-press-event", self.on_key)
+            self.connect("focus-in-event", self.on_focus)
+            self.rebuild()
+
+        def files_stamp(self):
+            stamp = []
+            for path, _ in binds_files():
+                try:
+                    stamp.append(path.stat().st_mtime_ns)
+                except OSError:
+                    stamp.append(None)
+            return stamp
+
+        def rebuild(self):
+            self.stamp = self.files_stamp()
+            for child in self.list.get_children():
+                child.destroy()
+            self.sections = []
+            for section, rows in build(read_binds()):
+                heading = label(section, "heading")
+                self.list.add(heading)
+                widgets = []
+                for row in rows:
+                    w = self.row_widget(row)
+                    self.list.add(w)
+                    widgets.append((row, w))
+                self.sections.append((heading, widgets))
+            self.empty = label("No shortcut matches.", "empty")
+            self.empty.set_no_show_all(True)
+            self.list.add(self.empty)
+            self.list.show_all()
+            self.filter()
+
+        def row_widget(self, row):
+            box = Gtk.Box(spacing=18)
+            box.get_style_context().add_class("row")
+            box.pack_start(label(row["text"], wrap=True, max_width_chars=40), True, True, 0)
+            keys = Gtk.Box(spacing=4, valign=Gtk.Align.CENTER)
+            for i, combo in enumerate(row["keys"]):
+                if i:
+                    keys.add(label("or", "or", margin_start=4, margin_end=4))
+                for part in combo:
+                    keys.add(label(part, "key", xalign=0.5))
+            box.pack_end(keys, False, False, 0)
+            return box
+
+        def filter(self):
+            query = self.search.get_text()
+            shown = 0
+            for heading, widgets in self.sections:
+                visible = 0
+                for row, w in widgets:
+                    ok = matches(row, query)
+                    w.set_visible(ok)
+                    visible += ok
+                heading.set_visible(visible > 0)
+                shown += visible
+            self.empty.set_visible(shown == 0)
+
+        def on_key(self, _w, event):
+            if event.keyval == Gdk.KEY_Escape:
+                if self.search.get_text():
+                    self.search.set_text("")
+                else:
+                    self.close()
+                return True
+            return False
+
+        def on_focus(self, *_):
+            # Tema ya da binds.kdl değiştiyse (pencere açıkken) yenile.
+            self.app.reload_css()
+            if self.files_stamp() != self.stamp:
+                self.rebuild()
+            return False
+
+    class App(Gtk.Application):
+        def __init__(self):
+            super().__init__(application_id=APP_ID)
+            self.window, self.css, self.css_text = None, None, None
+
+        def reload_css(self):
+            if self.css is None:
+                self.css = Gtk.CssProvider()
+                Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), self.css,
+                                                         Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+            text = theme_css()
+            if text != self.css_text:
+                self.css_text = text
+                try:
+                    self.css.load_from_data(text)
+                except GLib.Error:
+                    self.css.load_from_data(FALLBACK_COLORS + CSS)
+
+        def do_activate(self):
+            if self.window is None:
+                self.reload_css()
+                self.window = Window(self)
+                self.window.connect("destroy", lambda *_: setattr(self, "window", None))
+                self.window.show_all()
+            self.window.search.grab_focus()
+            self.window.present()
+
+    return App, Window
+
+
+# ── Selftest ──────────────────────────────────────────────────────────────
+
+def selftest():
+    sample = """
+binds {
+    // ── Genel ──────────
+    Mod+Shift+ssharp hotkey-overlay-title="Show this list" { show-hotkey-overlay; }
+    Mod+Shift+Slash hotkey-overlay-title=null { show-hotkey-overlay; }      // ABD
+    Alt+Space repeat=false hotkey-overlay-title="Search" { spawn-sh "a; b || c"; }
+    Mod+Space repeat=false { spawn-sh "a; b || c"; }
+    // Mod+X { quit; }
+    // ── Workspace'ler (dikey dizilir) ──
+    Mod+1 { focus-workspace 1; }
+    Mod+2 { focus-workspace 2; }
+    Mod+Ctrl+Page_Down  { move-column-to-workspace-down; }
+    // ── Yeni bölüm (açıklama) ──
+    Mod+Y { spawn-sh "~/.local/bin/foo bar"; }
+    Mod+Z { do-something-new 3; }
+}
+"""
+    binds = parse(sample)
+    assert [b["key"] for b in binds] == ["Mod+Shift+ssharp", "Mod+Shift+Slash", "Alt+Space",
+                                         "Mod+Space", "Mod+1", "Mod+2", "Mod+Ctrl+Page_Down",
+                                         "Mod+Y", "Mod+Z"], binds
+    assert binds[0]["title"] == "Show this list" and binds[1]["title"] is False
+    assert binds[3]["title"] is None and binds[2]["args"] == ["a; b || c"], binds[2]
+    assert binds[4]["section"] == "Workspaces" and binds[7]["section"] == "Yeni bölüm"
+    sections = dict(build(binds))
+    general = sections["General"]
+    assert general[0]["keys"] == [["Super", "Shift", "ß"], ["Super", "Shift", "/"]], general
+    assert general[0]["text"] == "Show niri's short list of shortcuts"
+    assert general[1]["text"] == "Search" and len(general[1]["keys"]) == 2
+    ws = sections["Workspaces"]
+    assert ws[0]["keys"] == [["Super", RANGE]] and ws[0]["text"] == f"Go to workspace {RANGE}", ws
+    assert matches(ws[1], "masaüstü TAŞI") and matches(ws[1], "pgdn")
+    assert not matches(ws[1], "screenshot")
+    new = sections["Yeni bölüm"]
+    assert new[0]["text"] == "Run: foo bar" and new[0]["fallback"]
+    assert new[1]["text"] == "Do something new 3" and new[1]["fallback"]
+    assert list(sections)[1] == BUILT_IN
+    assert parse("binds {\n    Mod+Q { close-window; }\n}\n", "This computer")[0]["section"] == \
+        "This computer"
+    assert first_action(' spawn "playerctl" "next"; ') == ("spawn", ["playerctl", "next"])
+
+    # Gerçek binds.kdl: her kısayol satırı okunuyor, bölümler ve açıklamalar İngilizce.
+    path = binds_files()[0][0]
+    text = path.read_text(encoding="utf-8")
+    block = text[text.index("\nbinds {"):]
+    candidates = [line for line in block.splitlines()
+                  if re.match(r"^\s+[A-Za-z0-9_+]+\s.*\{", line)]
+    binds = parse(text)
+    assert len(binds) == len(candidates), (len(binds), len(candidates))
+    known = {name for _, name in SECTIONS}
+    turkish = set("çğıöşüÇĞİÖŞÜ")
+    for section, rows in build(binds):
+        assert section in known or section == BUILT_IN, f"section without English name: {section}"
+        for row in rows:
+            assert not turkish & set(row["text"]), row["text"]
+            assert not row["fallback"], f"no description for: {row['keys']} {row['text']}"
+            for combo in row["keys"]:
+                for part in combo:
+                    assert len(part) == 1 or part in KEY_NAMES.values() or " " in part, \
+                        f"unknown key name: {part}"
+    rows = [r for _, rs in build(binds) for r in rs]
+    move = [r for r in rows if r["text"] == f"Move the window to workspace {RANGE}"]
+    assert move and move[0]["keys"] == [["Super", "Ctrl", RANGE]], move
+    left = [r for r in rows if ["Super", "Left"] in r["keys"]]
+    assert left and ["Super", "H"] in left[0]["keys"], left
+    print("ok")
+
+
+if __name__ == "__main__":
+    arg = sys.argv[1] if len(sys.argv) > 1 else None
+    if arg == "selftest":
+        selftest()
+    elif arg == "list":
+        print_list()
+    elif arg in (None, "show"):
+        App, _ = gui()
+        sys.exit(App().run([sys.argv[0]]))
+    else:
+        print(__doc__.strip(), file=sys.stderr)
+        sys.exit(2)

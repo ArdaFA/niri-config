@@ -57,7 +57,8 @@ Eski masaüstüne dönmek için aynı menüden **Plasma**'yı (ya da **GNOME**'u
 | `Super+Ctrl+V` | pano geçmişi: son kopyaladığın 50 metin |
 | `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, klavye (Türkçe harfler), kilit süresi, varsayılan uygulamalar |
 | `Super+Q` | pencereyi kapat |
-| `Super+?` (Almanca `Super+Shift+ß`, Türkçe Q `Super+Shift+*`, ABD `Super+Shift+/`) | ekranda kısayol listesi |
+| `Super+?` (Almanca `Super+Shift+ß`, Türkçe Q `Super+Shift+*`, ABD `Super+Shift+/`) | ekranda kısa kısayol listesi |
+| `Alt+Space` → `shortcuts` (ya da `kısayollar`) | **bütün** kısayollar, aranabilir pencere |
 | `Super+Shift+E` | oturumu kapat |
 
 **KDE içinde pencere olarak denemek:** Konsole'da `niri` yaz. Bu modda Mod tuşu **Alt**'tır.
@@ -375,6 +376,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `systemd/.config/systemd/user/clipboard-history.service` | Her kopyalamayı `clipboard store`'a verir (`wl-paste --watch`) |
 | `bin/.local/bin/settings` | Ayarlar penceresi (`Super+S`), bkz. [Ayarlar uygulaması](#ayarlar-uygulaması) |
 | `bin/.local/share/applications/dotfiles.settings.desktop` | Ayarlar penceresinin başlatıcıdaki kaydı (KDE menüsünde gizli) |
+| `bin/.local/bin/shortcuts` | Bütün kısayollar penceresi: `binds.kdl`'yi okur, aranabilir; `shortcuts list` terminalde |
+| `bin/.local/share/applications/dotfiles.shortcuts.desktop` | Kısayollar penceresinin aramadaki kaydı ("Shortcuts", Türkçe anahtar kelimelerle; KDE menüsünde gizli) |
 | `bin/.local/bin/displays` | Harici monitörün laptopa göre yeri (üst/alt/sol/sağ), her monitör için ayrı hatırlanır, bkz. [Ekranlar](#ekranlar) |
 | `systemd/.config/systemd/user/night-light.service` | Gece ışığı: wlsunset ile sıcak ekran rengi. Oturum açılışında kendiliğinden başlamaz. |
 | `systemd/.config/systemd/user/night-light-auto.timer`, `night-light-auto.service` | Otomatik gece ışığı: 19:00'da açar, 07:00'de kapatır, oturum açılışında saate göre ayarlar. Otomatik kapalıyken hiçbir şey yapmaz. |
@@ -672,7 +675,11 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 - **Mod** = Super (Windows tuşu). KDE içinde pencere olarak açıkken Mod = Alt.
 - Kalıp: **Ctrl** = taşı, **Shift** = monitör ya da dikey, **Shift+Ctrl** = monitöre taşı.
 - Almanca klavyede AltGr isteyen `[ ] / =` tuşları bilerek kullanılmadı.
-- Ekranda liste: `Super+?` (Almanca `Super+Shift+ß`, Türkçe Q `Super+Shift+*`, ABD `Super+Shift+/`). Listedeki açıklamalar İngilizce; `binds.kdl`'de
+- **Bütün kısayollar, aranabilir:** `Alt+Space` → `shortcuts` (ya da `kısayollar`, `tuşlar`). Arama
+  kutusuna `workspace`, `masaüstü taşı`, `screenshot` gibi yaz. Liste `binds.kdl`'den okunur: yeni
+  bir kısayol eklersen kendiliğinden görünür (açıklaması yoksa eylemin adı yazılır). Terminalde:
+  `shortcuts list`. niri'nin kendi bildiği `Alt+Tab` ve `Super` + sürükle de listede.
+- Ekranda kısa liste: `Super+?` (Almanca `Super+Shift+ß`, Türkçe Q `Super+Shift+*`, ABD `Super+Shift+/`). Listedeki açıklamalar İngilizce; `binds.kdl`'de
   `hotkey-overlay-title="…"` ile yazılıyor.
 
 ### Genel

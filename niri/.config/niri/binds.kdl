@@ -10,7 +10,7 @@
 
 binds {
     // ── Genel ────────────────────────────────────────────────────────────
-    Mod+Shift+ssharp hotkey-overlay-title="Show this list" { show-hotkey-overlay; }
+    Mod+Shift+ssharp hotkey-overlay-title="Show this list (all shortcuts: Alt+Space → shortcuts)" { show-hotkey-overlay; }
     Mod+Shift+Slash hotkey-overlay-title=null { show-hotkey-overlay; }      // ABD düzeni
     Mod+Shift+Asterisk hotkey-overlay-title=null { show-hotkey-overlay; }   // Türkçe Q
     Mod+Return hotkey-overlay-title="Terminal (foot)" { spawn "foot"; }
