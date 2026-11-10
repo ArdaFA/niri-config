@@ -260,6 +260,10 @@ def unit_active(unit):
     return subprocess.run(["systemctl", "--user", "--quiet", "is-active", unit]).returncode == 0
 
 
+def unit_failed(unit):
+    return subprocess.run(["systemctl", "--user", "--quiet", "is-failed", unit]).returncode == 0
+
+
 def swaybg_args(palette):
     if WALLPAPER_LINK.exists():
         return ["swaybg", "--mode", "fill", "--image", str(WALLPAPER_LINK.resolve())]
@@ -324,12 +328,18 @@ def reload_components(palette):
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if unit_active("mako.service"):
         subprocess.run(["makoctl", "reload"])
-    if unit_active("swaybg.service"):
+    # swaybg: görseli yeniden okuyamaz, yeniden başlatılır. Duvar kağıtları art arda seçilince
+    # systemd'nin başlatma sınırına (10 saniyede 5) takılıp kapanmasın diye sayaç önce
+    # sıfırlanır (reset-failed). Daha önce bu yüzden kapanmışsa (failed) yine başlatılır,
+    # ama yalnızca niri oturumundaysak.
+    swaybg_active = unit_active("swaybg.service")
+    if swaybg_active or (unit_failed("swaybg.service") and unit_active("niri.service")):
         try:
             running = SWAYBG_RUNNING.read_text()
         except OSError:
             running = ""
-        if running != json.dumps(swaybg_args(palette)):
+        if not swaybg_active or running != json.dumps(swaybg_args(palette)):
+            subprocess.run(["systemctl", "--user", "reset-failed", "swaybg.service"])
             subprocess.run(["systemctl", "--user", "restart", "swaybg.service"])
     update_foot(palette)
 
