@@ -9,8 +9,8 @@
 #
 # Yalnızca metin. En fazla 50 kayıt, her biri en fazla 64 KB.
 # Gizlilik: geçmiş $XDG_RUNTIME_DIR'da, yani RAM'de durur; diske yazılmaz, oturum kapanınca ya da
-# bilgisayar yeniden başlayınca silinir. Parola yöneticilerinin "gizli" diye işaretlediği
-# kopyalamalar (x-kde-passwordManagerHint: KeePassXC, KDE Wallet…) hiç kaydedilmez.
+# bilgisayar yeniden başlayınca silinir. Parola yöneticilerinin (KeePassXC, KDE Wallet…) "gizli"
+# diye işaretlediği kopyalamalar (SECRET_HINT türü) hiç kaydedilmez.
 
 import fcntl
 import json
