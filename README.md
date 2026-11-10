@@ -211,7 +211,7 @@ kurmak en kolayı (niri ilk açılışta kendi varsayılan ayar dosyasını yaza
 
 ```bash
 # 0) Repoyu indir (git yoksa: sudo dnf install git)
-git clone https://github.com/ArdaFA/niri-dotfiles.git ~/dotfiles
+git clone https://github.com/ArdaFA/niri-config.git ~/dotfiles
 cd ~/dotfiles
 
 # 1) Paketler — hepsi resmi Fedora reposundan (sudo gerekir)
