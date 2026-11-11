@@ -44,11 +44,12 @@ layer-rule {
     geometry-corner-radius 16
 }
 
-// Terminal yarı saydam (foot.ini → alpha): arkasında duvar kağıdı bulanık görünsün.
+// Terminaller yarı saydam (foot.ini → alpha, alacritty.toml → opacity): arkasında
+// duvar kağıdı bulanık görünsün.
 // "xray": yalnızca duvar kağıdı görünür, altta kalan başka pencereler değil (ve ucuz:
 // bulanıklık bir kez hesaplanır). Odak halkası pencerenin etrafında kalsın, arkasında değil.
 window-rule {
-    match app-id=r#"^foot(client)?$"#
+    match app-id=r#"(?i)^(foot(client)?|alacritty)$"#
     background-effect {
         blur true
     }

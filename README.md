@@ -21,6 +21,7 @@ GNOME, fark etmez; mevcut masaüstün olduğu gibi kalır. Lisans: [MIT](LICENSE
 ## İçindekiler
 
 1. [Hızlı başlangıç](#hızlı-başlangıç)
+   - [Yenilikler (11 Kasım 2026)](#yenilikler-11-kasım-2026)
    - [Yenilikler (5 Kasım 2026)](#yenilikler-5-kasım-2026)
 2. [Ayarlar uygulaması](#ayarlar-uygulaması)
 3. [Arama (Alt+Space)](#arama-altspace)
@@ -53,6 +54,7 @@ Eski masaüstüne dönmek için aynı menüden **Plasma**'yı (ya da **GNOME**'u
 | Kısayol | İş |
 |---|---|
 | `Super+Enter` | terminal (foot) |
+| `Super+Shift+Enter` | terminal (alacritty) |
 | `Alt+Space` | arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji, renk, zamanlayıcı, `>` komut, Bluetooth/Wi-Fi/ses |
 | `Super+Ctrl+V` | pano geçmişi: son kopyaladığın 50 metin |
 | `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, klavye (Türkçe harfler), kilit süresi, varsayılan uygulamalar |
@@ -63,6 +65,12 @@ Eski masaüstüne dönmek için aynı menüden **Plasma**'yı (ya da **GNOME**'u
 
 **KDE içinde pencere olarak denemek:** Konsole'da `niri` yaz. Bu modda Mod tuşu **Alt**'tır.
 Waybar, swaync gibi servisler bu modda başlamaz, çünkü onlar oturumun systemd servisine bağlı.
+
+### Yenilikler (11 Kasım 2026)
+
+| Ne | Nasıl kullanılır | Bölüm |
+|---|---|---|
+| **Alacritty terminali** | `Super+Shift+Enter`: foot'un GPU ile çizilen ikizi — aynı Departure Mono 11 px, aynı 12 px kenar boşluğu, aynı saydamlık + niri bulanıklığı, aynı tema renkleri (tek fark: paket, `sudo dnf install alacritty`). Tema değişince açık pencereler anında renk alır. | [Hangi dosya…](#hangi-dosya-neyi-kontrol-ediyor), [Terminal saydamlığı](#terminal-saydamlığı) |
 
 ### Yenilikler (5 Kasım 2026)
 
@@ -113,7 +121,7 @@ değiştirilebiliyor:
 | Duvar kağıdı, renkler | `theme` komutu (bkz. [Renkler](#renkler-theme-komutu)) |
 | Monitörün yeri | `displays` komutu (bkz. [Ekranlar](#ekranlar)) |
 | Gece ışığı aç/kapa | `night-light` komutu |
-| Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir) |
+| Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir). Alacritty için aynı ayar `alacritty/.config/alacritty/alacritty.toml` → `opacity =` satırında, elle (bkz. [Terminal saydamlığı](#terminal-saydamlığı)) |
 | Touchpad, klavye | `~/.local/state/settings/niri.kdl`. Klavye bloğu yalnızca varsayılandan farklıysa yazılır. Klavye düzeni sistemden gelir (`localectl status`); yalnızca *Turkish letters* açıksa `layout "de"` + `variant "tr"` yazılır (xkb'deki hazır *Turkish (Germany)* düzeni, sistemdeki ek seçenekler korunur). Yalnızca niri'de geçerli; KDE ve giriş ekranı kendi ayarında kalır. `config.kdl` bunu `input.kdl` ve `local.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
 | Kilit süresi, gece ışığının sıcaklığı ve otomatiği | `~/.local/state/settings/services.env`. `swayidle.service` ve `night-light.service` okur; dosya yoksa servis dosyalarındaki varsayılanlar geçerli (5 dk, 4000 K). |
 | Varsayılan uygulamalar | `~/.config/niri-mimeapps.list`. XDG kuralı: `XDG_CURRENT_DESKTOP=niri` olan oturum bu dosyayı `mimeapps.list`'ten önce okur, KDE hiç okumaz. Yani KDE'deki seçimlerin değişmez; niri'de seçmediğin türler KDE'deki gibi kalır. Bir kategori seçilince o uygulamanın desteklediği bütün türleri yazılır (ör. Images → png, jpeg, webp…). Elle de düzenlenebilir; silersen niri yine KDE'nin seçimlerine döner. |
@@ -216,7 +224,7 @@ cd ~/dotfiles
 
 # 1) Paketler — hepsi resmi Fedora reposundan (sudo gerekir)
 sudo dnf install --setopt=install_weak_deps=False \
-    niri xwayland-satellite foot stow brightnessctl playerctl \
+    niri xwayland-satellite foot alacritty stow brightnessctl playerctl \
     waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
     network-manager-applet pavucontrol blueman cargo wlsunset \
     swappy wf-recorder slurp qalculate \
@@ -254,8 +262,8 @@ cd ~/dotfiles
 Sonra oturumu kapat ve giriş ekranında **Niri**'yi seç (bkz. [Hızlı başlangıç](#hızlı-başlangıç)).
 İlk iş `Super+?` ile kısayol listesine, `Super+S` ile ayarlara bak.
 
-`--setopt=install_weak_deps=False` niri'nin önerdiği alacritty'nin ve Waybar'ın önerdiği
-fontawesome'un kurulmasını engeller. mako, SwayNotificationCenter kaldırılırsa devreye giren
+`--setopt=install_weak_deps=False` Waybar'ın önerdiği fontawesome'un kendiliğinden kurulmasını
+engeller (niri'nin önerdiği alacritty artık bilerek yukarıdaki listede duruyor). mako, SwayNotificationCenter kaldırılırsa devreye giren
 yedek bildirim programı (bkz. [Hızlı ayarlar ve bildirimler](#hızlı-ayarlar-ve-bildirimler)).
 xdg-desktop-portal-gnome ekran paylaşımı ve ekran görüntüsü izni için, nautilus da niri'de
 dosya seçme penceresi için gerekli (niri'nin portal ayarı onu kullanır). Zaten kurulu olanları
@@ -332,6 +340,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `swaync/.config/swaync/style.css` | Bildirimlerin ve panelin görünümü |
 | `mako/.config/mako/config` | Yedek bildirim programı (yalnızca swaync kaldırılırsa çalışır) |
 | `foot/.config/foot/foot.ini` | Terminal: font, iç boşluk, imleç, geçmiş, saydamlık (`alpha`) |
+| `alacritty/.config/alacritty/alacritty.toml` | İkinci terminal (GPU ile çizer): foot'la aynı boy, imleç, geçmiş, saydamlık (`opacity`); renkleri import ile `theme` alır |
 | `swappy/.config/swappy/config` | Ekran görüntüsü düzenleyici: kayıt klasörü, kaydet/kopyala sonrası kapanma, varsayılan araç |
 
 ### Renk sistemi
@@ -465,6 +474,8 @@ hali var). Saatler: `bin/.local/bin/theme` → `DAY_START` / `NIGHT_START` ve ti
 | mako (yedek) | `makoctl reload`, anında |
 | Açık foot pencereleri | Kaçış dizileriyle, anında |
 | Yeni foot pencereleri | include ettiği dosyadan |
+| Açık alacritty pencereleri | config'i kendisi izler, anında; `theme` için tetikler |
+| Yeni alacritty pencereleri | import ettiği dosyadan |
 | fuzzel, swaylock | Her açılışta dosyayı okur |
 | swaybg | Yalnızca görsel ya da renk değiştiyse yeniden başlar |
 
@@ -687,6 +698,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 | Kısayol | İş |
 |---|---|
 | `Super+Enter` | Terminal (foot) |
+| `Super+Shift+Enter` | Terminal (alacritty): foot'la aynı görünüm, GPU ile çizim |
 | `Alt+Space` / `Super+Space` | Arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji (bkz. [Arama](#arama-altspace)) |
 | `Super+Ctrl+V` | Pano geçmişi (bkz. [Pano geçmişi](#pano-geçmişi-superctrlv)) |
 | `Super+S` | Ayarlar penceresi (bkz. [Ayarlar uygulaması](#ayarlar-uygulaması)) |
@@ -1118,6 +1130,7 @@ Departure Mono **11 px ve katlarında** (22, 33…) piksel-mükemmel görünür.
 | Yer | Satır |
 |---|---|
 | Terminal | `foot/.config/foot/foot.ini` → `font=`, `font-bold=`, `font-italic=`, `font-bold-italic=` |
+| Terminal (alacritty) | `alacritty/.config/alacritty/alacritty.toml` → `[font]` → `size =` (punt; foot'un 11 px'i için 8.25) |
 | Panel | `waybar/.config/waybar/style.css` → `font-family`, `font-size` |
 | Arama penceresi | `bin/.local/bin/launcher` → `CSS` (`font-family`, `font-size`) |
 | Menüler (fuzzel) | `fuzzel/.config/fuzzel/fuzzel.ini` → `font=` |
@@ -1128,7 +1141,8 @@ Başka bir fonta geçersen:
 
 - Adını öğrenmek için: `fc-list : family | grep -i <ad>`. Örneğin resmi repodaki `jetbrains-mono-fonts`.
 - Departure Mono'nun kalın sürümü olmadığı için `foot.ini`'deki `font-bold/italic` satırları ve
-  `bold-text-in-bright` var. Kalın sürümü olan bir fontta bu satırları silebilirsin.
+  `bold-text-in-bright`, `alacritty.toml`'daki `bold/italic/bold_italic` satırları ve
+  `draw_bold_text_with_bright_colors` var. Kalın sürümü olan bir fontta bu satırları silebilirsin.
 
 ---
 
@@ -1139,14 +1153,17 @@ Terminalin zemini yarı saydamdır. Arkada duvar kağıdı bulanık görünür, 
 - **Ne kadar saydam:** Settings → Appearance → Terminal → Opacity, ya da elle
   `foot/.config/foot/foot.ini` → `[colors]` → `alpha=0.8`. 1.0 opak, daha küçük sayı daha
   saydam (0.8 belirgin, 0.95 hafif). Değişiklik yeni açılan terminallerde geçerli olur.
-- **Bulanıklık:** niri yapar (`niri/.config/niri/rules.kdl` → foot kuralı → `background-effect`).
+  Alacritty'deki karşılığı: `alacritty/.config/alacritty/alacritty.toml` → `[window]` →
+  `opacity = 0.8`; orada değişiklik config canlı yenilendiği için açık pencerelere de uygulanır.
+- **Bulanıklık:** niri yapar (`niri/.config/niri/rules.kdl` → foot/Alacritty kuralı → `background-effect`).
   Arkada yalnızca duvar kağıdı görünür, altta kalan başka pencereler görünmez.
   - Bulanıklık olmasın, düz saydam olsun: o kuraldaki `blur true` satırını sil.
   - Bulanıklığın gücü: `niri/.config/niri/config.kdl`'e, en üst düzeye (`layout {}` içine değil)
     `blur { passes 3; offset 3 }` ekle; bunlar varsayılan değerler.
     `offset` büyüdükçe daha yumuşak ve ek maliyetsiz; bozulma görülürse `passes`'i artır.
-- **Tamamen opak:** `alpha=1.0`.
-- `theme` renkleri değiştirirken saydamlığa dokunmaz; açık terminaller de saydamlıklarını korur.
+- **Tamamen opak:** `alpha=1.0` (alacritty'de `opacity = 1.0`).
+- `theme` renkleri değiştirirken saydamlığa dokunmaz; açık terminaller de saydamlıklarını korur
+  (alacritty'de config her temada bir kez tetiklenir ama içeriği değişmez).
 
 ---
 
@@ -1308,7 +1325,7 @@ rm -rf ~/.cache/wallust
 rm -rf ~/.local/share/fonts/DepartureMono && fc-cache -f
 
 # 4) Paketler (sudo). stow ve cargo'yu başka işler için kullanıyorsan listeden çıkar.
-sudo dnf remove niri xwayland-satellite foot stow brightnessctl playerctl \
+sudo dnf remove niri xwayland-satellite foot alacritty stow brightnessctl playerctl \
     waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
     network-manager-applet pavucontrol blueman qalculate
 #    (1b'de kurduysan: mate-polkit; portal ve python paketlerini başka programlar da kullanır)

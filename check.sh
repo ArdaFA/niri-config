@@ -126,6 +126,16 @@ swaylock_conf() {
     return $bad
 }
 
+# Alacritty'nin config kontrol seçeneği yok: TOML olarak ayrıştırılır.
+# Ana config import ettiği için asıl renk dosyası (tema çıktısı) presets() altında
+# kendi başına denetlenir; import yolu ancak Alacritty çalıştığında çözülür.
+alacritty_toml() {
+    python3 -I - "$1" <<'EOF'
+import sys, tomllib
+tomllib.load(open(sys.argv[1], "rb"))
+EOF
+}
+
 # Her preseti geçici bir klasöre üretip her bileşenin parçasını ayrı ayrı doğrular.
 presets() {
     local tmp preset rc=0
@@ -141,6 +151,7 @@ presets() {
             || { echo "$preset: niri.kdl invalid"; niri validate -c "$out/niri.kdl" 2>&1 | tail -5; rc=1; }
         foot --check-config -c "$out/foot.ini" >/dev/null 2>&1 \
             || { echo "$preset: foot.ini invalid"; rc=1; }
+        alacritty_toml "$out/alacritty.toml" || { echo "$preset: alacritty.toml invalid"; rc=1; }
         fuzzel --check-config --config "$out/fuzzel.ini" >/dev/null 2>&1 \
             || { echo "$preset: fuzzel.ini invalid"; rc=1; }
         mako_conf "$out/mako" || { echo "$preset: mako invalid"; rc=1; }
@@ -169,6 +180,7 @@ scripts() {
 echo "Checking configs: $DOTFILES"
 check "niri"              niri validate -c "$DOTFILES/niri/.config/niri/config.kdl"
 check "foot"              foot --check-config -c "$DOTFILES/foot/.config/foot/foot.ini"
+check "alacritty"         alacritty_toml "$DOTFILES/alacritty/.config/alacritty/alacritty.toml"
 check "waybar config"     waybar_json "$HOME/.config/waybar/config.jsonc"
 check "waybar style"      gtk_css "$HOME/.config/waybar/style.css"
 check "fuzzel"            fuzzel --check-config --config "$DOTFILES/fuzzel/.config/fuzzel/fuzzel.ini"

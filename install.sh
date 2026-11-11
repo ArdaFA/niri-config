@@ -12,7 +12,7 @@ set -euo pipefail
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 # ~ altına bağlanacak stow paketleri (repo'daki klasör adları).
-PACKAGES=(niri foot waybar fuzzel swaync mako bin autostart systemd swappy)
+PACKAGES=(niri foot alacritty waybar fuzzel swaync mako bin autostart systemd swappy)
 
 # Sadece niri oturumunda başlayacak kullanıcı servisleri.
 NIRI_SERVICES=(

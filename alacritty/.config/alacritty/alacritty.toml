@@ -1,0 +1,72 @@
+# Alacritty terminal — temel ayarlar
+# foot'un GPU ile çizilen ikizi: aynı tema, aynı piksel fontu, aynı boşluklar.
+# Kontrol: ./check.sh (repo kökünde; alacritty'ye --check-config yok, bu yüzden orada).
+
+# Renkler: `theme` komutunun ürettiği dosya.
+# Alacritty ana config'i ve importlarını kendisi izler; dosya değişince açık
+# pencereler anında yeniden yükler (theme, izleyicinin inode değişiminden
+# kopması ihtimaline karşı ana config'e dokunarak tetikler).
+[general]
+import = ["~/.local/state/theme/alacritty.toml"]
+
+[window]
+# Arka plan saydamlığı: 1.0 opak … 0.0 tamamen saydam. Yalnızca zemin saydamlaşır,
+# yazı ve renkli hücreler değil (foot'taki alpha=0.8'in aynısı).
+# Arkadaki duvar kağıdını niri bulanıklaştırır (niri/rules.kdl → Alacritty kuralı),
+# yazı okunaklı kalır. Değişiklik config yeniden yüklendiğinde tüm pencerelerde geçerli olur.
+opacity = 0.8
+
+# foot pad=12x12 "center"ın karşılığı: kenar boşluğu en az 12 px; pencere hücre
+# ızgarasına tam oturmayınca artan alan kenarlara bölüştürülür, hücreler yarılmaz.
+dynamic_padding = true
+
+[window.padding]
+x = 12
+y = 12
+
+[scrolling]
+# foot [scrollback] lines=10000 ile aynı.
+history = 10000
+
+[font]
+# foot'un `pixelsize=11`inin puntp karşılığı: 11 mantıksal px × 72/96 = 8.25 pt.
+# Departure Mono 11 ve katılarında (ölçek 2'de 22, 3'te 33 aygıt px) piksel-mükemmel görünür.
+size = 8.25
+
+# Fontun yalnızca Regular ağırlığı var: kalın/italik için de aynı yüz kullanılır
+# (yapay kalınlaştırma piksel fontu bulanıklaştırır); kalın yazı bunun yerine
+# parlak palet rengiyle gösterilir ([colors] → draw_bold_text_with_bright_colors).
+[font.normal]
+family = "Departure Mono"
+
+[font.bold]
+family = "Departure Mono"
+
+[font.italic]
+family = "Departure Mono"
+
+[font.bold_italic]
+family = "Departure Mono"
+
+[cursor]
+# foot style=block blink=yes: blok imleç daima yanıp söner (blink_timeout=0 —
+# alacritty varsayılanı gibi 5 saniye sonra durmaz). İmleç görünümü foot'takiyle
+# aynı: blok zemin renginde, altındaki karakter cursor renginde (renk dosyasında).
+blink_interval = 500
+blink_timeout = 0
+
+[cursor.style]
+shape = "Block"
+blinking = "Always"
+
+[mouse]
+hide_when_typing = true
+
+[terminal]
+# OSC 52: uzak makineden (ssh) pane kopyalama. foot da varsayılan olarak yazmaya izin verir.
+# Mutfağa (panoya okuma) kapalı: her uygulamanın panoyu okumabilmesi risklidir.
+osc52 = "OnlyCopy"
+
+[colors]
+# foot bold-text-in-bright=palette-based: kalın yazı parlak palet rengiyle.
+draw_bold_text_with_bright_colors = true
