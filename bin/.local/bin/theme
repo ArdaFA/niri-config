@@ -16,7 +16,7 @@
 Flow: palette (preset or wallust) -> themes/templates/* -> files in
 ~/.local/state/theme/ -> running components pick them up: niri and Waybar
 watch their files, mako is reloaded, open foot windows get escape sequences,
-Alacritty reloads its config, fuzzel and swaylock read the files on every start.
+fuzzel and swaylock read the files on every start.
 """
 # Not: Kullanıcıya görünen metinler (yardım, mesajlar) İngilizce; yorumlar Türkçe.
 
@@ -317,29 +317,6 @@ def update_foot(palette):
             os.close(fd)
 
 
-def alacritty_running():
-    for entry in Path("/proc").iterdir():
-        if not entry.name.isdigit():
-            continue
-        try:
-            comm = (entry / "comm").read_text().strip()
-        except OSError:
-            continue
-        if comm == "alacritty":
-            return True
-    return False
-
-
-def update_alacritty():
-    """Alacritty config'i kendisi izler; ama renk dosyası write_atomic'le (inode
-    değiştirerek) yazıldığından izleyicisi kopabilir. Ana config'e dokunmak
-    içeriği değiştirmeden yeniden yüklemeyi garantiler (renkler import'tan gelir)."""
-    if not alacritty_running():
-        return
-    config = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
-    (config / "alacritty" / "alacritty.toml").touch()
-
-
 def reload_components(palette):
     # niri: include ettiği dosyayı kendisi izler.
     # Waybar: reload_style_on_change ile @import ettiği renk dosyasını kendisi izler.
@@ -365,7 +342,6 @@ def reload_components(palette):
             subprocess.run(["systemctl", "--user", "reset-failed", "swaybg.service"])
             subprocess.run(["systemctl", "--user", "restart", "swaybg.service"])
     update_foot(palette)
-    update_alacritty()
 
 
 # ── Uygulama ──────────────────────────────────────────────────────────────

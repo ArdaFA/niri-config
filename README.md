@@ -66,6 +66,12 @@ Eski masaüstüne dönmek için aynı menüden **Plasma**'yı (ya da **GNOME**'u
 **KDE içinde pencere olarak denemek:** Konsole'da `niri` yaz. Bu modda Mod tuşu **Alt**'tır.
 Waybar, swaync gibi servisler bu modda başlamaz, çünkü onlar oturumun systemd servisine bağlı.
 
+### Yenilikler (12 Kasım 2026)
+
+| Ne | Nasıl kullanılır | Bölüm |
+|---|---|---|
+| **Alacritty: Ptyxis görünümü** | `Super+Shift+Enter` ile açılan terminal artık Terminal uygulamasıyla (Ptyxis) aynı görünümde: Ayu Mirage paleti, Hack italik 11 punt, ince yanıp sönen imleç, opak zemin. Renkler temadan değil kendi config'inden gelir; duvar kağıdı değişse de görünüm sabit kalır. | [Hangi dosya…](#hangi-dosya-neyi-kontrol-ediyor), [Font](#font) |
+
 ### Yenilikler (11 Kasım 2026)
 
 | Ne | Nasıl kullanılır | Bölüm |
@@ -121,7 +127,7 @@ değiştirilebiliyor:
 | Duvar kağıdı, renkler | `theme` komutu (bkz. [Renkler](#renkler-theme-komutu)) |
 | Monitörün yeri | `displays` komutu (bkz. [Ekranlar](#ekranlar)) |
 | Gece ışığı aç/kapa | `night-light` komutu |
-| Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir). Alacritty için aynı ayar `alacritty/.config/alacritty/alacritty.toml` → `opacity =` satırında, elle (bkz. [Terminal saydamlığı](#terminal-saydamlığı)) |
+| Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir). Alacritty, Ptyxis görünümüyle opak; istersen aynı ayarı `alacritty/.config/alacritty/alacritty.toml` → `opacity =` satırından elle ver (bkz. [Terminal saydamlığı](#terminal-saydamlığı)) |
 | Touchpad, klavye | `~/.local/state/settings/niri.kdl`. Klavye bloğu yalnızca varsayılandan farklıysa yazılır. Klavye düzeni sistemden gelir (`localectl status`); yalnızca *Turkish letters* açıksa `layout "de"` + `variant "tr"` yazılır (xkb'deki hazır *Turkish (Germany)* düzeni, sistemdeki ek seçenekler korunur). Yalnızca niri'de geçerli; KDE ve giriş ekranı kendi ayarında kalır. `config.kdl` bunu `input.kdl` ve `local.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
 | Kilit süresi, gece ışığının sıcaklığı ve otomatiği | `~/.local/state/settings/services.env`. `swayidle.service` ve `night-light.service` okur; dosya yoksa servis dosyalarındaki varsayılanlar geçerli (5 dk, 4000 K). |
 | Varsayılan uygulamalar | `~/.config/niri-mimeapps.list`. XDG kuralı: `XDG_CURRENT_DESKTOP=niri` olan oturum bu dosyayı `mimeapps.list`'ten önce okur, KDE hiç okumaz. Yani KDE'deki seçimlerin değişmez; niri'de seçmediğin türler KDE'deki gibi kalır. Bir kategori seçilince o uygulamanın desteklediği bütün türleri yazılır (ör. Images → png, jpeg, webp…). Elle de düzenlenebilir; silersen niri yine KDE'nin seçimlerine döner. |
@@ -340,7 +346,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `swaync/.config/swaync/style.css` | Bildirimlerin ve panelin görünümü |
 | `mako/.config/mako/config` | Yedek bildirim programı (yalnızca swaync kaldırılırsa çalışır) |
 | `foot/.config/foot/foot.ini` | Terminal: font, iç boşluk, imleç, geçmiş, saydamlık (`alpha`) |
-| `alacritty/.config/alacritty/alacritty.toml` | İkinci terminal (GPU ile çizer): foot'la aynı boy, imleç, geçmiş, saydamlık (`opacity`); renkleri import ile `theme` alır |
+| `alacritty/.config/alacritty/alacritty.toml` | İkinci terminal (GPU ile çizer): Ptyxis'teki görünüm — Hack italik 11 punt, Ayu Mirage paleti, ince yanıp sönen imleç, opak zemin (`opacity`); renkler dosyanın içinde, temadan bağımsız |
 | `swappy/.config/swappy/config` | Ekran görüntüsü düzenleyici: kayıt klasörü, kaydet/kopyala sonrası kapanma, varsayılan araç |
 
 ### Renk sistemi
@@ -474,8 +480,6 @@ hali var). Saatler: `bin/.local/bin/theme` → `DAY_START` / `NIGHT_START` ve ti
 | mako (yedek) | `makoctl reload`, anında |
 | Açık foot pencereleri | Kaçış dizileriyle, anında |
 | Yeni foot pencereleri | include ettiği dosyadan |
-| Açık alacritty pencereleri | config'i kendisi izler, anında; `theme` için tetikler |
-| Yeni alacritty pencereleri | import ettiği dosyadan |
 | fuzzel, swaylock | Her açılışta dosyayı okur |
 | swaybg | Yalnızca görsel ya da renk değiştiyse yeniden başlar |
 
@@ -698,7 +702,7 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 | Kısayol | İş |
 |---|---|
 | `Super+Enter` | Terminal (foot) |
-| `Super+Shift+Enter` | Terminal (alacritty): foot'la aynı görünüm, GPU ile çizim |
+| `Super+Shift+Enter` | Terminal (alacritty): Ptyxis'in görünümü, GPU ile çizim |
 | `Alt+Space` / `Super+Space` | Arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji (bkz. [Arama](#arama-altspace)) |
 | `Super+Ctrl+V` | Pano geçmişi (bkz. [Pano geçmişi](#pano-geçmişi-superctrlv)) |
 | `Super+S` | Ayarlar penceresi (bkz. [Ayarlar uygulaması](#ayarlar-uygulaması)) |
@@ -1130,7 +1134,7 @@ Departure Mono **11 px ve katlarında** (22, 33…) piksel-mükemmel görünür.
 | Yer | Satır |
 |---|---|
 | Terminal | `foot/.config/foot/foot.ini` → `font=`, `font-bold=`, `font-italic=`, `font-bold-italic=` |
-| Terminal (alacritty) | `alacritty/.config/alacritty/alacritty.toml` → `[font]` → `size =` (punt; foot'un 11 px'i için 8.25) |
+| Terminal (alacritty) | `alacritty/.config/alacritty/alacritty.toml` → `[font]` → `size =` (punt; Ptyxis'in 11 puntunun aynısı) |
 | Panel | `waybar/.config/waybar/style.css` → `font-family`, `font-size` |
 | Arama penceresi | `bin/.local/bin/launcher` → `CSS` (`font-family`, `font-size`) |
 | Menüler (fuzzel) | `fuzzel/.config/fuzzel/fuzzel.ini` → `font=` |
@@ -1141,8 +1145,9 @@ Başka bir fonta geçersen:
 
 - Adını öğrenmek için: `fc-list : family | grep -i <ad>`. Örneğin resmi repodaki `jetbrains-mono-fonts`.
 - Departure Mono'nun kalın sürümü olmadığı için `foot.ini`'deki `font-bold/italic` satırları ve
-  `bold-text-in-bright`, `alacritty.toml`'daki `bold/italic/bold_italic` satırları ve
-  `draw_bold_text_with_bright_colors` var. Kalın sürümü olan bir fontta bu satırları silebilirsin.
+  `bold-text-in-bright` var. Kalın sürümü olan bir fontta bu satırları silebilirsin.
+  Alacritty'de böyle bir kısıt yok: Hack'in kalın ve kalın-italik yüzleri var;
+  `alacritty.toml`'daki `normal/bold/italic/bold_italic` blokları bu yüzleri tanımlar.
 
 ---
 
@@ -1153,17 +1158,20 @@ Terminalin zemini yarı saydamdır. Arkada duvar kağıdı bulanık görünür, 
 - **Ne kadar saydam:** Settings → Appearance → Terminal → Opacity, ya da elle
   `foot/.config/foot/foot.ini` → `[colors]` → `alpha=0.8`. 1.0 opak, daha küçük sayı daha
   saydam (0.8 belirgin, 0.95 hafif). Değişiklik yeni açılan terminallerde geçerli olur.
-  Alacritty'deki karşılığı: `alacritty/.config/alacritty/alacritty.toml` → `[window]` →
-  `opacity = 0.8`; orada değişiklik config canlı yenilendiği için açık pencerelere de uygulanır.
-- **Bulanıklık:** niri yapar (`niri/.config/niri/rules.kdl` → foot/Alacritty kuralı → `background-effect`).
+  Alacritty'nin karşılığı: `alacritty/.config/alacritty/alacritty.toml` → `[window]` →
+  `opacity` (Ptyxis görünümüyle 1.0, opak); config canlı yenilendiği için
+  değişiklik açık pencerelere de uygulanır.
+- **Bulanıklık:** niri yapar (`niri/.config/niri/rules.kdl` → foot kuralı → `background-effect`).
+  Alacritty opak göründüğü için bulanıklık ona uygulanmaz; saydam yapmak istersen foot
+  kuralına eklemek gerekir.
   Arkada yalnızca duvar kağıdı görünür, altta kalan başka pencereler görünmez.
   - Bulanıklık olmasın, düz saydam olsun: o kuraldaki `blur true` satırını sil.
   - Bulanıklığın gücü: `niri/.config/niri/config.kdl`'e, en üst düzeye (`layout {}` içine değil)
     `blur { passes 3; offset 3 }` ekle; bunlar varsayılan değerler.
     `offset` büyüdükçe daha yumuşak ve ek maliyetsiz; bozulma görülürse `passes`'i artır.
-- **Tamamen opak:** `alpha=1.0` (alacritty'de `opacity = 1.0`).
+- **Tamamen opak:** `alpha=1.0` (Alacritty zaten opak).
 - `theme` renkleri değiştirirken saydamlığa dokunmaz; açık terminaller de saydamlıklarını korur
-  (alacritty'de config her temada bir kez tetiklenir ama içeriği değişmez).
+  (Alacritty temayı hiç izlemez; renkleri kendi config'indedir).
 
 ---
 

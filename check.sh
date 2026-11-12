@@ -127,8 +127,7 @@ swaylock_conf() {
 }
 
 # Alacritty'nin config kontrol seçeneği yok: TOML olarak ayrıştırılır.
-# Ana config import ettiği için asıl renk dosyası (tema çıktısı) presets() altında
-# kendi başına denetlenir; import yolu ancak Alacritty çalıştığında çözülür.
+# Renkler config'in içinde olduğundan (import yok) ana dosyayı denetlemek yeterli.
 alacritty_toml() {
     python3 -I - "$1" <<'EOF'
 import sys, tomllib
@@ -151,7 +150,6 @@ presets() {
             || { echo "$preset: niri.kdl invalid"; niri validate -c "$out/niri.kdl" 2>&1 | tail -5; rc=1; }
         foot --check-config -c "$out/foot.ini" >/dev/null 2>&1 \
             || { echo "$preset: foot.ini invalid"; rc=1; }
-        alacritty_toml "$out/alacritty.toml" || { echo "$preset: alacritty.toml invalid"; rc=1; }
         fuzzel --check-config --config "$out/fuzzel.ini" >/dev/null 2>&1 \
             || { echo "$preset: fuzzel.ini invalid"; rc=1; }
         mako_conf "$out/mako" || { echo "$preset: mako invalid"; rc=1; }

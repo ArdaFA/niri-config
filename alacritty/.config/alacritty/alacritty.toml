@@ -1,72 +1,109 @@
-# Alacritty terminal — temel ayarlar
-# foot'un GPU ile çizilen ikizi: aynı tema, aynı piksel fontu, aynı boşluklar.
+# Alacritty terminal — Ptyxis'in (Terminal uygulaması) görünümü.
+# Ptyxis'teki Ayu Mirage paleti, Hack italik 11 punt, ince (ibeam) imleç ve opak
+# zemin çok iyi duruyordu; amaç burada o görünümü birebir kopyalamak.
+# Kaynaklar: renkler Ptyxis'in içindeki "Ayu Mirage" palet tanımından, font ve
+# imleç ayarları `dconf dump /org/gnome/Ptyxis/` çıktısından.
+# Renkler bu dosyanın içinde: `theme` komutu Alacritty'ye renk vermez, duvar
+# kağıdı değişse de görünüm sabit kalır (foot ve ötekiler temayı izlemeye devam eder).
 # Kontrol: ./check.sh (repo kökünde; alacritty'ye --check-config yok, bu yüzden orada).
 
-# Renkler: `theme` komutunun ürettiği dosya.
-# Alacritty ana config'i ve importlarını kendisi izler; dosya değişince açık
-# pencereler anında yeniden yükler (theme, izleyicinin inode değişiminden
-# kopması ihtimaline karşı ana config'e dokunarak tetikler).
-[general]
-import = ["~/.local/state/theme/alacritty.toml"]
-
 [window]
-# Arka plan saydamlığı: 1.0 opak … 0.0 tamamen saydam. Yalnızca zemin saydamlaşır,
-# yazı ve renkli hücreler değil (foot'taki alpha=0.8'in aynısı).
-# Arkadaki duvar kağıdını niri bulanıklaştırır (niri/rules.kdl → Alacritty kuralı),
-# yazı okunaklı kalır. Değişiklik config yeniden yüklendiğinde tüm pencerelerde geçerli olur.
-opacity = 0.8
+# Ptyxis opak çizilir (profildeki "Transparency" ayarı 1.0): arkada duvar kağıdı
+# ya da niri bulanıklığı görünmez. Saydam istersen 1.0'ın altına indirip
+# Alacritty'yı foot kuralı (niri/rules.kdl) kapsamına geri ekleyebilirsin.
+opacity = 1.0
 
-# foot pad=12x12 "center"ın karşılığı: kenar boşluğu en az 12 px; pencere hücre
-# ızgarasına tam oturmayınca artan alan kenarlara bölüştürülür, hücreler yarılmaz.
+# Ptyxis'in hücre dolgusu (Ptyxis CSS'i: üst 7, yan 6, alt 3 px). Alacritty
+# yatay ve dikey için tek değer alır; 6/5 en yakın karşılık. dynamic_padding
+# pencere ızgaraya tam oturmayınca artan alanı kenarlara bölüştürür,
+# hücreler yarılmaz.
 dynamic_padding = true
 
 [window.padding]
-x = 12
-y = 12
+x = 6
+y = 5
 
 [scrolling]
-# foot [scrollback] lines=10000 ile aynı.
+# foot'la aynı: 10.000 satır geri dönüş.
 history = 10000
 
 [font]
-# foot'un `pixelsize=11`inin puntp karşılığı: 11 mantıksal px × 72/96 = 8.25 pt.
-# Departure Mono 11 ve katılarında (ölçek 2'de 22, 3'te 33 aygıt px) piksel-mükemmel görünür.
-size = 8.25
+# Ptyxis'in fontu aynen: Hack'in *italik* yüzü, 11 punt. Hack'in kalın ve
+# kalın-italik yüzleri de var; kalınlıklar yapay oluşturulmaz.
+size = 11.0
 
-# Fontun yalnızca Regular ağırlığı var: kalın/italik için de aynı yüz kullanılır
-# (yapay kalınlaştırma piksel fontu bulanıklaştırır); kalın yazı bunun yerine
-# parlak palet rengiyle gösterilir ([colors] → draw_bold_text_with_bright_colors).
 [font.normal]
-family = "Departure Mono"
+family = "Hack"
+style = "Italic"
 
 [font.bold]
-family = "Departure Mono"
+family = "Hack"
+style = "Bold Italic"
 
 [font.italic]
-family = "Departure Mono"
+family = "Hack"
+style = "Italic"
 
 [font.bold_italic]
-family = "Departure Mono"
+family = "Hack"
+style = "Bold Italic"
 
 [cursor]
-# foot style=block blink=yes: blok imleç daima yanıp söner (blink_timeout=0 —
-# alacritty varsayılanı gibi 5 saniye sonra durmaz). İmleç görünümü foot'takiyle
-# aynı: blok zemin renginde, altındaki karakter cursor renginde (renk dosyasında).
+# Ptyxis imleci "system" kipinde yanıp söner: GTK'te sönme açık, periyot 1000 ms
+# (500 ms görünür / görünmez), klavye durunca 10 saniye sonra sabitlenir.
 blink_interval = 500
-blink_timeout = 0
+blink_timeout = 10
 
 [cursor.style]
-shape = "Block"
-blinking = "Always"
+# Ptyxis'te cursor-shape='ibeam'; rengi paletin Cursor girdisinden: sarı.
+shape = "Beam"
+blinking = "On"
 
 [mouse]
 hide_when_typing = true
 
 [terminal]
 # OSC 52: uzak makineden (ssh) pane kopyalama. foot da varsayılan olarak yazmaya izin verir.
-# Mutfağa (panoya okuma) kapalı: her uygulamanın panoyu okumabilmesi risklidir.
+# Mutfağa (panoya okuma) kapalı: her uygulamanın panoyu okuyabilmesi risklidir.
 osc52 = "OnlyCopy"
 
 [colors]
-# foot bold-text-in-bright=palette-based: kalın yazı parlak palet rengiyle.
-draw_bold_text_with_bright_colors = true
+# Ptyxis'te kalın yazı parlak renge geçmez (bold-is-bright kapalı).
+draw_bold_text_with_bright_colors = false
+
+[colors.primary]
+background = "#1f2430"
+foreground = "#cbccc6"
+
+# İmleç rengi paletin Cursor girişi; imlecin altındaki karakter normal yazı renginde kalır.
+[colors.cursor]
+cursor = "#ffcc66"
+text = "#cbccc6"
+
+# Ptyxis seçimi GTK temasının yarı saydam mavisiyle çizer; Alacritty alfa kanalı
+# desteklemediğinden en yakın opak karşılık: libadwaita'nın seçme mavisi.
+[colors.selection]
+text = "#ffffff"
+background = "#3584e4"
+
+[colors.normal]
+black = "#1f2430"
+red = "#ff3333"
+green = "#bae67e"
+yellow = "#ffa759"
+blue = "#73d0ff"
+magenta = "#d4bfff"
+cyan = "#95e6cb"
+white = "#cbccc6"
+
+[colors.bright]
+# Ayu Mirage'te "bright" kümesinde yalnızca gri (#707a8c) normalden farklı;
+# ötekiler normal renklerin aynısı (palet tanımı böyle).
+black = "#707a8c"
+red = "#ff3333"
+green = "#bae67e"
+yellow = "#ffa759"
+blue = "#73d0ff"
+magenta = "#d4bfff"
+cyan = "#95e6cb"
+white = "#cbccc6"

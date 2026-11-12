@@ -44,15 +44,22 @@ layer-rule {
     geometry-corner-radius 16
 }
 
-// Terminaller yarı saydam (foot.ini → alpha, alacritty.toml → opacity): arkasında
-// duvar kağıdı bulanık görünsün.
+// foot yarı saydam (foot.ini → alpha): arkasında duvar kağıdı bulanık görünsün.
 // "xray": yalnızca duvar kağıdı görünür, altta kalan başka pencereler değil (ve ucuz:
 // bulanıklık bir kez hesaplanır). Odak halkası pencerenin etrafında kalsın, arkasında değil.
 window-rule {
-    match app-id=r#"(?i)^(foot(client)?|alacritty)$"#
+    match app-id=r#"(?i)^foot(client)?$"#
     background-effect {
         blur true
     }
+    draw-border-with-background false
+}
+
+// Alacritty opak çizilir (Ptyxis görünümü, alacritty.toml → opacity = 1.0):
+// bulanıklık görünmediğinden foot kuralından ayrı tutulur. Bir gün saydam yapmak
+// istersen opacity'yi 1.0'ın altına indir ve bu kuralı foot'unkiyle birleştir.
+window-rule {
+    match app-id=r#"(?i)^alacritty$"#
     draw-border-with-background false
 }
 
