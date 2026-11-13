@@ -1,0 +1,377 @@
+#!/usr/bin/env python3
+"""font — one source of typefaces for the niri desktop.
+
+  font list              list fonts (* = current; only installed ones)
+  font set <name>        switch every component to a font
+  font current           show the current font
+  font apply             re-apply the saved font (repo files may have drifted)
+  font pick              choose a font from a menu (fuzzel)
+
+Every component reads the font from its own config; this script only rewrites
+the font= / font-family= / size lines of the repo files and the components
+pick them up the way they already pick up colors: foot, fuzzel and swaylock
+keep the old font in what is already open and use the new one on the next
+start, alacritty and Waybar watch their files (open windows switch instantly),
+swaync is nudged, the launcher service is restarted; swaylock's whole config
+is re-rendered by `theme` from its template. Settings → Appearance → Font is
+the front end of this command.
+"""
+# Not: Kullanıcıya görünen metinler (yardım, mesajlar) İngilizce; yorumlar Türkçe.
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[3]          # ~/dotfiles
+BIN = Path(__file__).resolve().parent               # theme, settings burada
+STATE = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
+STATE_FILE = STATE / "font.json"
+
+DEFAULT = "departure"
+
+# Katalog: repoda belgelenmiş ve kurulu gelen fontlar. px = mantıksal nokta
+# (foot pixelsize, panel/menü/bildirim CSS px'i); öteki boyutlar ondan türetilir:
+#   alacritty punt  = px × 72/96  (8.25 gibi; "pt" ile birebir değer de verilebilir)
+#   swaylock        = px × 2      (ölçek 2'de aygıt pikseli; temanın kalıbında öyle)
+# styles: alacritty'nin [font.normal/bold/italic/bold_italic] bloklarının yüz adları —
+# kalın yüzü olmayan piksel fontlarında hep Regular. "Hack" alacritty.toml'daki
+# Ptyxis görünümünden gelir (normal ve italik aynı italik yüz). Yeni font eklemek:
+# buraya bir satır + README'deki kurulum adımı.
+FONTS = {
+    "departure": {"label": "Departure Mono", "family": "Departure Mono", "px": 11,
+                  "note": "pixel · retro (varsayılan)",
+                  "styles": ("Regular", "Regular", "Regular", "Regular")},
+    "jetbrains": {"label": "JetBrains Mono", "family": "JetBrains Mono", "px": 12,
+                  "note": "clean · minimal",
+                  "styles": ("Regular", "Bold", "Italic", "Bold Italic")},
+    "plex": {"label": "IBM Plex Mono", "family": "IBM Plex Mono", "px": 12,
+             "note": "retro-fütüristik",
+             "styles": ("Regular", "Bold", "Italic", "Bold Italic")},
+    "cozette": {"label": "Cozette Vector", "family": "CozetteVector", "px": 12,
+                "note": "pixel · retro",
+                "styles": ("Medium", "Medium", "Medium", "Medium")},
+    "monocraft": {"label": "Monocraft", "family": "Monocraft", "px": 13,
+                  "note": "fütüristik · pixel",
+                  "styles": ("Regular", "Bold", "Italic", "Bold Italic")},
+    "neon": {"label": "Monaspace Neon", "family": "Monaspace Neon", "px": 12,
+             "note": "fütüristik · minimal",
+             "styles": ("Regular", "Bold", "Italic", "Bold Italic")},
+    "hack": {"label": "Hack", "family": "Hack", "px": 14, "pt": "11",
+             "note": "clean · italik (Ptyxis görünümü)",
+             "styles": ("Italic", "Bold Italic", "Italic", "Bold Italic")},
+}
+
+# (repo'ya göre yol, yazıcı) — yazıcı metni alır, değiştirilmişini döndürür.
+CSS_FILES = (
+    "waybar/.config/waybar/style.css",       # panel
+    "swaync/.config/swaync/style.css",       # bildirimler + hızlı ayarlar
+    "bin/.local/bin/launcher",               # arama penceresi (CSS betikte)
+    "bin/.local/bin/media-popup",            # medya adası
+    "bin/.local/bin/calendar-popup",         # takvim penceresi
+    "bin/.local/bin/settings",               # ayar penceresi (yeniden açınca alır)
+)
+SWAYLOCK_TEMPLATE = REPO / "themes" / "templates" / "swaylock.conf"
+
+FAMILY_RE = re.compile(r'(font-family:\s*")[^"]+(",\s*monospace;)')
+SIZE_RE = re.compile(r"(font-size:\s*)(\d+)(px)")
+FOOT_RE = re.compile(r"^(font(?:-bold|-italic|-bold-italic)?=).*$", re.M)
+FUZZEL_RE = re.compile(r"^(font=).*$", re.M)
+ALACRITTY_SIZE_RE = re.compile(r"^(size = ).*$", re.M)
+ALACRITTY_FAMILY_RE = re.compile(r'^(family = ").*(")$', re.M)
+ALACRITTY_STYLE_RE = re.compile(r'^(style = ").*(")$', re.M)
+SWAYLOCK_FONT_RE = re.compile(r"^(font=).*$", re.M)
+SWAYLOCK_SIZE_RE = re.compile(r"^(font-size=).*$", re.M)
+
+
+def die(msg):
+    print(f"font: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+# ── Boyutlar ───────────────────────────────────────────────────────────────
+
+def pt(px):
+    """Alacritty punt boyutu: mantıksal px'in 96 dpi'de punt karşılığı (11 → 8.25)."""
+    value = px * 72 / 96
+    return str(int(value)) if value.is_integer() else str(value).rstrip("0").rstrip(".")
+
+
+# ── Yazıcılar (saf işlevler; selftest bunları sınar) ──────────────────────
+
+def css_text(text, font, old_px):
+    """CSS: ailelerini değiştirir, boyutları eski px'e oranıyla ölçekler.
+    "…, monospace" ile biten aile kurallarına dokunulur (launcher'daki
+    "Noto Color Emoji" kuralı öyle değildir)."""
+    text = FAMILY_RE.sub(rf"\g<1>{font['family']}\g<2>", text)
+    if font["px"] != old_px:
+        text = SIZE_RE.sub(lambda m: f"{m.group(1)}{round(int(m.group(2)) * font['px'] / old_px)}px",
+                           text)
+    return text
+
+
+def foot_text(text, font):
+    spec = f"{font['family']}:pixelsize={font['px']}"
+    return FOOT_RE.sub(lambda m: m.group(1) + spec, text)
+
+
+def fuzzel_text(text, font):
+    return FUZZEL_RE.sub(lambda m: m.group(1) + f"{font['family']}:pixelsize={font['px']}", text)
+
+
+def alacritty_text(text, font):
+    """size + aileler + (varsa) yüz adları. style satırları sırayla normal,
+    bold, italic, bold_italic bloklarına denk gelir; dosyada olmayan satır
+    eklenmez — Hack'den piksel fontuna dönerken kalsa da zararı yoktur."""
+    text = ALACRITTY_SIZE_RE.sub(lambda m: m.group(1) + str(font.get("pt") or pt(font["px"])), text)
+    text = ALACRITTY_FAMILY_RE.sub(rf"\g<1>{font['family']}\g<2>", text)
+    styles = iter(font["styles"])
+
+    def _style(m):
+        return m.group(1) + next(styles, "Regular") + m.group(2)
+
+    return ALACRITTY_STYLE_RE.sub(_style, text)
+
+
+def swaylock_text(text, font):
+    text = SWAYLOCK_FONT_RE.sub(lambda m: m.group(1) + font["family"], text)
+    return SWAYLOCK_SIZE_RE.sub(lambda m: m.group(1) + str(font["px"] * 2), text)
+
+
+# ── Durum ─────────────────────────────────────────────────────────────────
+
+def load_state():
+    try:
+        state = json.loads(STATE_FILE.read_text())
+        return state.get("font") if state.get("font") in FONTS else DEFAULT
+    except (OSError, ValueError):
+        return DEFAULT
+
+
+def installed(family):
+    """Aile kurulu mu? (fc-list; selftest çalışmasın diye ayrı işlev.)"""
+    try:
+        out = subprocess.run(["fc-list", ":family", "--format", "%{family}\\n"],
+                             capture_output=True, text=True)
+    except OSError:
+        return True                                  # fontconfig yok: engelleme
+    return any(family in line for line in out.stdout.splitlines())
+
+
+def write_atomic(path, text):
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text)
+    try:                                              # betikler: çalıştırma biti korunur
+        os.chmod(tmp, path.stat().st_mode & 0o777)
+    except OSError:
+        pass
+    tmp.replace(path)
+
+
+def unit_active(unit):
+    return subprocess.run(["systemctl", "--user", "--quiet", "is-active", unit],
+                          stdout=subprocess.DEVNULL).returncode == 0
+
+
+# ── Uygulama ──────────────────────────────────────────────────────────────
+
+def apply(font_key):
+    font = FONTS[font_key]
+    if not installed(font["family"]):
+        die(f"{font['family']} is not installed (see README → Kurulum → fonts)")
+    old_px = FONTS[load_state()]["px"]
+
+    changed = []
+    foot_ini = (REPO / "foot/.config/foot/foot.ini").resolve()
+    if (text := foot_text(foot_ini.read_text(), font)) != foot_ini.read_text():
+        write_atomic(foot_ini, text)
+        changed.append("foot")
+    fuzzel_ini = REPO/"fuzzel/.config/fuzzel/fuzzel.ini"
+    alacritty_toml = (REPO / "alacritty/.config/alacritty/alacritty.toml").resolve()
+    for path, transform in ((fuzzel_ini, fuzzel_text),
+                            (alacritty_toml, alacritty_text)):
+        text = path.read_text()
+        if (new := transform(text, font)) != text:
+            write_atomic(path, new)
+            changed.append(path.stem)
+    for rel in CSS_FILES:
+        path = (REPO / rel).resolve()
+        text = path.read_text()
+        if (new := css_text(text, font, old_px)) != text:
+            write_atomic(path, new)
+            changed.append(rel.split("/")[-1])
+    text = SWAYLOCK_TEMPLATE.read_text()
+    if (new := swaylock_text(text, font)) != text:
+        write_atomic(SWAYLOCK_TEMPLATE, new)
+        changed.append("swaylock.conf")
+        # swaylock bütün ayarlarını temanın kalıbından alır: yeniden ürettir.
+        subprocess.run([BIN/"theme", "apply", "--no-reload"],
+                       stdout=subprocess.DEVNULL)
+
+    # Canlı yenileme: temanın kullandığı mekanizmaların aynısı.
+    if unit_active("swaync.service"):
+        subprocess.run(["swaync-client", "--reload-css", "--skip-wait"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if unit_active("launcher.service"):
+        subprocess.run(["systemctl", "--user", "restart", "launcher.service"])
+    # Waybar: ana style.css'i zaten kendisi izler (reload_style_on_change);
+    # emin olmak için temanın renk dosyasına da dokunulur — @import zinciri
+    # yeniden okununca ana dosya da yeniden okunur.
+    touch = STATE / "theme" / "panel.css"
+    if touch.exists():
+        touch.touch()
+
+    STATE.mkdir(parents=True, exist_ok=True)
+    write_atomic(STATE_FILE, json.dumps({"font": font_key}, indent=2) + "\n")
+    return font, changed
+
+
+# ── Komutlar ───────────────────────────────────────────────────────────────
+
+def cmd_list(args):
+    current = load_state()
+    for key, font in FONTS.items():
+        mark = "*" if key == current else " "
+        here = " [not installed]" if not installed(font["family"]) else ""
+        print(f"{mark} {key:<11} {font['label']:<18} {font['px']}px  {font['note']}{here}")
+
+
+def cmd_current(args):
+    font = FONTS[load_state()]
+    print(f"font:      {load_state()} ({font['label']})")
+    print(f"family:    {font['family']}")
+    print(f"size:      {font['px']}px → alacritty {pt(font['px'])}pt, swaylock {font['px']*2}px")
+
+
+def cmd_set(args):
+    if args.name is None:                            # `font apply`: kayıtlı seçim
+        args.name = load_state()
+    if args.name not in FONTS:
+        die(f"unknown font: {args.name} (try: font list)")
+    font, changed = apply(args.name)
+    print(f"font: {font['label']} ({font['family']}, {font['px']}px)")
+    if changed:
+        print(f"changed: {', '.join(sorted(set(changed)))}")
+
+
+def cmd_pick(args):
+    current = load_state()
+    lines, keys = [], {}
+    for key, font in FONTS.items():
+        if not installed(font["family"]):
+            continue
+        line = f"{'* ' if key == current else '  '}{font['label']:<18}{font['note']}"
+        keys[line] = key
+        lines.append(line)
+    if not lines:
+        die("no fonts from the catalog are installed")
+    try:
+        result = subprocess.run(["fuzzel", "--dmenu", "--prompt=font ❯ ",
+                                 "--placeholder=switch typeface", "--log-level=none"],
+                                input="\n".join(lines) + "\n", capture_output=True, text=True)
+    except FileNotFoundError:
+        die("fuzzel is not installed")
+    if result.returncode != 0 or result.stdout.strip() not in keys:
+        return
+    key = keys[result.stdout.strip()]
+    if key != current:
+        args.name = key
+        cmd_set(args)
+
+
+# ── Selftest (check.sh) ───────────────────────────────────────────────────
+
+def selftest():
+    assert "departure" in FONTS and len(FONTS) >= 2
+    assert pt(11) == "8.25" and pt(12) == "9" and pt(13) == "9.75" and pt(16) == "12"
+
+    # CSS: aile değişir, boyutlar eski px'e oranıyla ölçeklenir; ", monospace"
+    # takmayan aileler (launcher'daki emoji kuralı) olduğu gibi kalır.
+    css = ('font-family: "Departure Mono", monospace;\n    font-size: 11px;\n'
+           'font-family: "Noto Color Emoji", sans-serif;\n    font-size: 22px;color:#fff\n')
+    out = css_text(css, FONTS["jetbrains"], 11)
+    assert '"JetBrains Mono", monospace' in out and "24px" in out and "12px" in out, out
+    assert '"Noto Color Emoji", sans-serif' in out and "11px" not in out, out
+    # Eski px = yeni px olduğunda boyutlar aynı kalır.
+    same = css_text(css, dict(FONTS["jetbrains"], px=FONTS["departure"]["px"], family="Departure Mono"), 11)
+    assert "font-size: 11px" in same and "font-size: 22px" in same
+
+    # foot: dört font satırı da yazılır, yorum satırları durur.
+    foot = ("[main]\nfont=Departure Mono:pixelsize=11\n# font yorum değil\n"
+            "font-bold=Departure Mono:pixelsize=11\nfont-italic=Other:pixelsize=9\n"
+            "font-bold-italic=X\n[colors]\n")
+    out = foot_text(foot, FONTS["jetbrains"])
+    assert out.count("JetBrains Mono:pixelsize=12") == 4, out
+    assert "# font yorum değil" in out and "[colors]" in out
+
+    # fuzzel, alacritty, swaylock.
+    assert fuzzel_text("font=Departure Mono:pixelsize=11\nx=1\n",
+                       FONTS["plex"]) == 'font=IBM Plex Mono:pixelsize=12\nx=1\n'
+    toml = ('[font]\nsize = 8.25\n[font.normal]\nfamily = "Departure Mono"\nstyle = "Regular"\n'
+            '[font.bold]\nfamily = "Departure Mono"\nstyle = "Regular"\n')
+    out = alacritty_text(toml, FONTS["hack"])
+    assert "size = 11" in out, out                       # "pt" geçersiz kılma (Ptyxis: 11 punt)
+    assert out.count('family = "Hack"') == 2, out
+    assert 'style = "Italic"' in out and 'style = "Bold Italic"' in out, out
+    out = alacritty_text(toml, FONTS["jetbrains"])
+    assert "size = 9" in out and 'style = "Bold"' in out and 'style = "Regular"' in out, out
+    conf = "font=Departure Mono\nfont-size=22\n# yorum\n"
+    out = swaylock_text(conf, FONTS["jetbrains"])
+    assert out == "font=JetBrains Mono\nfont-size=24\n# yorum\n", out
+
+    # Repo dosyaları: her hedef *katalogdaki* bir aile taşımali; elle başka bir aile
+    # yazıldıysa katalog dışı kalır ve selftest yakalar. Dosyaların aynı aileyi
+    # taşıması gerekmez: kullanıcının elle seçtiği (ör. alacritty'de Hack) geçerlidir.
+    families = [f["family"] for f in FONTS.values()]
+    for rel, pattern in (
+            ("foot/.config/foot/foot.ini", r"^font(?:-bold|-italic|-bold-italic)?=([^:\n]+):pixelsize=\d+$"),
+            ("fuzzel/.config/fuzzel/fuzzel.ini", r"^font=([^:\n]+):pixelsize=\d+$"),
+            ("alacritty/.config/alacritty/alacritty.toml", r'^family = "([^"]*)"$'),
+            ("themes/templates/swaylock.conf", r"^font=(.+)$")):
+        names = [m.group(1) for m in re.finditer(pattern, (REPO / rel).read_text(), re.M)]
+        assert names, f"{rel}: font satırı bulunamadı"
+        assert all(n in families for n in names), f"{rel}: katalog dışı font: " \
+            f"{[n for n in names if n not in families]}"
+
+    # CSS yüzeyleri de katalogdaki bir aile taşımeli (", monospace" ile).
+    for rel in CSS_FILES:
+        found = re.findall(r'font-family: "([^"]+)", monospace;', (REPO / rel).read_text())
+        assert found and all(n in families for n in found), f"{rel}: katalog dışı aile {found}"
+
+    # Gidiş-dönüş: başka fonttan geri dönünce repo metni birebir geri gelir.
+    # (Başlangıç ailesini her dosyanın adına göre yakalamak yerine katalogdakilerden
+    # ararız; oran hesabı eski px'e göre döner.)
+    for rel in CSS_FILES:
+        original = (REPO / rel).read_text()
+        before = re.findall(r'font-family: "([^"]+)", monospace;', original)
+        source = FONTS[[k for k, f in FONTS.items() if f["family"] in before][0]]
+        switched = css_text(original, FONTS["jetbrains"], source["px"])
+        switched = css_text(switched, source, FONTS["jetbrains"]["px"])
+        assert switched == original, rel
+    print("ok")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="font", description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True, metavar="command")
+
+    sub.add_parser("list", help="list fonts").set_defaults(func=cmd_list)
+    sub.add_parser("current", help="show the current font").set_defaults(func=cmd_current)
+    p = sub.add_parser("set", help="switch every component to a font")
+    p.add_argument("name", nargs="?", default=None)
+    p.set_defaults(func=cmd_set)
+    sub.add_parser("apply", help="re-apply the saved font").set_defaults(func=cmd_set)
+    sub.add_parser("pick", help="choose a font from a menu (fuzzel)").set_defaults(func=cmd_pick)
+    sub.add_parser("selftest").set_defaults(func=lambda args: selftest())
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

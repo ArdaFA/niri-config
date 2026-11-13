@@ -187,6 +187,7 @@ check "swaync style"      gtk4_css "$HOME/.config/swaync/style.css"
 check "mako (fallback)"   mako_conf "$DOTFILES/mako/.config/mako/config"
 check "swaylock (theme)"  swaylock_conf "${XDG_STATE_HOME:-$HOME/.local/state}/theme/swaylock.conf"
 check "scripts"           scripts
+check "font files"        python3 -I "$DOTFILES/bin/.local/bin/font" selftest
 check "layout planner"    python3 -I "$DOTFILES/bin/.local/bin/layout-mode" selftest
 check "bar status rules"  python3 -I "$DOTFILES/bin/.local/bin/bar-status" selftest
 check "media popup rules" python3 -I "$DOTFILES/bin/.local/bin/media-popup" selftest

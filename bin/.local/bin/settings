@@ -4,7 +4,7 @@
   settings [appearance|displays|touchpad|keyboard|lock|apps]   open the window (on that page)
   settings selftest                                   check the file writers (check.sh)
 
-  Appearance   wallpaper, colors (a preset or taken from the wallpaper), terminal opacity
+  Appearance   wallpaper, colors (a preset or taken from the wallpaper), font, terminal opacity
   Displays     where the external monitor sits, night light and its warmth
   Touchpad     tap to click, natural scrolling, pointer speed
   Keyboard     key repeat; Turkish letters (AltGr) when the system layout is German
@@ -20,6 +20,7 @@ Every change applies at once; there is no Apply button.
 #   monitörün yeri         → `displays` komutu (~/.local/state/displays)
 #   gece ışığı aç/kapa      → `night-light` komutu
 #   terminal saydamlığı    → foot.ini'deki `alpha=` satırı (repo'daki dosya)
+#   font                   → `font` komutu (repo dosyaları + ~/.local/state/font.json)
 #   touchpad, klavye, kilit süresi, gece ışığı → ~/.local/state/settings:
 #       niri.kdl       touchpad ve klavye blokları; config.kdl input.kdl ve local.kdl'den sonra okur, niri
 #                      anında uygular (yalnızca niri; KDE ve giriş ekranı kendi ayarında kalır)
@@ -52,13 +53,14 @@ import gi
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("GdkPixbuf", "2.0")
+gi.require_version("PangoCairo", "1.0")
 from gi.repository import GLib  # noqa: E402
 
 APP_ID = "dotfiles.settings"
 # GTK3 Wayland'de pencere kimliği (app_id) program adıdır; niri'nin yüzen pencere kuralı
 # bununla eşleşir. Gtk yüklenmeden önce ayarlanmalı, yoksa "settings" olur.
 GLib.set_prgname(APP_ID)
-from gi.repository import Gdk, GdkPixbuf, Gio, Gtk, Pango  # noqa: E402
+from gi.repository import Gdk, GdkPixbuf, Gio, Gtk, Pango, PangoCairo  # noqa: E402
 
 HOME = Path.home()
 BIN = Path(__file__).resolve().parent                 # theme, displays, night-light burada
@@ -358,6 +360,28 @@ def load_displays():
     module = importlib.util.module_from_spec(spec)
     loader.exec_module(module)
     return module
+
+
+@cache
+def load_font():
+    """`font` komutunu modül olarak yükler: font kataloğu tek yerde kalsın."""
+    loader = importlib.machinery.SourceFileLoader("font_cli", str(BIN / "font"))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+@cache
+def installed_families():
+    """Tek fc-list çağrısıyla kurulu aileler: katalogdaki font kuruluysa karosu
+    aktif olur. fc-list yoksa None: hepsinin kurulu varsayılması engellemekten iyidir."""
+    try:
+        out = subprocess.run(["fc-list", ":family", "--format", "%{family}\\n"],
+                             capture_output=True, text=True)
+    except OSError:
+        return None
+    return set(out.stdout.splitlines())
 
 
 def thumbnail(path, w, h):
@@ -984,11 +1008,17 @@ class Window(Gtk.ApplicationWindow):
                                "Light or dark colors, taken from the wallpaper. "
                                "Auto: light from 07:00, dark from 19:00")
         page.add(self.variant_row)
+        page.add(label("Font", "heading"))
+        self.fonts = flowbox(self.on_font)
+        page.add(self.fonts)
+        page.add(note("One switch for the terminal, panel, search, menus, notifications "
+                      "and the lock screen. Every component picks it up the way it picks "
+                      "up colors; this window itself after reopening."))
         page.add(label("Terminal", "heading"))
         self.opacity = Slider(50, 100, 5, lambda v: f"{v:.0f} %",
                               self.later(300, self.set_opacity))
         page.add(row("Opacity", self.opacity,
-                     "For new terminal windows. The wallpaper shows through, blurred."))
+                     "For new foot windows (Super+Shift+Enter). The wallpaper shows through, blurred."))
 
         self.fill_wallpapers()
         self.from_wallpaper = Tile("wallpaper", "From wallpaper", self.paint_from_wallpaper)
@@ -996,6 +1026,13 @@ class Window(Gtk.ApplicationWindow):
         self.colors.add(self.from_wallpaper)
         for key, name, ui in presets():
             self.colors.add(Tile(key, name, lambda _t, cr, w, h, ui=ui: paint_palette(cr, w, h, ui)))
+        # Font karoları: her biri kendi yüzüyle çizilir; kurulu olmayan soluk düşer.
+        families = installed_families()
+        for key, entry in load_font().FONTS.items():
+            tile = Tile(key, entry["label"],
+                        lambda _t, cr, w, h, e=entry: self.paint_font(e, cr, w, h))
+            tile.set_sensitive(families is None or entry["family"] in families)
+            self.fonts.add(tile)
         return page, self.refresh_appearance
 
     def fill_wallpapers(self):
@@ -1052,6 +1089,33 @@ class Window(Gtk.ApplicationWindow):
             paint_dots(cr, 14, h - 13.5, [self.palette.get(k, "#808080")
                                           for k in ("accent", "accent2", "ok", "warn", "urgent")])
 
+    def paint_font(self, entry, cr, w, h):
+        """Karo önizlemesi: örnek yazı fontun kendi yüzüyle, temanın yazı renginde."""
+        layout = PangoCairo.create_layout(cr)
+        font = Pango.FontDescription.new()
+        font.set_family(entry["family"])
+        font.set_absolute_size(20 * Pango.SCALE)
+        layout.set_font_description(font)
+        layout.set_text("AaBbYy 01", -1)
+        width, height = layout.get_pixel_size()
+        cr.set_source_rgb(*self.color("fg"))
+        cr.move_to((w - width) / 2, (h - height) / 2)
+        PangoCairo.update_layout(cr, layout)
+        PangoCairo.show_layout(cr, layout)
+
+    def on_font(self, _box, tile):
+        if tile.key == load_font().load_state():
+            return
+        self.status("Applying…")
+        run([BIN / "font", "set", tile.key], self.font_done)
+
+    def font_done(self, ok, err):
+        self.refresh_appearance()
+        if not ok:
+            self.status(f"Font failed: {err}" if err else "Font failed", error=True)
+        else:
+            self.status("Switched. This window itself restyles after reopening.")
+
     def refresh_appearance(self):
         if self.theme_busy:
             return                                 # sonuç gelince zaten yenilenecek
@@ -1068,7 +1132,8 @@ class Window(Gtk.ApplicationWindow):
                 thumbnails_later([(self.from_wallpaper, Path(wallpaper))], self.scale)
         self.variant.set("auto" if self.theme.get("auto") else self.theme.get("variant", "dark"))
         self.variant_row.set_visible(from_wallpaper and bool(wallpaper))
-        for box in (self.walls, self.colors):
+        select(self.fonts, load_font().load_state())
+        for box in (self.walls, self.colors, self.fonts):
             for tile in box.get_children():
                 tile.area.queue_draw()
         try:

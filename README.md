@@ -21,6 +21,8 @@ GNOME, fark etmez; mevcut masaüstün olduğu gibi kalır. Lisans: [MIT](LICENSE
 ## İçindekiler
 
 1. [Hızlı başlangıç](#hızlı-başlangıç)
+   - [Yenilikler (13 Kasım 2026)](#yenilikler-13-kasım-2026)
+   - [Yenilikler (12 Kasım 2026)](#yenilikler-12-kasım-2026)
    - [Yenilikler (11 Kasım 2026)](#yenilikler-11-kasım-2026)
    - [Yenilikler (5 Kasım 2026)](#yenilikler-5-kasım-2026)
 2. [Ayarlar uygulaması](#ayarlar-uygulaması)
@@ -65,6 +67,12 @@ Eski masaüstüne dönmek için aynı menüden **Plasma**'yı (ya da **GNOME**'u
 
 **KDE içinde pencere olarak denemek:** Konsole'da `niri` yaz. Bu modda Mod tuşu **Alt**'tır.
 Waybar, swaync gibi servisler bu modda başlamaz, çünkü onlar oturumun systemd servisine bağlı.
+
+### Yenilikler (13 Kasım 2026)
+
+| Ne | Nasıl kullanılır | Bölüm |
+|---|---|---|
+| **Font seçici** | `Super+S` → **Appearance** → **Font**: her karo fontun kendi yüzüyle çizilmiş bir önizlemedir; tek dokunuş terminal, panel, arama, menüler, bildirimler ve kilit ekranını değiştirir. Katalog: Departure Mono (pixel), JetBrains Mono (clean), IBM Plex Mono (retro), Cozette (pixel), Monocraft (fütüristik), Monaspace Neon (fütüristik) ve Hack (alacritty'nin Ptyxis görünümünün italik yüzü). Komut satırından: `font list` / `font set <ad>` / `font pick`. | [Font](#font), [Ayarlar uygulaması](#ayarlar-uygulaması) |
 
 ### Yenilikler (12 Kasım 2026)
 
@@ -113,7 +121,7 @@ All settings. Her değişiklik anında uygulanır, "Apply" düğmesi yok. `Esc` 
 
 | Sayfa | İçinde |
 |---|---|
-| **Appearance** | Duvar kağıdı (küçük resimlerle; *Add…* kendi resmini `wallpapers/`'a kopyalar), renkler (bir preset ya da *From wallpaper*; duvar kağıdından gelen renklerin açık/koyu hali ya da *Auto*: gündüz açık, akşam koyu), terminal saydamlığı |
+| **Appearance** | Duvar kağıdı (küçük resimlerle; *Add…* kendi resmini `wallpapers/`'a kopyalar), renkler (bir preset ya da *From wallpaper*; duvar kağıdından gelen renklerin açık/koyu hali ya da *Auto*: gündüz açık, akşam koyu), **font** (karo önizlemeleriyle; tek seçim terminal, panel, arama, menüler, bildirimler ve kilit ekranı), terminal saydamlığı |
 | **Displays** | Harici monitörün laptopa göre yeri (`Super+P` ile aynı, her monitör hatırlanır), gece ışığı, sıcaklığı ve **Turn on automatically** (19:00'da açılır, 07:00'de kapanır) |
 | **Touchpad** | Dokunarak tıklama, doğal kaydırma, imleç hızı |
 | **Keyboard** | **Turkish letters** (yalnızca sistemin düzeni Almancaysa görünür; Türkçe klavyede zaten gerek yok): Almanca düzen aynen kalır, ek olarak `AltGr+S` → ş, `AltGr+G` → ğ, `AltGr+I` → ı, `AltGr+C` → ç; `Shift` eklersen Ş Ğ İ Ç. Hemen yanında deneme kutusu. Tuş tekrarı: bekleme süresi ve hızı. |
@@ -128,6 +136,7 @@ değiştirilebiliyor:
 | Duvar kağıdı, renkler | `theme` komutu (bkz. [Renkler](#renkler-theme-komutu)) |
 | Monitörün yeri | `displays` komutu (bkz. [Ekranlar](#ekranlar)) |
 | Gece ışığı aç/kapa | `night-light` komutu |
+| Font | `font` komutu: repodaki config'lerdeki font satırlarını yazar; kayıtlı seçim `~/.local/state/font.json` (bkz. [Font](#font)) |
 | Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir). Alacritty, Ptyxis görünümüyle opak; istersen aynı ayarı `alacritty/.config/alacritty/alacritty.toml` → `opacity =` satırından elle ver (bkz. [Terminal saydamlığı](#terminal-saydamlığı)) |
 | Touchpad, klavye | `~/.local/state/settings/niri.kdl`. Klavye bloğu yalnızca varsayılandan farklıysa yazılır. Klavye düzeni sistemden gelir (`localectl status`); yalnızca *Turkish letters* açıksa `layout "de"` + `variant "tr"` yazılır (xkb'deki hazır *Turkish (Germany)* düzeni, sistemdeki ek seçenekler korunur). Yalnızca niri'de geçerli; KDE ve giriş ekranı kendi ayarında kalır. `config.kdl` bunu `input.kdl` ve `local.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
 | Kilit süresi, gece ışığının sıcaklığı ve otomatiği | `~/.local/state/settings/services.env`. `swayidle.service` ve `night-light.service` okur; dosya yoksa servis dosyalarındaki varsayılanlar geçerli (5 dk, 4000 K). |
@@ -233,6 +242,7 @@ cd ~/dotfiles
 sudo dnf install --setopt=install_weak_deps=False \
     niri xwayland-satellite foot alacritty stow brightnessctl playerctl \
     waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
+    jetbrains-mono-fonts ibm-plex-mono-fonts source-foundry-hack-fonts \
     network-manager-applet pavucontrol blueman cargo wlsunset \
     swappy wf-recorder slurp qalculate \
     xdg-desktop-portal-gnome xdg-desktop-portal-gtk nautilus \
@@ -253,6 +263,33 @@ unzip -q DepartureMono-1.500.zip
 install -D -m 644 -t ~/.local/share/fonts/DepartureMono \
     DepartureMono-1.500/DepartureMono-Regular.otf DepartureMono-1.500/LICENSE
 fc-cache -f
+
+# 3b) Katalogdaki diğer fontlar — Settings → Appearance → Font'un karoları için
+#     (JetBrains Mono, IBM Plex Mono ve Hack yukarıdaki dnf listesinde;
+#      Cozette, Monocraft ve Monaspace Neon resmi repoda yok, GitHub'dan)
+mkdir -p /tmp/fonts && cd /tmp/fonts
+curl -fLO https://github.com/the-moonwitch/Cozette/releases/download/v.1.30.0/CozetteVector.ttf
+curl -fLO https://github.com/the-moonwitch/Cozette/releases/download/v.1.30.0/CozetteVectorBold.ttf
+curl -fLO https://github.com/the-moonwitch/Cozette/releases/download/v.1.30.0/LICENSE && mv LICENSE LICENSE-Cozette
+curl -fLO https://github.com/IdreesInc/Monocraft/releases/download/v4.2.1/Monocraft.ttc
+curl -fLO https://github.com/githubnext/monaspace/releases/download/v1.400/monaspace-static-v1.400.zip
+echo "2d54a586f824f32d9d2dd01ec3b990c2a4d6445efa77e20177efe382ebe51627  CozetteVector.ttf" | sha256sum -c
+echo "9f113791362001d53cd4c09cbe91f9125c050ca7aab49d48393601e79b2b1d41  CozetteVectorBold.ttf" | sha256sum -c
+echo "0ea1aea12f03d552a469fc017f19ea927b53bf9d21e60a41c5c476c3faf3c7f9  Monocraft.ttc" | sha256sum -c
+echo "ab66d71be751495f679727332a3345597943bd4d7beebca03f5cde04bf994de7  monaspace-static-v1.400.zip" | sha256sum -c
+install -D -m 644 -t ~/.local/share/fonts/CozetteVector \
+    CozetteVector.ttf CozetteVectorBold.ttf LICENSE-Cozette
+install -D -m 644 -t ~/.local/share/fonts/Monocraft Monocraft.ttc
+unzip -q monaspace-static-v1.400.zip \
+    "Static Fonts/Monaspace Neon/MonaspaceNeon-Regular.otf" \
+    "Static Fonts/Monaspace Neon/MonaspaceNeon-Bold.otf" \
+    "Static Fonts/Monaspace Neon/MonaspaceNeon-Italic.otf" \
+    "Static Fonts/Monaspace Neon/MonaspaceNeon-BoldItalic.otf" -d neon
+install -D -m 644 -t ~/.local/share/fonts/MonaspaceNeon \
+    neon/MonaspaceNeon-Regular.otf neon/MonaspaceNeon-Bold.otf \
+    neon/MonaspaceNeon-Italic.otf neon/MonaspaceNeon-BoldItalic.otf
+fc-cache -f
+#     Lisanslar: Cozette MIT (klasörde), Monocraft OFL, Monaspace OFL.
 
 # 4) Bağla, bu bilgisayarın local.kdl'sini oluştur, servisleri kaydet, temayı üret (sudo yok)
 cd ~/dotfiles
@@ -363,6 +400,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 
 | Dosya | Ne yapar |
 |---|---|
+| `bin/.local/bin/font` | Font yöneticisi: Settings'in Font karolarının sahibi; repodaki config'lerdeki font satırlarını yazar, seçimi `~/.local/state/font.json`'da tutar |
 | `systemd/.config/systemd/user/niri-polkit.service` | Polkit (yönetici şifresi) penceresi, yalnızca niri'de: KDE'ninki, yoksa mate-polkit, xfce-polkit ya da lxpolkit |
 | `systemd/.config/systemd/user/theme-apply.service` | Oturum açılışında kayıtlı temayı uygular |
 | `systemd/.config/systemd/user/swaybg.service` | Duvar kağıdı |
@@ -419,7 +457,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `~/.local/state/launcher/` | Arama penceresinin hatırladığı sık kullanılan uygulamalar, emojiler ve `>` komutları |
 | `$XDG_RUNTIME_DIR/clipboard/` | Pano geçmişi (RAM'de, oturum kapanınca silinir) |
 | `~/.config/systemd/user/niri.service.wants/` | `install.sh`'nin oluşturduğu servis bağlantıları |
-| `~/.local/share/fonts/DepartureMono/` | Font |
+| `~/.local/share/fonts/DepartureMono/` `CozetteVector/`, `Monocraft/`, `MonaspaceNeon/` | Fontlar (adım 3 ve 3b) |
+| `~/.local/state/font.json` | Font seçimi; `font` komutu yazar |
 | `~/.cargo/bin/wallust` | wallust |
 | `~/.var/app/com.brave.Browser/config/brave-flags.conf` | Brave flags'in kopyası (Flatpak sandbox'ı symlink'i göremez) |
 
@@ -1128,6 +1167,33 @@ mako'yla eskisi gibi görünür; panel ve `MSG` modülü görünmez, `Super+N` b
 
 ## Font
 
+Masaüstü tek font ailesi kullanır. **Settings → Appearance → Font** (ya da `Super+S`) değiştirir:
+karolar, fontların kendi yüzleriyle çizilmiş önizlemedir; seçim terminali, paneli, aramayı,
+menüleri, bildirimleri ve kilit ekranını tek dokunuşta değiştirir. Komut satırından:
+
+    font list            # katalog (* = seçili, kurulu olmayanlar işaretlenir)
+    font set <ad>        # her yere uygula
+    font current         # geçerli seçim
+    font pick            # fuzzel menüsünden seç
+    font apply           # kayıtlı seçimi geri getir (elle düzenledikten sonra)
+
+Katalog — Settings'in karoları bunlar; boyutlar fontun tasarımına göre ayrı ayrı ayarlı
+(piksel fontlar tam ızgara katlarında, vektör fontlar okunabilir kütleyle):
+
+| Font | Görünüm | Kurulum | Panel/foot boyutu |
+|---|---|---|---|
+| Departure Mono | pixel · retro (varsayılan) | adım 3 | 11 px |
+| JetBrains Mono | clean · minimal | `jetbrains-mono-fonts` | 12 px |
+| IBM Plex Mono | retro-fütüristik | `ibm-plex-mono-fonts` | 12 px |
+| Cozette Vector | pixel · retro | adım 3b | 12 px |
+| Monocraft | fütüristik · pixel | adım 3b | 13 px |
+| Monaspace Neon | fütüristik · minimal | adım 3b | 12 px |
+| Hack | clean · italik (Ptyxis görünümü) | `source-foundry-hack-fonts` | 14 px |
+
+Alacritty bu piksel boyutundan punt hesaplar (px × 72/96; örneğin Departure'da 8.25 punt),
+kilit ekranı aygıt pikselini (× 2). Alacritty'de Hack 11 puntu korur — Ptyxis görünümünün aynısı.
+Yeni font eklemek istersen: `bin/.local/bin/font` → `FONTS` sözlüğüne bir satır + kurulum adımı.
+
 Departure Mono **11 px ve katlarında** (22, 33…) piksel-mükemmel görünür. Laptop ekranı
 ölçek 2'de olduğu için 11 px orada 22 fiziksel piksel olur; harici monitörde (ölçek 1) 11 px.
 İkisi de keskin.
@@ -1135,12 +1201,15 @@ Departure Mono **11 px ve katlarında** (22, 33…) piksel-mükemmel görünür.
 | Yer | Satır |
 |---|---|
 | Terminal | `foot/.config/foot/foot.ini` → `font=`, `font-bold=`, `font-italic=`, `font-bold-italic=` |
-| Terminal (alacritty) | `alacritty/.config/alacritty/alacritty.toml` → `[font]` → `size =` (punt; Ptyxis'in 11 puntunun aynısı) |
+| Terminal (alacritty) | `alacritty/.config/alacritty/alacritty.toml` → `[font]` → `size =` (punt) ve `family =`/`style =` blokları |
 | Panel | `waybar/.config/waybar/style.css` → `font-family`, `font-size` |
 | Arama penceresi | `bin/.local/bin/launcher` → `CSS` (`font-family`, `font-size`) |
 | Menüler (fuzzel) | `fuzzel/.config/fuzzel/fuzzel.ini` → `font=` |
 | Bildirimler ve hızlı ayarlar paneli | `swaync/.config/swaync/style.css` → `font-family`, `font-size` |
 | Kilit ekranı | `themes/templates/swaylock.conf` → `font=`, `font-size=`, ardından `theme apply` |
+
+`font` komutu bu satırların hepsini yazar; seçim `~/.local/state/font.json`'da durur.
+Elle düzenledikten sonra `font apply` kayıtlı seçimi geri getirir.
 
 Başka bir fonta geçersen:
 
@@ -1331,11 +1400,13 @@ cargo uninstall wallust
 rm -rf ~/.cache/wallust
 
 # 3) Font
-rm -rf ~/.local/share/fonts/DepartureMono && fc-cache -f
+rm -rf ~/.local/share/fonts/DepartureMono ~/.local/share/fonts/CozetteVector \
+    ~/.local/share/fonts/Monocraft ~/.local/share/fonts/MonaspaceNeon && fc-cache -f
 
 # 4) Paketler (sudo). stow ve cargo'yu başka işler için kullanıyorsan listeden çıkar.
 sudo dnf remove niri xwayland-satellite foot alacritty stow brightnessctl playerctl \
     waybar fuzzel SwayNotificationCenter mako swaylock swayidle swaybg \
+    jetbrains-mono-fonts ibm-plex-mono-fonts source-foundry-hack-fonts \
     network-manager-applet pavucontrol blueman qalculate
 #    (1b'de kurduysan: mate-polkit; portal ve python paketlerini başka programlar da kullanır)
 
