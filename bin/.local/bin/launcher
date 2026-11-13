@@ -524,7 +524,7 @@ RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
 CLIPBOARD = Path(os.environ.get("CLIPBOARD_HISTORY") or RUNTIME / "clipboard/history.json")
 PLACEHOLDERS = {"search": "Search apps, windows, files, settings",
                 "clipboard": "Search clipboard history"}
-TERMINAL = "foot"
+TERMINAL = "alacritty"   # komutla açarken `-e` ile verilir (foot gibi doğrudan almıyor)
 SEARCH_URL = "https://search.brave.com/search?q={}"   # web araması (Brave'in varsayılanı)
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 TIMER_SOUND = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
@@ -1338,7 +1338,7 @@ class Launcher:
             except ValueError:
                 argv = []
             if argv:
-                spawn(TERMINAL, *argv)
+                spawn(TERMINAL, "-e", *argv)
             return
         spawn("gio", "launch", info.get_filename())
 
@@ -1587,7 +1587,7 @@ class Launcher:
             run_async(["nmcli", "device", "wifi", "connect", ssid], done, timeout=45_000)
         else:
             # Parola gerekiyor: nmcli terminalde sorar.
-            spawn(TERMINAL, "--title", "Wi-Fi", "sh", "-c",
+            spawn(TERMINAL, "--title", "Wi-Fi", "-e", "sh", "-c",
                   'nmcli --ask device wifi connect "$1"; printf "\\nPress Enter to close."; read -r _',
                   "sh", ssid)
 
@@ -1677,7 +1677,7 @@ class Launcher:
         if terminal:
             # Komut kullanıcının kabuğuyla çalışır; bitince terminal açık kalır (çıktı okunsun,
             # devam edilebilsin).
-            spawn(TERMINAL, "sh", "-c", '"$0" -c "$1"; exec "$0"', shell, cmd)
+            spawn(TERMINAL, "-e", "sh", "-c", '"$0" -c "$1"; exec "$0"', shell, cmd)
         else:
             spawn(shell, "-c", cmd)
 

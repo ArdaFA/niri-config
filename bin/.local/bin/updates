@@ -30,7 +30,7 @@ case ${1:-} in
         fi ;;
     run)
         # Terminal niri üzerinden açılır (Waybar'ın ya da aramanın alt süreci olmasın).
-        exec niri msg action spawn -- foot --title "System update" sh -c '
+        exec niri msg action spawn -- alacritty --title "System update" -e sh -c '
             printf "\033[1mSystem packages (dnf)\033[0m\n"
             sudo dnf upgrade --refresh
             printf "\n\033[1mFlatpak apps\033[0m\n"

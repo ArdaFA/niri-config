@@ -13,9 +13,10 @@ binds {
     Mod+Shift+ssharp hotkey-overlay-title="Show this list (all shortcuts: Alt+Space → shortcuts)" { show-hotkey-overlay; }
     Mod+Shift+Slash hotkey-overlay-title=null { show-hotkey-overlay; }      // ABD düzeni
     Mod+Shift+Asterisk hotkey-overlay-title=null { show-hotkey-overlay; }   // Türkçe Q
-    Mod+Return hotkey-overlay-title="Terminal (foot)" { spawn "foot"; }
-    // İkinci terminal: Ptyxis'in görünümü, GPU ile çizim (config: alacritty/ klasörü).
-    Mod+Shift+Return hotkey-overlay-title="Terminal (alacritty)" { spawn "alacritty"; }
+    Mod+Return hotkey-overlay-title="Terminal (alacritty)" { spawn "alacritty"; }
+    // İkinci terminal (foot): yarı saydam, duvar kağıdını niri bulanıklaştırır
+    // (config: foot/ klasörü).
+    Mod+Shift+Return hotkey-overlay-title="Terminal (foot)" { spawn "foot"; }
     // Arama: uygulama, pencere, dosya, ayar, hesap, emoji (bin/.local/bin/launcher).
     // Arka planda bekleyen pencereye sinyal gönderir; servis çalışmıyorsa fuzzel açılır.
     // repeat=false: basılı tutunca tekrar tekrar aç/kapa yapmasın.

@@ -53,8 +53,8 @@ Eski masaüstüne dönmek için aynı menüden **Plasma**'yı (ya da **GNOME**'u
 
 | Kısayol | İş |
 |---|---|
-| `Super+Enter` | terminal (foot) |
-| `Super+Shift+Enter` | terminal (alacritty) |
+| `Super+Enter` | terminal (alacritty) |
+| `Super+Shift+Enter` | terminal (foot) |
 | `Alt+Space` | arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji, renk, zamanlayıcı, `>` komut, Bluetooth/Wi-Fi/ses |
 | `Super+Ctrl+V` | pano geçmişi: son kopyaladığın 50 metin |
 | `Super+S` | ayarlar: duvar kağıdı, renkler, monitör, gece ışığı, touchpad, klavye (Türkçe harfler), kilit süresi, varsayılan uygulamalar |
@@ -70,7 +70,8 @@ Waybar, swaync gibi servisler bu modda başlamaz, çünkü onlar oturumun system
 
 | Ne | Nasıl kullanılır | Bölüm |
 |---|---|---|
-| **Alacritty: Ptyxis görünümü** | `Super+Shift+Enter` ile açılan terminal artık Terminal uygulamasıyla (Ptyxis) aynı görünümde: Ayu Mirage paleti, Hack italik 11 punt, ince yanıp sönen imleç, opak zemin. Renkler temadan değil kendi config'inden gelir; duvar kağıdı değişse de görünüm sabit kalır. | [Hangi dosya…](#hangi-dosya-neyi-kontrol-ediyor), [Font](#font) |
+| **Alacritty: Ptyxis görünümü** | `Super+Enter` ile açılan varsayılan terminal artık Terminal uygulamasıyla (Ptyxis) aynı görünümde: Ayu Mirage paleti, Hack italik 11 punt, ince yanıp sönen imleç, opak zemin. Renkler temadan değil kendi config'inden gelir; duvar kağıdı değişse de görünüm sabit kalır. | [Hangi dosya…](#hangi-dosya-neyi-kontrol-ediyor), [Font](#font) |
+| **Alacritty varsayılan terminal** | `Super+Enter` artık alacritty açar; foot `Super+Shift+Enter`'a taşındı. Paneldeki `UPD` güncellemesi ve aramanın açtığı terminaller (`>` komutu, Wi-Fi parolası, uçbirim isteyen uygulamalar) de alacritty oldu. XDG tarafında da varsayılan: `x-scheme-handler/terminal=Alacritty.desktop`. | [Genel](#genel), [Arama](#arama-altspace) |
 
 ### Yenilikler (11 Kasım 2026)
 
@@ -130,7 +131,7 @@ değiştirilebiliyor:
 | Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir). Alacritty, Ptyxis görünümüyle opak; istersen aynı ayarı `alacritty/.config/alacritty/alacritty.toml` → `opacity =` satırından elle ver (bkz. [Terminal saydamlığı](#terminal-saydamlığı)) |
 | Touchpad, klavye | `~/.local/state/settings/niri.kdl`. Klavye bloğu yalnızca varsayılandan farklıysa yazılır. Klavye düzeni sistemden gelir (`localectl status`); yalnızca *Turkish letters* açıksa `layout "de"` + `variant "tr"` yazılır (xkb'deki hazır *Turkish (Germany)* düzeni, sistemdeki ek seçenekler korunur). Yalnızca niri'de geçerli; KDE ve giriş ekranı kendi ayarında kalır. `config.kdl` bunu `input.kdl` ve `local.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
 | Kilit süresi, gece ışığının sıcaklığı ve otomatiği | `~/.local/state/settings/services.env`. `swayidle.service` ve `night-light.service` okur; dosya yoksa servis dosyalarındaki varsayılanlar geçerli (5 dk, 4000 K). |
-| Varsayılan uygulamalar | `~/.config/niri-mimeapps.list`. XDG kuralı: `XDG_CURRENT_DESKTOP=niri` olan oturum bu dosyayı `mimeapps.list`'ten önce okur, KDE hiç okumaz. Yani KDE'deki seçimlerin değişmez; niri'de seçmediğin türler KDE'deki gibi kalır. Bir kategori seçilince o uygulamanın desteklediği bütün türleri yazılır (ör. Images → png, jpeg, webp…). Elle de düzenlenebilir; silersen niri yine KDE'nin seçimlerine döner. |
+| Varsayılan uygulamalar | `~/.config/niri-mimeapps.list`. XDG kuralı: `XDG_CURRENT_DESKTOP=niri` olan oturum bu dosyayı `mimeapps.list`'ten önce okur, KDE hiç okumaz. Yani KDE'deki seçimlerin değişmez; niri'de seçmediğin türler KDE'deki gibi kalır. Bir kategori seçilince o uygulamanın desteklediği bütün türleri yazılır (ör. Images → png, jpeg, webp…). Elle de düzenlenebilir; örneğin varsayılan terminal `x-scheme-handler/terminal=Alacritty.desktop;` satırı elle eklendi; silersen niri yine KDE'nin seçimlerine döner. |
 
 - **Hafif:** tek dosya (`bin/.local/bin/settings`, Python + GTK3, yeni paket gerektirmez).
   Yarım saniyede açılır, açıkken ~90 MB (boş bir GTK3 penceresi zaten ~67 MB), kapalıyken hiç
@@ -345,8 +346,8 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `swaync/.config/swaync/config.json` | Bildirimler ve hızlı ayarlar paneli: bölümler, düğmeler, zaman aşımları |
 | `swaync/.config/swaync/style.css` | Bildirimlerin ve panelin görünümü |
 | `mako/.config/mako/config` | Yedek bildirim programı (yalnızca swaync kaldırılırsa çalışır) |
-| `foot/.config/foot/foot.ini` | Terminal: font, iç boşluk, imleç, geçmiş, saydamlık (`alpha`) |
-| `alacritty/.config/alacritty/alacritty.toml` | İkinci terminal (GPU ile çizer): Ptyxis'teki görünüm — Hack italik 11 punt, Ayu Mirage paleti, ince yanıp sönen imleç, opak zemin (`opacity`); renkler dosyanın içinde, temadan bağımsız |
+| `alacritty/.config/alacritty/alacritty.toml` | Ana terminal (varsayılan, GPU ile çizer): Ptyxis'teki görünüm — Hack italik 11 punt, Ayu Mirage paleti, ince yanıp sönen imleç, opak zemin (`opacity`); renkler dosyanın içinde, temadan bağımsız |
+| `foot/.config/foot/foot.ini` | İkinci terminal (Super+Shift+Enter): font, iç boşluk, imleç, geçmiş, saydamlık (`alpha`) |
 | `swappy/.config/swappy/config` | Ekran görüntüsü düzenleyici: kayıt klasörü, kaydet/kopyala sonrası kapanma, varsayılan araç |
 
 ### Renk sistemi
@@ -701,8 +702,8 @@ Değiştirmek için: `niri/.config/niri/binds.kdl`. Kaydettiğin an geçerli olu
 
 | Kısayol | İş |
 |---|---|
-| `Super+Enter` | Terminal (foot) |
-| `Super+Shift+Enter` | Terminal (alacritty): Ptyxis'in görünümü, GPU ile çizim |
+| `Super+Enter` | Terminal (alacritty): Ptyxis'in görünümü, GPU ile çizim |
+| `Super+Shift+Enter` | Terminal (foot): yarı saydam, niri bulanıklığı |
 | `Alt+Space` / `Super+Space` | Arama: uygulama, pencere, dosya, ayar, hesap makinesi, emoji (bkz. [Arama](#arama-altspace)) |
 | `Super+Ctrl+V` | Pano geçmişi (bkz. [Pano geçmişi](#pano-geçmişi-superctrlv)) |
 | `Super+S` | Ayarlar penceresi (bkz. [Ayarlar uygulaması](#ayarlar-uygulaması)) |
