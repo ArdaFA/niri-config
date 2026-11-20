@@ -1,24 +1,46 @@
 #!/bin/sh
 # updates — güncelleme göstergesi (Waybar'daki UPD) ve tek tuşla güncelleme.
 #
-#   updates label   Waybar için JSON: "UPD 47"; güncelleme yoksa boş (modül gizlenir)
-#   updates run     terminalde dnf + Flatpak güncellemesi (onayı sen verirsin), sonra yeniden sayar
-#   updates count   yalnızca sayılar: "dnf flatpak"
+#   updates label     Waybar için JSON: "UPD 47"; güncelleme yoksa boş (modül gizlenir)
+#   updates run       terminalde sistem + Flatpak güncellemesi (onayı sen verirsin), sonra yeniden sayar
+#   updates count     yalnızca sayılar: "sistem flatpak"
+#   updates refresh   Waybar'daki sayıyı hemen yeniden saydırır (sağ tık)
 #
-# Ağ kullanmadan sayar: dnf'nin sistem önbelleği (-C; Fedora'nın dnf-makecache.timer'ı birkaç
-# saatte bir tazeler). Flatpak için uzak deponun özeti indirilir (~10 sn, az veri).
+# Ağ kullanmadan sayar: paket yöneticisinin önbelleği.
+#   Fedora:  dnf check-upgrade -C (Fedora'nın dnf-makecache.timer'ı birkaç saatte bir tazeler)
+#   FreeBSD: pkg upgrade -nU (katalog `pkg update` ya da her `pkg install`'da tazelenir)
+# Flatpak için uzak deponun özeti indirilir (~10 sn, az veri).
 # Waybar bunu 3 saatte bir çalıştırır; sağ tık hemen yeniden sayar (SIGRTMIN+13).
 
+SIGNAL=13   # Waybar config.jsonc → custom/updates → "signal"
+
+refresh_bar() {  # Waybar'a SIGRTMIN+SIGNAL. FreeBSD'nin pkill'i "RTMIN+n" adını bilmez: 65+n.
+    case $(uname -s) in
+        FreeBSD) pkill "-$((65 + SIGNAL))" -x waybar ;;
+        *)       pkill "-RTMIN+$SIGNAL" -x waybar ;;
+    esac 2>/dev/null || true
+}
+
 count() {
-    # dnf -q çıktısı: "ad.mimari  sürüm  depo"; başka satırlar (Obsoleting…) sayılmaz.
-    sys=$(dnf check-upgrade -C -q 2>/dev/null | awk 'NF == 3 && $1 ~ /\./' | wc -l)
-    flat=$(timeout 60 flatpak remote-ls --updates --columns=application 2>/dev/null | grep -c .)
+    if [ "$(uname -s)" = FreeBSD ]; then
+        # "Number of packages to be upgraded: 3" (yeni bağımlılıklar "installed" satırında)
+        sys=$(pkg upgrade -nU 2>/dev/null | sed -n 's/^Number of packages to be upgraded: *\([0-9]*\).*/\1/p')
+    elif command -v dnf >/dev/null 2>&1; then
+        # dnf -q çıktısı: "ad.mimari  sürüm  depo"; başka satırlar (Obsoleting…) sayılmaz.
+        sys=$(dnf check-upgrade -C -q 2>/dev/null | awk 'NF == 3 && $1 ~ /\./' | wc -l)
+    fi
+    flat=0
+    if command -v flatpak >/dev/null 2>&1; then
+        flat=$(timeout 60 flatpak remote-ls --updates --columns=application 2>/dev/null | grep -c .)
+    fi
     echo "${sys:-0} ${flat:-0}"
 }
 
 case ${1:-} in
     count)
         count ;;
+    refresh)
+        refresh_bar ;;
     label)
         set -- $(count)
         total=$(($1 + $2))
@@ -30,15 +52,25 @@ case ${1:-} in
         fi ;;
     run)
         # Terminal niri üzerinden açılır (Waybar'ın ya da aramanın alt süreci olmasın).
-        exec niri msg action spawn -- alacritty --title "System update" -e sh -c '
-            printf "\033[1mSystem packages (dnf)\033[0m\n"
-            sudo dnf upgrade --refresh
-            printf "\n\033[1mFlatpak apps\033[0m\n"
-            flatpak update
-            pkill -RTMIN+13 -x waybar
-            printf "\nDone. Press Enter to close. (Kernel updated? Restart when convenient.)\n"
-            read -r _' ;;
+        if [ "$(uname -s)" = FreeBSD ]; then
+            # sudo / doas yoksa su (root şifresi; kullanıcı wheel grubunda olmalı).
+            if command -v sudo >/dev/null 2>&1; then upgrade="sudo pkg upgrade"
+            elif command -v doas >/dev/null 2>&1; then upgrade="doas pkg upgrade"
+            else upgrade="su root -c 'pkg upgrade'"; fi
+            system="printf '\\033[1mSystem packages (pkg)\\033[0m\\n'; $upgrade"
+        else
+            system="printf '\\033[1mSystem packages (dnf)\\033[0m\\n'; sudo dnf upgrade --refresh"
+        fi
+        exec niri msg action spawn -- alacritty --title "System update" -e sh -c "
+            $system
+            if command -v flatpak >/dev/null 2>&1; then
+                printf '\\n\\033[1mFlatpak apps\\033[0m\\n'
+                flatpak update
+            fi
+            \"\$HOME/.local/bin/updates\" refresh
+            printf '\\nDone. Press Enter to close. (Kernel updated? Restart when convenient.)\\n'
+            read -r _" ;;
     *)
-        echo "usage: updates label | run | count" >&2
+        echo "usage: updates label | run | count | refresh" >&2
         exit 2 ;;
 esac

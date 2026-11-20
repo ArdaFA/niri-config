@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 # launcher — Alt+Space: tek arama kutusu. Yazdıkça uygulamalar, açık pencereler, ayarlar ve
 # eylemler, dosyalar, hesap makinesi ve web araması gelir; ":" ile başlayınca emoji.
 #
@@ -8,10 +8,12 @@
 #
 # Hata ayıklama: systemctl --user set-environment LAUNCHER_DEBUG=1 && systemctl --user restart
 # launcher → açılıp kapanmalar ve nedenleri `journalctl --user -u launcher`'da (yazılan metin hariç).
+# systemd'siz oturumda (FreeBSD): ~/.local/state/settings/services.env'e LAUNCHER_DEBUG=1 yaz,
+# `session restart launcher`; günlük: `session log launcher`.
 #
 # Pencere arka planda hazır bekler; tuşa basınca yalnızca görünür olur. Alt+Space bu betiği
-# değil doğrudan TOGGLE komutunu çalıştırır: servise SIGUSR1 gönderir (~6 ms; Python'u
-# başlatmak bile ~40 ms). Servis çalışmıyorsa fuzzel açılır.
+# değil doğrudan TOGGLE komutunu çalıştırır: servise SIGUSR1 gönderir (systemctl ~6 ms; systemd
+# yoksa pkill ~25 ms; Python'u başlatmak bile ~40 ms). Servis çalışmıyorsa fuzzel açılır.
 #
 # Kaynaklar:
 #   uygulamalar    .desktop kayıtları; en çok/son açılanlar üstte (~/.local/state/launcher)
@@ -45,6 +47,7 @@ import math
 import operator
 import os
 import re
+import shutil
 import sys
 import time
 import unicodedata
@@ -53,7 +56,7 @@ from pathlib import Path
 HOME = os.path.expanduser("~")
 # niri/binds.kdl'deki Alt+Space ile aynı komut.
 TOGGLE = ("systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null"
-          " || exec fuzzel")
+          " || pkill -USR1 -f '/launcher daemon$' || exec fuzzel")
 USAGE = "usage: launcher [toggle] | daemon | selftest"
 DEBUG = bool(os.environ.get("LAUNCHER_DEBUG"))   # açılıp kapanmaları günlüğe yazar
 
@@ -503,6 +506,13 @@ gi.require_version("Pango", "1.0")
 import cairo  # noqa: E402
 from gi.repository import Gdk, Gio, GLib, Gtk, GtkLayerShell, Pango  # noqa: E402
 
+try:  # PyGObject 3.52+ (FreeBSD) eski adı eskimiş sayar; Fedora 43'teki sürümde yeni ad yok.
+    gi.require_version("GLibUnix", "2.0")
+    from gi.repository import GLibUnix  # noqa: E402
+    unix_signal_add = GLibUnix.signal_add
+except (ValueError, ImportError, AttributeError):
+    unix_signal_add = GLib.unix_signal_add
+
 try:                                    # GLib 2.86+: Gio.DesktopAppInfo'nun yeni yeri
     gi.require_version("GioUnix", "2.0")
     from gi.repository import GioUnix  # noqa: E402
@@ -518,7 +528,18 @@ STATE_HOME = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/stat
 THEME_STATE = STATE_HOME / "theme"
 PANEL_CSS = THEME_STATE / "panel.css"
 HISTORY = STATE_HOME / "launcher/history.json"
-EMOJI_DICT = "/usr/share/ibus/dicts/emoji-en.dict"
+def data_file(*names):
+    """Paylaşılan veri dosyası: XDG_DATA_DIRS'te ilk bulunan (Fedora /usr/share, FreeBSD
+    /usr/local/share). Hiçbiri yoksa ilk adın /usr/share yolu (kullanan yer yokluğu karşılar)."""
+    dirs = (os.environ.get("XDG_DATA_DIRS") or "").split(":") + ["/usr/local/share", "/usr/share"]
+    for name in names:
+        for d in dirs:
+            if d and os.path.exists(os.path.join(d, name)):
+                return os.path.join(d, name)
+    return os.path.join("/usr/share", names[0])
+
+
+EMOJI_DICT = data_file("ibus/dicts/emoji-en.dict")
 QS = BIN / "quick-settings"
 RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}")
 CLIPBOARD = Path(os.environ.get("CLIPBOARD_HISTORY") or RUNTIME / "clipboard/history.json")
@@ -527,7 +548,8 @@ PLACEHOLDERS = {"search": "Search apps, windows, files, settings",
 TERMINAL = "alacritty"   # komutla açarken `-e` ile verilir (foot gibi doğrudan almıyor)
 SEARCH_URL = "https://search.brave.com/search?q={}"   # web araması (Brave'in varsayılanı)
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
-TIMER_SOUND = "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
+TIMER_SOUND = data_file("sounds/freedesktop/stereo/alarm-clock-elapsed.oga",
+                        "sounds/freedesktop/stereo/complete.oga")
 TIMER_DIR = RUNTIME / "launcher-timers"     # Waybar'daki TMR modülü okur (timer-status)
 QUERY_FILE = RUNTIME / "launcher-query"     # varsa açılışta kutuya yazılır (Waybar'dan "timer")
 # Cihaz bilgisi tek süreçte: ses (pactl), Bluetooth (bluetoothctl), Wi-Fi (nmcli). "@@" ayırır.
@@ -724,9 +746,43 @@ def notify(app, summary, body="", icon="", transient=False):
     run_async(argv + [summary] + ([body] if body else []))
 
 
+TIMER_SIGNAL = f"-{signal.SIGRTMIN + 12}"   # sayıyla: FreeBSD'nin pkill'i "RTMIN+n" bilmez
+
+
 def signal_bar():
     """Waybar'daki TMR modülü hemen yenilensin (custom/timer, signal 12)."""
-    run_async(["pkill", "-RTMIN+12", "-x", "waybar"])
+    run_async(["pkill", TIMER_SIGNAL, "-x", "waybar"])
+
+
+def systemd_user():
+    """Zamanlayıcılar systemd --user'da mı (Fedora) yoksa uyuyan bir süreçte mi (FreeBSD)."""
+    return bool(shutil.which("systemd-run")) and os.path.isdir("/run/systemd/system")
+
+
+def timer_markers():
+    """$XDG_RUNTIME_DIR/launcher-timers/<birim>: "bitiş<TAB>ad" → [(birim, bitiş, ad)]"""
+    timers = []
+    try:
+        files = list(TIMER_DIR.iterdir())
+    except OSError:
+        return timers
+    for f in files:
+        m = re.fullmatch(r"launcher-timer-(\d+)-\w+\.timer", f.name)
+        try:
+            name = f.read_text().rstrip("\n").split("\t", 1)[1]
+        except (OSError, IndexError):
+            name = ""
+        if m:
+            timers.append((f.name, int(m.group(1)), name))
+    return timers
+
+
+# Süre dolunca: kalıcı bildirim + alarm sesi (PipeWire'ın pw-play'i ya da PulseAudio'nun paplay'i).
+# Argümanlar: $1 başlık, $2 metin, $3 ses dosyası, $4 işaret dosyası.
+TIMER_DONE = ('rm -f "$4"; pkill ' + TIMER_SIGNAL + ' -x waybar; '
+              'notify-send -a Timer -u critical -i alarm-symbolic "$1" "$2"; '
+              'if command -v pw-play >/dev/null; then exec pw-play "$3"; '
+              'elif command -v paplay >/dev/null; then exec paplay "$3"; fi')
 
 
 def parse_bool(out):
@@ -1613,6 +1669,10 @@ class Launcher:
             self.timers = sorted(timers, key=lambda t: t[1])
             if self.visible and parse_timer(self.entry.get_text()) is not None:
                 self.update()
+        if not systemd_user():
+            # systemd yok: işaret dosyaları zamanlayıcının kendisi (bkz. start_timer).
+            self.timers = sorted(timer_markers(), key=lambda t: t[1])
+            return
         run_async(["systemctl", "--user", "list-units", "launcher-timer-*.timer", "--all",
                    "--output=json"], loaded)
 
@@ -1639,7 +1699,9 @@ class Launcher:
         return items
 
     def cancel_timer(self, unit):
-        run_async(["systemctl", "--user", "stop", unit])
+        if systemd_user():
+            run_async(["systemctl", "--user", "stop", unit])
+        # systemd'siz zamanlayıcı işaret dosyası silinince 1 sn içinde kendiliğinden çıkar.
         try:
             (TIMER_DIR / unit).unlink()
         except OSError:
@@ -1658,19 +1720,29 @@ class Launcher:
         except OSError:
             pass
         signal_bar()
+        args = ["sh", "Time's up" if not label else label, f"{length} timer finished", TIMER_SOUND,
+                str(marker)]
+
+        def started(out):
+            if out is not None:
+                run_async(["notify-send", "-a", "Timer", "-e", "-u", "low", "-i", "alarm-symbolic",
+                           f"Timer started: {length}",
+                           (f"{label} · " if label else "") + "ends "
+                           + time.strftime("%H:%M", time.localtime(end))])
+
+        if not systemd_user():
+            # systemd yok (FreeBSD): niri'nin başlattığı, saniyede bir saate bakan küçük bir kabuk.
+            # İşaret dosyası silinirse (iptal) çıkar; arama kapansa da çalışmaya devam eder.
+            spawn("sh", "-c", 'while [ -e "$4" ] && [ "$(date +%s)" -lt "$5" ]; do sleep 1; done; '
+                  '[ -e "$4" ] || exit 0; ' + TIMER_DONE, *args, str(end))
+            started("")
+            return
         # Süre dolunca: kalıcı bildirim + alarm sesi. Metin argüman olarak geçer, kabuk görmez;
         # --expand-environment=no: içinde $ olsa da systemd açmaz.
         run_async(["systemd-run", "--user", "--quiet", "--collect", f"--unit={unit.removesuffix('.timer')}",
                    f"--on-active={seconds}", "--timer-property=AccuracySec=1s",
                    f"--description={title}", "--expand-environment=no", "--",
-                   "sh", "-c", 'rm -f "$4"; pkill -RTMIN+12 -x waybar; '
-                   'notify-send -a Timer -u critical -i alarm-symbolic "$1" "$2"; exec pw-play "$3"',
-                   "sh", "Time's up" if not label else label, f"{length} timer finished", TIMER_SOUND,
-                   str(marker)],
-                  lambda out: out is not None and run_async(
-                      ["notify-send", "-a", "Timer", "-e", "-u", "low", "-i", "alarm-symbolic",
-                       f"Timer started: {length}",
-                       (f"{label} · " if label else "") + "ends " + time.strftime("%H:%M", time.localtime(end))]))
+                   "sh", "-c", TIMER_DONE, *args], started)
 
     def run_command(self, cmd, shell, terminal):
         self.history.bump("cmd", cmd)
@@ -1772,7 +1844,7 @@ class Launcher:
                 ("poweroff", "Shut down", ("system-shutdown-symbolic",), "power off poweroff shutdown turn off")):
             add(title, "Session", icons, keywords, lambda key=key: spawn(QS, key))
         add("Suspend", "Session", ("system-suspend-symbolic",), "sleep standby",
-            lambda: spawn("systemctl", "suspend"))
+            lambda: spawn(BIN / "session", "suspend"))
 
         add("Clipboard history", "Tools", ("edit-paste-symbolic",),
             "clipboard paste copy history pano", lambda: self.toggle("clipboard"), "Show",
@@ -1794,7 +1866,7 @@ class Launcher:
                 lambda uri=uri, name=name: self.eject(uri, name), "Eject")
 
         add("Update system", "Tools", ("system-software-update-symbolic", "software-update-available-symbolic"),
-            "updates upgrade dnf flatpak packages software", lambda: run_async([BIN / "updates", "run"]),
+            "updates upgrade dnf pkg flatpak packages software", lambda: run_async([BIN / "updates", "run"]),
             "Open")
 
         add("Pick color", "Tools", ("color-select-symbolic", "color-picker", "applications-graphics-symbolic"),
@@ -1952,10 +2024,10 @@ class Launcher:
 def main():
     launcher = Launcher()
     # GDK'nın olay kaynağıyla aynı öncelik: daha yükseği GDK'nın okumasını yarım bırakabilir.
-    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, launcher.on_signal, "search")
-    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR2, launcher.on_signal, "clipboard")
+    unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, launcher.on_signal, "search")
+    unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR2, launcher.on_signal, "clipboard")
     for sig in (signal.SIGTERM, signal.SIGINT):
-        GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, Gtk.main_quit)
+        unix_signal_add(GLib.PRIORITY_DEFAULT, sig, Gtk.main_quit)
     Gtk.main()
 
 

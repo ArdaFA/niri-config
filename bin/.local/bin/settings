@@ -1332,8 +1332,7 @@ class Window(Gtk.ApplicationWindow):
     def set_warmth(self, kelvin):
         if self.save("night_temp", int(kelvin)):
             # Açıksa yeni sıcaklıkla yeniden başlat; kapalıysa bir dahaki açılışta geçerli.
-            run(["systemctl", "--user", "try-restart", "night-light.service"],
-                self.failed("Night light"))
+            run([BIN / "session", "try-restart", "night-light"], self.failed("Night light"))
 
     # ── Touchpad ──
 
@@ -1397,7 +1396,7 @@ class Window(Gtk.ApplicationWindow):
     def set_lock(self, seconds):
         self.lock.set(seconds)
         if self.save("lock_after", seconds):
-            run(["systemctl", "--user", "try-restart", "swayidle.service"], self.failed("Screen lock"))
+            run([BIN / "session", "try-restart", "swayidle"], self.failed("Screen lock"))
 
     # ── Default apps ──
 

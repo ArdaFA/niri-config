@@ -2,7 +2,7 @@
 # Ekranı swaylock ile kilitler. Zaten kilitliyse hiçbir şey yapmaz.
 # Super+Alt+L, swayidle (boşta kalınca) ve uyku öncesi bu scripti çağırır.
 
-pidof -q swaylock && exit 0
+pgrep -x swaylock >/dev/null && exit 0
 
 # Kilit ekranı ayarları ve renkleri `theme` komutunun ürettiği dosyada.
 conf="${XDG_STATE_HOME:-$HOME/.local/state}/theme/swaylock.conf"

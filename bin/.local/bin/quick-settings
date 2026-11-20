@@ -33,7 +33,8 @@ close_panel() {
 }
 
 profile() {
-    busctl --system get-property $PP /net/hadess/PowerProfiles $PP ActiveProfile | cut -d'"' -f2
+    command -v busctl >/dev/null 2>&1 || return 1
+    busctl --system get-property $PP /net/hadess/PowerProfiles $PP ActiveProfile 2>/dev/null | cut -d'"' -f2
 }
 
 set_profile() {
@@ -41,7 +42,13 @@ set_profile() {
 }
 
 bt_powered() {
-    timeout 3 bluetoothctl show | grep -q 'Powered: yes'
+    command -v bluetoothctl >/dev/null 2>&1 && timeout 3 bluetoothctl show | grep -q 'Powered: yes'
+}
+
+# Bu sistemde olmayan bir düğmeye basılınca (FreeBSD: NetworkManager, BlueZ, güç profili yok).
+unavailable() {  # unavailable <ne> <gereken program>
+    notify-send --app-name="Quick settings" "$1 is not available" "This needs $2, which is not installed on this system." 2>/dev/null
+    exit 0
 }
 
 confirm() {  # confirm <düğme> <soru> : fuzzel ile evet/hayır; Enter'a hemen basmak iptal eder
@@ -53,11 +60,13 @@ item=${1:-}
 [ $# -gt 0 ] && shift
 
 case "$item ${1:-}" in
-    "wifi status")        bool [ "$(nmcli radio wifi)" = enabled ] ;;
-    "wifi ")              if on; then nmcli radio wifi on; else nmcli radio wifi off; fi ;;
+    "wifi status")        bool [ "$(nmcli radio wifi 2>/dev/null)" = enabled ] ;;
+    "wifi ")              command -v nmcli >/dev/null 2>&1 || unavailable "Wi-Fi switch" NetworkManager
+                          if on; then nmcli radio wifi on; else nmcli radio wifi off; fi ;;
 
     "bluetooth status")   bool bt_powered ;;
     "bluetooth ")
+        command -v bluetoothctl >/dev/null 2>&1 || unavailable Bluetooth "BlueZ (bluetoothctl)"
         if on; then
             rfkill unblock bluetooth 2>/dev/null
             # rfkill kalktıktan sonra denetleyicinin hazır olması biraz sürebilir.
@@ -78,10 +87,14 @@ case "$item ${1:-}" in
     "power-saver status") bool [ "$(profile)" = power-saver ] ;;
     "performance status") bool [ "$(profile)" = performance ] ;;
     "power-saver "|"performance ")
+        profile >/dev/null || unavailable "Power profile" power-profiles-daemon
         if on; then set_profile "$item"; else set_profile balanced; fi ;;
 
-    "mic status")         bool sh -c 'wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -qv MUTED' ;;
-    "mic ")               if on; then wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 0; else wpctl set-mute @DEFAULT_AUDIO_SOURCE@ 1; fi ;;
+    "mic status")         bool "$BIN/osd" mic status ;;
+    "mic ")               # Düğme açık = mikrofon açık. Durum farklıysa çevir (osd ses sistemini seçer).
+                          if on; then want=0; else want=1; fi
+                          if "$BIN/osd" mic status; then now=0; else now=1; fi
+                          [ "$want" = "$now" ] || "$BIN/osd" mic mute ;;
 
     "night status")       "$BIN/night-light" status ;;
     "night ")             if on; then "$BIN/night-light" on; else "$BIN/night-light" off; fi ;;
@@ -119,10 +132,10 @@ case "$item ${1:-}" in
         confirm "Log out" "Log out?" && niri msg action quit --skip-confirmation ;;
     "reboot ")
         close_panel
-        confirm "Restart" "Restart?" && systemctl reboot ;;
+        confirm "Restart" "Restart?" && "$BIN/session" reboot ;;
     "poweroff ")
         close_panel
-        confirm "Shut down" "Shut down?" && systemctl poweroff ;;
+        confirm "Shut down" "Shut down?" && "$BIN/session" poweroff ;;
 
     *)
         echo "Usage: quick-settings wifi|bluetooth|dnd|layout|power-saver|performance|mic|night|awake|record [status]" >&2

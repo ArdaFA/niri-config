@@ -32,6 +32,7 @@ import tomllib
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]          # ~/dotfiles
+BIN = Path(__file__).resolve().parent                # session, night-light… burada
 PRESETS = REPO / "themes" / "presets"
 TEMPLATES = REPO / "themes" / "templates"
 WALLUST_CONFIG = REPO / "themes" / "wallust"
@@ -256,12 +257,14 @@ def write_outputs(palette, outdir):
 
 # ── Çalışan bileşenleri yenileme ──────────────────────────────────────────
 
-def unit_active(unit):
-    return subprocess.run(["systemctl", "--user", "--quiet", "is-active", unit]).returncode == 0
+def session(*args):
+    """Oturum servisleri: systemd --user ya da (FreeBSD) `session`'ın kendi yöneticisi."""
+    return subprocess.run([str(BIN / "session"), *args], stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL).returncode == 0
 
 
-def unit_failed(unit):
-    return subprocess.run(["systemctl", "--user", "--quiet", "is-failed", unit]).returncode == 0
+def unit_active(name):
+    return session("is-active", name)
 
 
 def swaybg_args(palette):
@@ -272,6 +275,8 @@ def swaybg_args(palette):
 
 def foot_terminals():
     """foot pencerelerinde çalışan kabukların terminal aygıtları (/dev/pts/N)."""
+    if not os.path.isdir("/proc/self"):
+        return foot_terminals_ps()
     procs = []
     foot_pids = set()
     for entry in Path("/proc").iterdir():
@@ -296,6 +301,16 @@ def foot_terminals():
             if tty.startswith("/dev/pts/"):
                 ttys.add(tty)
     return ttys
+
+
+def foot_terminals_ps():
+    """FreeBSD (/proc yok): ps'in süreç tablosu. Kabuğun denetim terminali (pts/3)."""
+    out = subprocess.run(["ps", "-ax", "-o", "pid=", "-o", "ppid=", "-o", "comm=", "-o", "tty="],
+                         capture_output=True, text=True).stdout
+    rows = [line.split() for line in out.splitlines()]
+    rows = [r for r in rows if len(r) == 4 and r[0].isdigit() and r[1].isdigit()]
+    foot_pids = {r[0] for r in rows if r[2] == "foot"}
+    return {f"/dev/{r[3]}" for r in rows if r[1] in foot_pids and r[3].startswith("pts/")}
 
 
 def update_foot(palette):
@@ -323,24 +338,23 @@ def reload_components(palette):
     #   Ona `reload`/SIGUSR2 gönderilmez: Waybar 0.14 bu sinyalde eski barları kapatmadan
     #   yenilerini açıyor ve tepsi simgeleri yeni barlara gelmiyor.
     # swaync: renk dosyasını style.css @import eder; CSS'i yeniden okuması istenir.
-    if unit_active("swaync.service"):
+    if unit_active("swaync"):
         subprocess.run(["swaync-client", "--reload-css", "--skip-wait"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if unit_active("mako.service"):
+    if unit_active("mako"):
         subprocess.run(["makoctl", "reload"])
     # swaybg: görseli yeniden okuyamaz, yeniden başlatılır. Duvar kağıtları art arda seçilince
-    # systemd'nin başlatma sınırına (10 saniyede 5) takılıp kapanmasın diye sayaç önce
-    # sıfırlanır (reset-failed). Daha önce bu yüzden kapanmışsa (failed) yine başlatılır,
-    # ama yalnızca niri oturumundaysak.
-    swaybg_active = unit_active("swaybg.service")
-    if swaybg_active or (unit_failed("swaybg.service") and unit_active("niri.service")):
+    # başlatma sınırına (10 saniyede 5) takılıp kapanmasın diye `session restart` sayacı önce
+    # sıfırlar (systemd'de reset-failed). Daha önce bu yüzden kapanmışsa yine başlatılır,
+    # ama yalnızca niri oturumunun içindeysek.
+    swaybg_active = unit_active("swaybg")
+    if swaybg_active or os.environ.get("NIRI_SOCKET"):
         try:
             running = SWAYBG_RUNNING.read_text()
         except OSError:
             running = ""
         if not swaybg_active or running != json.dumps(swaybg_args(palette)):
-            subprocess.run(["systemctl", "--user", "reset-failed", "swaybg.service"])
-            subprocess.run(["systemctl", "--user", "restart", "swaybg.service"])
+            session("restart", "swaybg")
     update_foot(palette)
 
 

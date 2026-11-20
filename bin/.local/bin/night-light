@@ -1,5 +1,6 @@
 #!/bin/sh
-# night-light — gece ışığı: ekran renklerini sıcak tona çeker (wlsunset, night-light.service).
+# night-light — gece ışığı: ekran renklerini sıcak tona çeker (wlsunset, night-light servisi;
+# systemd'de night-light.service, FreeBSD'de `session` yönetir).
 # Açıkken gün içinde de sıcak kalır. Sıcaklık: Settings → Displays. Oturumdan çıkınca kapanır.
 #
 # Otomatik (Settings → Displays → "Turn on automatically", services.env → NIGHT_AUTO=1):
@@ -16,7 +17,7 @@
 
 set -u
 
-UNIT=night-light.service
+SESSION="$HOME/.local/bin/session"
 SIGNAL=10   # Waybar config.jsonc → custom/night → "signal"
 # Saatleri değiştirmek: buradaki iki değer + night-light-auto.timer + settings → NIGHT_FROM/UNTIL
 ON_AT=1900
@@ -34,26 +35,33 @@ evening() {
 }
 
 is_on() {
-    systemctl --user --quiet is-active "$UNIT"
+    "$SESSION" is-active night-light 2>/dev/null
 }
 
-refresh_bar() {
-    pkill "-RTMIN+$SIGNAL" -x waybar 2>/dev/null || true
+refresh_bar() {  # Waybar'a SIGRTMIN+SIGNAL. FreeBSD'nin pkill'i "RTMIN+n" adını bilmez: 65+n.
+    case $(uname -s) in
+        FreeBSD) pkill "-$((65 + SIGNAL))" -x waybar ;;
+        *)       pkill "-RTMIN+$SIGNAL" -x waybar ;;
+    esac 2>/dev/null || true
 }
 
 turn_on() {
     if ! command -v wlsunset >/dev/null 2>&1; then
+        case $(uname -s) in
+            FreeBSD) how="pkg install wlsunset" ;;
+            *)       how="sudo dnf install wlsunset" ;;
+        esac
         notify-send --app-name="Night light" "Night light needs wlsunset" \
-            "Install it with: sudo dnf install wlsunset" 2>/dev/null
-        echo "night-light: wlsunset is not installed (sudo dnf install wlsunset)" >&2
+            "Install it with: $how" 2>/dev/null
+        echo "night-light: wlsunset is not installed ($how)" >&2
         exit 1
     fi
-    systemctl --user start "$UNIT"
+    "$SESSION" start night-light
     refresh_bar
 }
 
 turn_off() {
-    systemctl --user stop "$UNIT"
+    "$SESSION" stop night-light
     refresh_bar
 }
 

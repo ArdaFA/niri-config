@@ -1,0 +1,728 @@
+#!/usr/bin/env python3
+"""session — the niri session's background services, with or without systemd.
+
+  session daemon                 start the services; niri runs this at startup. Does nothing when
+                                 systemd --user already runs them (niri started by niri-session)
+  session status                 the services and their state
+  session start|stop|restart|try-restart NAME
+  session is-active NAME         exit code 0 while the service runs
+  session log NAME               the service's recent output
+  session idle                   swayidle with the screen lock settings (the swayidle service)
+  session polkit-agent           the first installed polkit agent (the niri-polkit service)
+  session lock|logout|suspend|reboot|poweroff
+"""
+# Not: Ekranda görünen metinler İngilizce; yorumlar Türkçe.
+#
+# İki çalışma biçimi var, bütün betikler servislerle yalnızca bu komut üzerinden konuşur:
+#
+#   systemd   Fedora'da giriş ekranı niri'yi niri-session ile başlatır; servisler
+#             ~/.config/systemd/user/niri.service.wants altındaki kullanıcı servisleridir.
+#             `session restart waybar` → systemctl --user restart waybar.service
+#   yerleşik  systemd yoksa (FreeBSD) ya da niri doğrudan `niri --session` ile açıldıysa:
+#             `session daemon` aynı servisleri kendisi başlatır, çökenleri yeniden başlatır,
+#             07:00/19:00 zamanlayıcılarını çalıştırır, XDG autostart girdilerini açar ve niri
+#             kapanınca hepsini kapatır. Diğer komutlar onunla $XDG_RUNTIME_DIR/niri-session.sock
+#             üzerinden konuşur. Çıktılar: ~/.local/state/niri-session/<servis>.log
+
+import json
+import os
+import re
+import selectors
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+HOME = Path.home()
+BIN = Path(__file__).resolve().parent
+RUNTIME = Path(os.environ.get("XDG_RUNTIME_DIR") or f"/tmp/xdg-runtime-{os.getuid()}")
+SOCKET = RUNTIME / "niri-session.sock"
+STATE_HOME = Path(os.environ.get("XDG_STATE_HOME") or HOME / ".local/state")
+LOG_DIR = STATE_HOME / "niri-session"
+SERVICES_ENV = STATE_HOME / "settings/services.env"       # Settings uygulaması yazar
+LOG_LIMIT = 512 * 1024              # bundan büyük günlük, oturum başında .old olur
+FREEBSD = sys.platform.startswith("freebsd")
+
+# Settings'in services.env'i yoksa geçerli değerler (systemd servislerindeki Environment= ile aynı).
+ENV_DEFAULTS = {"LOCK_AFTER": "300", "SCREEN_OFF_AFTER": "330",
+                "NIGHT_TEMP": "4000", "NIGHT_TEMP_HIGH": "4001"}
+
+# Günde iki kez çalışanlar (systemd'de theme-auto.timer ve night-light-auto.timer).
+DAILY_AT = ((7, 0), (19, 0))
+
+# Yükseltme gerektiren yetki penceresi (polkit); KDE varsa onunki. Dağıtıma göre farklı yollar.
+POLKIT_AGENTS = (
+    "/usr/libexec/kf6/polkit-kde-authentication-agent-1",            # Fedora (KDE Plasma)
+    "/usr/lib/polkit-kde-authentication-agent-1",
+    "/usr/libexec/polkit-kde-authentication-agent-1",
+    "/usr/libexec/polkit-mate-authentication-agent-1",               # Fedora (mate-polkit)
+    "/usr/lib/mate-polkit/polkit-mate-authentication-agent-1",
+    "/usr/local/libexec/polkit-mate-authentication-agent-1",         # FreeBSD (mate-polkit)
+    "/usr/libexec/polkit-gnome-authentication-agent-1",
+    "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1",
+    "/usr/local/libexec/polkit-gnome-authentication-agent-1",
+    "/usr/libexec/xfce-polkit",
+    "/usr/bin/lxpolkit",
+    "/usr/bin/lxqt-policykit-agent",
+    "/usr/local/bin/lxqt-policykit-agent",
+)
+
+
+def die(msg, code=1):
+    print(f"session: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def run(cmd, timeout=10):
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return out
+
+
+def read_env_file(path):
+    """systemd EnvironmentFile biçimi: ANAHTAR=değer satırları (# yorum)."""
+    env = {}
+    try:
+        lines = Path(path).read_text().splitlines()
+    except OSError:
+        return env
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        env[key.strip()] = value
+    return env
+
+
+def service_env():
+    env = dict(os.environ)
+    env.setdefault("XDG_CURRENT_DESKTOP", "niri")
+    env.setdefault("XDG_SESSION_TYPE", "wayland")
+    for key, value in ENV_DEFAULTS.items():
+        env.setdefault(key, value)
+    env.update(read_env_file(SERVICES_ENV))
+    return env
+
+
+def has_logind():
+    """systemd-logind ya da elogind var mı (kilit/uyku olayları, loginctl, systemctl suspend)."""
+    return (not FREEBSD and os.path.isdir("/run/systemd/seats")
+            and shutil.which("loginctl") is not None)
+
+
+# ── İstemci: servis komutları ─────────────────────────────────────────────
+
+def ask_daemon(request, timeout=15):
+    """Yerleşik yönetici çalışıyorsa isteği iletir ve cevabı döndürür; çalışmıyorsa None."""
+    try:
+        with socket.socket(socket.AF_UNIX) as s:
+            s.settimeout(timeout)
+            s.connect(str(SOCKET))
+            s.sendall((json.dumps(request) + "\n").encode())
+            return json.loads(s.makefile().readline() or "null")
+    except (OSError, ValueError):
+        return None
+
+
+def systemctl_user(*args, quiet=False):
+    if not shutil.which("systemctl"):
+        return None
+    out = run(["systemctl", "--user", *args], timeout=30)
+    if out is None:
+        return None
+    if not quiet:
+        sys.stdout.write(out.stdout)
+        sys.stderr.write(out.stderr)
+    return out.returncode
+
+
+def cmd_unit(op, name):
+    reply = ask_daemon({"op": op, "name": name})
+    if reply is not None:
+        if reply.get("error"):
+            if op != "is-active":
+                print(f"session: {reply['error']}", file=sys.stderr)
+            sys.exit(3 if op == "is-active" else 1)
+        if reply.get("output"):
+            print(reply["output"])
+        sys.exit(0)
+    # systemd --user yönetiyor (ya da hiçbir şey çalışmıyor).
+    unit = name if "." in name else f"{name}.service"
+    if op == "log":
+        if shutil.which("journalctl"):
+            os.execvp("journalctl", ["journalctl", "--user", "-u", unit, "-n", "100", "--no-pager"])
+        die("no log: the niri session services are not running")
+    if op in ("restart", "start"):
+        systemctl_user("reset-failed", unit, quiet=True)     # art arda yeniden başlatma sınırı
+    rc = systemctl_user("--quiet", op, unit) if op == "is-active" else systemctl_user(op, unit)
+    if rc is None:
+        if op == "is-active":
+            sys.exit(3)
+        die("the niri session services are not running (log in to niri first)")
+    sys.exit(rc)
+
+
+def cmd_status():
+    reply = ask_daemon({"op": "status"})
+    if reply is not None:
+        for svc in reply.get("services", []):
+            print(f"{svc['name']:<20} {svc['state']:<10} {svc.get('pid') or ''}")
+        print(f"(built-in service manager · logs: {LOG_DIR})")
+        return
+    rc = systemctl_user("list-dependencies", "--plain", "niri.service")
+    if rc is None:
+        die("the niri session services are not running")
+
+
+# ── Yerleşik servis yöneticisi ────────────────────────────────────────────
+
+class Service:
+    RESTART_DELAY = 1.0
+    BURST = (5, 10.0)          # 10 saniyede 5 başlatma: systemd'nin varsayılan sınırı gibi
+
+    def __init__(self, name, argv, autostart=True):
+        self.name, self.argv, self.autostart = name, [str(a) for a in argv], autostart
+        self.proc = None
+        self.state = "inactive"           # inactive · active · failed
+        self.starts = []
+        self.restart_at = None
+        self.stopping = False
+
+    @property
+    def log_path(self):
+        return LOG_DIR / f"{self.name}.log"
+
+    def start(self, manual=False):
+        if self.proc is not None:
+            return
+        now = time.monotonic()
+        if manual:
+            self.starts = []
+        self.starts = [t for t in self.starts if now - t < self.BURST[1]] + [now]
+        self.restart_at = None
+        self.stopping = False
+        try:
+            with open(self.log_path, "ab") as log:
+                log.write(f"--- {time.strftime('%F %T')} start: {shlex.join(self.argv)}\n".encode())
+                log.flush()
+                self.proc = subprocess.Popen(self.argv, env=service_env(), cwd=HOME,
+                                             stdin=subprocess.DEVNULL, stdout=log,
+                                             stderr=subprocess.STDOUT, start_new_session=True)
+        except OSError as e:
+            self.note(f"cannot start: {e}")
+            self.state = "failed"
+            return
+        self.state = "active"
+
+    def stop(self, wait=3.0):
+        self.restart_at = None
+        if self.proc is None:
+            if self.state != "failed":
+                self.state = "inactive"
+            return
+        self.stopping = True
+        try:
+            os.killpg(self.proc.pid, signal.SIGTERM)
+        except OSError:
+            pass
+        try:
+            self.proc.wait(wait)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(self.proc.pid, signal.SIGKILL)
+            except OSError:
+                pass
+            self.proc.wait()
+        self.proc = None
+        self.state = "inactive"
+
+    def poll(self, now):
+        if self.proc is not None:
+            rc = self.proc.poll()
+            if rc is None:
+                return
+            self.proc = None
+            if self.stopping or rc == 0:
+                self.state = "inactive"
+                return
+            self.note(f"exited with status {rc}")
+            if len(self.starts) >= self.BURST[0]:
+                self.note("restarted too often; giving up (session restart " + self.name + ")")
+                self.state = "failed"
+                return
+            self.state = "failed"
+            self.restart_at = now + self.RESTART_DELAY
+        elif self.restart_at is not None and now >= self.restart_at:
+            self.start()
+
+    def note(self, text):
+        try:
+            with open(self.log_path, "a") as log:
+                log.write(f"--- {time.strftime('%F %T')} {text}\n")
+        except OSError:
+            pass
+
+    def info(self):
+        return {"name": self.name, "state": self.state,
+                "pid": self.proc.pid if self.proc else None}
+
+
+def make_services():
+    notify = "swaync" if shutil.which("swaync") else "mako"
+    return [
+        Service("niri-polkit", [BIN / "session", "polkit-agent"]),
+        Service("waybar", ["waybar"]),
+        Service(notify, [notify]),
+        Service("swayidle", [BIN / "session", "idle"]),
+        Service("swaybg", [BIN / "theme", "swaybg"]),
+        Service("layout-mode", [BIN / "layout-mode", "daemon"]),
+        Service("launcher", [BIN / "launcher", "daemon"]),
+        Service("clipboard-history", ["wl-paste", "--type", "text", "--watch", BIN / "clipboard", "store"]),
+        Service("device-notify", [BIN / "device-notify"]),
+        # İsteğe bağlı: night-light betiği açar/kapatır.
+        Service("night-light", ["sh", "-c", 'exec wlsunset -t "$NIGHT_TEMP" -T "$NIGHT_TEMP_HIGH" '
+                                            '-S 06:00 -s 18:00'], autostart=False),
+    ]
+
+
+def next_daily(now):
+    """Şu andan sonraki ilk 07:00 ya da 19:00 (epoch)."""
+    t = time.localtime(now)
+    best = None
+    for day in (0, 1):
+        for h, m in DAILY_AT:
+            when = time.mktime((t.tm_year, t.tm_mon, t.tm_mday + day, h, m, 0, 0, 0, -1))
+            if when > now and (best is None or when < best):
+                best = when
+    return best
+
+
+def niri_request(request):
+    path = os.environ.get("NIRI_SOCKET")
+    if not path:
+        return None
+    try:
+        with socket.socket(socket.AF_UNIX) as s:
+            s.settimeout(3)
+            s.connect(path)
+            s.sendall((json.dumps(request) + "\n").encode())
+            return json.loads(s.makefile().readline())
+    except (OSError, ValueError):
+        return None
+
+
+def systemd_runs_session():
+    """niri, systemd --user'ın niri.service'i olarak mı çalışıyor (niri-session)?"""
+    if not shutil.which("systemctl"):
+        return False
+    out = run(["systemctl", "--user", "show", "-p", "ActiveState", "--value", "niri.service"])
+    return out is not None and out.stdout.strip() in ("active", "activating", "reloading")
+
+
+def nested_niri():
+    """Pencere içinde çalışan (test) bir niri mi? Onun için servis açılmaz."""
+    reply = niri_request("Outputs") or {}
+    outputs = reply.get("Ok", {}).get("Outputs", {})
+    return any(name.startswith("winit") for name in outputs)
+
+
+def rotate_logs():
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    for log in LOG_DIR.glob("*.log"):
+        try:
+            if log.stat().st_size > LOG_LIMIT:
+                log.replace(log.with_suffix(".log.old"))
+        except OSError:
+            pass
+
+
+def ensure_session_bus(services):
+    """Oturum D-Bus'ı yoksa (giriş ekranı dbus-run-session kullanmadıysa) başlatır.
+    $XDG_RUNTIME_DIR/bus'a açılır: GLib, libdbus ve zbus adres verilmediğinde orayı dener,
+    niri'nin sonradan açtığı programlar da onu bulur."""
+    if os.environ.get("DBUS_SESSION_BUS_ADDRESS") or (RUNTIME / "bus").exists():
+        return
+    if not shutil.which("dbus-daemon"):
+        return
+    bus = Service("dbus", ["dbus-daemon", "--session", "--nofork", "--nopidfile",
+                           f"--address=unix:path={RUNTIME / 'bus'}"])
+    bus.start()
+    services.insert(0, bus)
+    for _ in range(50):
+        if (RUNTIME / "bus").exists():
+            break
+        time.sleep(0.1)
+    os.environ["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={RUNTIME / 'bus'}"
+
+
+def run_oneshot(argv, timeout=60):
+    try:
+        with open(LOG_DIR / "oneshot.log", "ab") as log:
+            log.write(f"--- {time.strftime('%F %T')} {shlex.join(map(str, argv))}\n".encode())
+            log.flush()
+            subprocess.run([str(a) for a in argv], env=service_env(), cwd=HOME, timeout=timeout,
+                           stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def autostart_entries():
+    """XDG autostart girdileri (kullanıcınınki aynı adlı sistem girdisini geçersiz kılar)."""
+    import gi
+    gi.require_version("Gio", "2.0")
+    from gi.repository import GLib
+    dirs = [GLib.get_user_config_dir(), *GLib.get_system_config_dirs()]
+    seen, found = set(), []
+    for d in dirs:
+        folder = Path(d) / "autostart"
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.glob("*.desktop")):
+            if path.name not in seen:
+                seen.add(path.name)
+                found.append(path)
+    return found
+
+
+def autostart_command(path, desktop):
+    """Girdi bu masaüstünde başlamalıysa çalıştırılacak komut (kabuk satırı), değilse None."""
+    import gi
+    gi.require_version("Gio", "2.0")
+    from gi.repository import GLib
+    kf = GLib.KeyFile()
+    try:
+        kf.load_from_file(str(path), GLib.KeyFileFlags.NONE)
+    except GLib.Error:
+        return None
+    group = "Desktop Entry"
+
+    def get(key, kind="string"):
+        try:
+            return getattr(kf, f"get_{kind}")(group, key)
+        except GLib.Error:
+            return None
+
+    if get("Type") not in (None, "Application") or get("Hidden", "boolean"):
+        return None
+    if get("X-GNOME-Autostart-enabled", "boolean") is False:
+        return None
+    desktops = set(desktop.split(":"))
+    only, never = get("OnlyShowIn", "string_list"), get("NotShowIn", "string_list")
+    if only is not None and not desktops & set(only):
+        return None
+    if never is not None and desktops & set(never):
+        return None
+    exe = get("TryExec")
+    if exe and not shutil.which(exe):
+        return None
+    cmd = get("Exec")
+    if not cmd:
+        return None
+    # Alan kodları (%U, %f…) autostart'ta anlamsız: atılır, %% → %.
+    cmd = re.sub(r"%[a-zA-Z]", "", cmd).replace("%%", "%").strip()
+    try:
+        first = shlex.split(cmd)[0]
+    except (ValueError, IndexError):
+        return None
+    if not shutil.which(first):
+        return None
+    return cmd
+
+
+def run_autostart():
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP") or "niri"
+    try:
+        entries = autostart_entries()
+    except (ImportError, ValueError):
+        return
+    for path in entries:
+        cmd = autostart_command(path, desktop)
+        if cmd:
+            # niri üzerinden: bu yöneticinin alt süreci olmasınlar.
+            run(["niri", "msg", "action", "spawn-sh", "--", cmd])
+
+
+class Daemon:
+    def __init__(self):
+        self.services = make_services()
+        self.by_name = {s.name: s for s in self.services}
+        self.sel = selectors.DefaultSelector()
+        self.running = True
+
+    def handle(self, request):
+        op, name = request.get("op"), request.get("name")
+        if op == "status":
+            return {"services": [s.info() for s in self.services]}
+        svc = self.by_name.get(name or "")
+        if svc is None:
+            if op == "is-active":
+                return {"error": "inactive"}
+            if op in ("stop", "try-restart"):
+                return {}
+            return {"error": f"unknown service: {name}"}
+        if op == "is-active":
+            return {} if svc.state == "active" else {"error": svc.state}
+        if op == "start":
+            svc.start(manual=True)
+        elif op == "stop":
+            svc.stop()
+        elif op == "restart" or (op == "try-restart" and svc.state == "active"):
+            svc.stop()
+            svc.start(manual=True)
+        elif op == "log":
+            try:
+                lines = svc.log_path.read_text(errors="replace").splitlines()[-100:]
+            except OSError:
+                lines = []
+            return {"output": "\n".join(lines)}
+        elif op != "try-restart":
+            return {"error": f"unknown command: {op}"}
+        return {}
+
+    def on_client(self, server):
+        conn, _ = server.accept()
+        with conn:
+            conn.settimeout(5)
+            try:
+                line = conn.makefile().readline()
+                reply = self.handle(json.loads(line))
+            except (OSError, ValueError, AttributeError) as e:
+                reply = {"error": str(e)}
+            try:
+                conn.sendall((json.dumps(reply) + "\n").encode())
+            except OSError:
+                pass
+
+    def run(self):
+        rotate_logs()
+        # Tek yönetici: başka biri çalışıyorsa (aynı kullanıcı, iç içe oturum) çık.
+        if ask_daemon({"op": "status"}, timeout=2) is not None:
+            return
+        try:
+            SOCKET.unlink()
+        except FileNotFoundError:
+            pass
+        server = socket.socket(socket.AF_UNIX)
+        server.bind(str(SOCKET))
+        os.chmod(SOCKET, 0o600)
+        server.listen(8)
+        server.setblocking(False)
+
+        # niri kapanınca olay akışı biter: o zaman her şey kapatılır.
+        niri = socket.socket(socket.AF_UNIX)
+        niri.connect(os.environ["NIRI_SOCKET"])
+        niri.sendall(b'"EventStream"\n')
+        niri.setblocking(False)
+
+        for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+            signal.signal(sig, lambda *_: setattr(self, "running", False))
+
+        ensure_session_bus(self.services)
+        self.by_name = {s.name: s for s in self.services}
+        # Renkler önce: Waybar, bildirimler ve duvar kağıdı üretilmiş dosyaları okur.
+        run_oneshot([BIN / "theme", "apply", "--no-reload"])
+        for svc in self.services:
+            if svc.autostart and svc.proc is None:
+                svc.start()
+        run_oneshot([BIN / "night-light", "auto"])
+        run_autostart()
+
+        self.sel.register(server, selectors.EVENT_READ, "client")
+        self.sel.register(niri, selectors.EVENT_READ, "niri")
+        daily = next_daily(time.time())
+        try:
+            while self.running:
+                for key, _ in self.sel.select(timeout=0.5):
+                    if key.data == "client":
+                        try:
+                            self.on_client(server)
+                        except OSError:
+                            pass
+                    elif key.data == "niri":
+                        try:
+                            data = niri.recv(65536)
+                        except BlockingIOError:
+                            continue
+                        except OSError:
+                            data = b""
+                        if not data:
+                            self.running = False
+                now = time.monotonic()
+                for svc in self.services:
+                    svc.poll(now)
+                if time.time() >= daily:
+                    run_oneshot([BIN / "theme", "auto", "check"])
+                    run_oneshot([BIN / "night-light", "auto"])
+                    daily = next_daily(time.time() + 1)
+        finally:
+            for svc in reversed(self.services):
+                svc.stop(wait=2.0)
+            try:
+                SOCKET.unlink()
+            except OSError:
+                pass
+
+
+def cmd_daemon():
+    if not os.environ.get("NIRI_SOCKET"):
+        die("run this from niri (spawn-sh-at-startup), NIRI_SOCKET is not set")
+    if systemd_runs_session():
+        return              # niri-session: servisleri systemd --user başlatıyor
+    if nested_niri():
+        return              # pencere içindeki test niri'si
+    Daemon().run()
+
+
+# ── Servislerin kendisi ───────────────────────────────────────────────────
+
+def idle_argv(env, logind):
+    """swayidle: boşta kalınca kilit, sonra ekranı kapat. Uyku öncesi kilit yalnızca logind
+    varsa (FreeBSD'deki swayidle logind'siz derlenir: lock/before-sleep olaylarını tanımaz).
+    systemd'li sistemlerde aynı komutu swayidle.service çalıştırır."""
+    env = {**ENV_DEFAULTS, **{k: v for k, v in env.items() if k in ENV_DEFAULTS}}
+    awake, lock = shlex.quote(str(BIN / "awake")), shlex.quote(str(BIN / "lock-screen"))
+    lock_cmd = "loginctl lock-session" if logind else lock
+    argv = ["swayidle", "-w",
+            "timeout", env["LOCK_AFTER"], f"{awake} unless {lock_cmd}",
+            "timeout", env["SCREEN_OFF_AFTER"], f"{awake} unless niri msg action power-off-monitors"]
+    if logind:
+        argv += ["lock", lock, "before-sleep", lock]
+    return argv
+
+
+def cmd_idle():
+    os.execvp("swayidle", idle_argv(os.environ, has_logind()))
+
+
+def cmd_polkit_agent():
+    if FREEBSD and not os.environ.get("XDG_SESSION_COOKIE") and shutil.which("ck-launch-session"):
+        # polkit FreeBSD'de oturumu ConsoleKit'e sorar; oturum yoksa ajan hemen çöker ve
+        # yeniden başlatılıp durur. Çökmek yerine sebebini yazıp çık (servis "inactive" kalır).
+        print("session: no ConsoleKit session, so no polkit agent (password prompts for admin "
+              "actions). Start niri with ~/.local/bin/niri-start, which opens one.", file=sys.stderr)
+        return
+    for agent in POLKIT_AGENTS:
+        if os.access(agent, os.X_OK):
+            os.execv(agent, [agent])
+    print("session: no polkit agent installed; skipped", file=sys.stderr)
+
+
+def notify(title, body):
+    run(["notify-send", "--app-name=Session", title, body])
+
+
+def cmd_power(action):
+    if action == "lock":
+        os.execv(BIN / "lock-screen", [str(BIN / "lock-screen")])
+    if action == "logout":
+        os.execvp("niri", ["niri", "msg", "action", "quit", "--skip-confirmation"])
+    if FREEBSD:
+        # shutdown(8) ve /dev/acpi "operator" grubuna açık: install.sh kullanıcıyı ekler.
+        if action == "suspend":
+            run([BIN / "lock-screen"])
+            time.sleep(1)
+            cmd = ["acpiconf", "-s", "3"]
+        else:
+            cmd = ["shutdown", "-r" if action == "reboot" else "-p", "now"]
+    elif shutil.which("systemctl") and os.path.isdir("/run/systemd/system"):
+        cmd = ["systemctl", action]
+    elif shutil.which("loginctl"):
+        cmd = ["loginctl", action]
+    else:
+        die(f"don't know how to {action} on this system")
+    out = run(cmd, timeout=30)
+    if out is None or out.returncode != 0:
+        err = (out.stderr.strip() if out else "") or "permission denied"
+        hint = " Add yourself to the operator group (pw groupmod operator -m $USER)." if FREEBSD else ""
+        notify(f"{action.capitalize()} failed", err + hint)
+        die(f"{action} failed: {err}")
+
+
+def cmd_selftest():
+    import tempfile
+    cases = []
+    with tempfile.TemporaryDirectory() as tmp:
+        env = Path(tmp) / "services.env"
+        env.write_text("# yorum\nLOCK_AFTER=600\nNIGHT_TEMP='3500'\n\nBAD LINE\n")
+        cases.append((read_env_file(env), {"LOCK_AFTER": "600", "NIGHT_TEMP": "3500"}))
+        cases.append((read_env_file(Path(tmp) / "missing"), {}))
+
+        def entry(name, body):
+            path = Path(tmp) / name
+            path.write_text("[Desktop Entry]\nType=Application\nName=X\n" + body)
+            return autostart_command(path, "niri")
+        cases += [
+            (entry("a.desktop", "Exec=sh -c 'echo hi' %U\n"), "sh -c 'echo hi'"),
+            (entry("b.desktop", "Exec=sh\nOnlyShowIn=KDE;GNOME;\n"), None),
+            (entry("c.desktop", "Exec=sh\nOnlyShowIn=niri;\n"), "sh"),
+            (entry("d.desktop", "Exec=sh\nNotShowIn=niri;\n"), None),
+            (entry("e.desktop", "Exec=sh\nHidden=true\n"), None),
+            (entry("f.desktop", "Exec=sh\nX-GNOME-Autostart-enabled=false\n"), None),
+            (entry("g.desktop", "Exec=no-such-program-xyz --flag\n"), None),
+            (entry("h.desktop", "TryExec=no-such-program-xyz\nExec=sh\n"), None),
+        ]
+    # 07:00 ve 19:00: hangisi önce geliyorsa
+    base = time.mktime((2026, 11, 20, 12, 0, 0, 0, 0, -1))
+    cases += [
+        (time.localtime(next_daily(base))[3:5], (19, 0)),
+        (time.localtime(next_daily(base + 8 * 3600))[3:5], (7, 0)),
+        (time.localtime(next_daily(base - 6 * 3600))[3:5], (7, 0)),
+    ]
+    with_logind = idle_argv({"LOCK_AFTER": "120"}, True)
+    without = idle_argv({}, False)
+    cases += [
+        (with_logind[2:4], ["timeout", "120"]),
+        (with_logind[4].endswith("unless loginctl lock-session"), True),
+        ("before-sleep" in with_logind, True),
+        (without[3], "300"),
+        (without[4].endswith("unless " + shlex.quote(str(BIN / "lock-screen"))), True),
+        ("before-sleep" in without or "lock" in without, False),
+    ]
+    names = [s.name for s in make_services()]
+    cases.append((names[:2], ["niri-polkit", "waybar"]))
+    cases.append(("night-light" in names and "launcher" in names, True))
+    failed = [(i, got, want) for i, (got, want) in enumerate(cases) if got != want]
+    for i, got, want in failed:
+        print(f"case {i}: got {got!r}, want {want!r}", file=sys.stderr)
+    if failed:
+        sys.exit(1)
+    print(f"session: {len(cases)} checks ok")
+
+
+def main():
+    args = sys.argv[1:]
+    if not args:
+        print(__doc__.strip(), file=sys.stderr)
+        sys.exit(1)
+    cmd = args[0]
+    if cmd == "daemon":
+        cmd_daemon()
+    elif cmd == "status":
+        cmd_status()
+    elif cmd in ("start", "stop", "restart", "try-restart", "is-active", "log") and len(args) == 2:
+        cmd_unit(cmd, args[1])
+    elif cmd == "idle":
+        cmd_idle()
+    elif cmd == "polkit-agent":
+        cmd_polkit_agent()
+    elif cmd == "selftest":
+        cmd_selftest()
+    elif cmd in ("lock", "logout", "suspend", "reboot", "poweroff"):
+        cmd_power(cmd)
+    else:
+        print(__doc__.strip(), file=sys.stderr)
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()

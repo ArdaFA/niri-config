@@ -171,9 +171,10 @@ def write_atomic(path, text):
     tmp.replace(path)
 
 
-def unit_active(unit):
-    return subprocess.run(["systemctl", "--user", "--quiet", "is-active", unit],
-                          stdout=subprocess.DEVNULL).returncode == 0
+def session(*args):
+    """Oturum servisleri: systemd --user ya da (FreeBSD) `session`'ın kendi yöneticisi."""
+    return subprocess.run([str(BIN / "session"), *args], stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL).returncode == 0
 
 
 # ── Uygulama ──────────────────────────────────────────────────────────────
@@ -212,11 +213,10 @@ def apply(font_key):
                        stdout=subprocess.DEVNULL)
 
     # Canlı yenileme: temanın kullandığı mekanizmaların aynısı.
-    if unit_active("swaync.service"):
+    if session("is-active", "swaync"):
         subprocess.run(["swaync-client", "--reload-css", "--skip-wait"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if unit_active("launcher.service"):
-        subprocess.run(["systemctl", "--user", "restart", "launcher.service"])
+    session("try-restart", "launcher")
     # Waybar: ana style.css'i zaten kendisi izler (reload_style_on_change);
     # emin olmak için temanın renk dosyasına da dokunulur — @import zinciri
     # yeniden okununca ana dosya da yeniden okunur.

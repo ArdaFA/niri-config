@@ -2,7 +2,7 @@
 // Modül seçenekleri: man waybar-<modül>   (ör. man waybar-clock, man waybar-niri-workspaces)
 //
 // style.css ve tema renkleri değişince Waybar kendisi yenilenir (reload_style_on_change).
-// Bu dosyayı değiştirdikten sonra: systemctl --user restart waybar
+// Bu dosyayı değiştirdikten sonra: ~/.local/bin/session restart waybar
 // (`reload`/SIGUSR2 kullanma: Waybar 0.14'te eski barları kapatmadan yenilerini açıyor
 //  ve tepsi simgeleri yeni barlara gelmiyor.)
 {
@@ -26,7 +26,8 @@
     "modules-right": [
         "custom/timer", "custom/rec", "custom/privacy", "custom/failed", "custom/system", "custom/updates",
         "group/media", "tray",
-        "custom/mic", "wireplumber", "backlight", "network", "battery", "custom/notifications"
+        "custom/mic", "wireplumber", "custom/volume", "backlight", "custom/backlight",
+        "network", "custom/network", "battery", "custom/notifications"
     ],
 
     // ── Sol ──────────────────────────────────────────────────────────────
@@ -81,18 +82,19 @@
         "return-type": "json",
         "interval": 1,
         "signal": 12,
-        "on-click": "sh -c 'printf timer > \"$XDG_RUNTIME_DIR/launcher-query\"; systemctl --user kill --kill-whom=main --signal=USR1 launcher.service'"
+        "on-click": "sh -c 'printf timer > \"$XDG_RUNTIME_DIR/launcher-query\"; systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null || pkill -USR1 -f \"/launcher daemon$\"'"
     },
 
-    // UPD 47: kurulabilecek güncelleme sayısı (dnf + Flatpak); yoksa gizli. 3 saatte bir sayar,
-    // ağsız (dnf'nin sistem önbelleği). Tıkla: terminalde güncelle · sağ tık: hemen yeniden say.
+    // UPD 47: kurulabilecek güncelleme sayısı (Fedora: dnf + Flatpak, FreeBSD: pkg); yoksa gizli.
+    // 3 saatte bir sayar, ağsız (paket yöneticisinin önbelleği). Tıkla: terminalde güncelle ·
+    // sağ tık: hemen yeniden say.
     "custom/updates": {
         "exec": "~/.local/bin/updates label",
         "return-type": "json",
         "interval": 10800,
         "signal": 13,
         "on-click": "~/.local/bin/updates run",
-        "on-click-right": "pkill -RTMIN+13 -x waybar"
+        "on-click-right": "~/.local/bin/updates refresh"
     },
 
     "custom/rec": {
@@ -113,6 +115,7 @@
 
     // FAIL n: çökmüş bir servis var (kullanıcı ya da sistem). Üstüne gel: adları · tıkla: ayrıntı.
     // (Waybar'ın systemd-failed-units modülü bir kez gizlenince bir daha görünmüyor.)
+    // Yalnızca systemd'de; FreeBSD'de hep gizli.
     "custom/failed": {
         "exec": "~/.local/bin/bar-status failed",
         "return-type": "json",
@@ -259,6 +262,36 @@
         "tooltip": false,
         "on-scroll-up": "~/.local/bin/osd brightness up",
         "on-scroll-down": "~/.local/bin/osd brightness down",
+        "on-click": "swaync-client --toggle-panel --skip-wait"
+    },
+
+    // FreeBSD'de Waybar'ın wireplumber, backlight ve network modülleri çalışmaz (PipeWire yok,
+    // /sys yok, libnl yok). Bu üçü onların yerine geçer; Linux'ta `uname` kontrolü yüzünden
+    // hiç başlamazlar, başlarsa da boş yazıp gizli kalırlar. Görünüm ve tıklamalar aynı.
+    "custom/volume": {
+        "exec": "[ \"$(uname)\" = FreeBSD ] && exec ~/.local/bin/bar-status volume",
+        "return-type": "json",
+        "restart-interval": 60,
+        "on-click": "swaync-client --toggle-panel --skip-wait",
+        "on-click-right": "~/.local/bin/osd volume mute",
+        "on-scroll-up": "~/.local/bin/osd volume up",
+        "on-scroll-down": "~/.local/bin/osd volume down"
+    },
+
+    "custom/backlight": {
+        "exec": "[ \"$(uname)\" = FreeBSD ] && exec ~/.local/bin/bar-status backlight",
+        "return-type": "json",
+        "restart-interval": 60,
+        "on-click": "swaync-client --toggle-panel --skip-wait",
+        "on-scroll-up": "~/.local/bin/osd brightness up",
+        "on-scroll-down": "~/.local/bin/osd brightness down"
+    },
+
+    "custom/network": {
+        "exec": "[ \"$(uname)\" = FreeBSD ] && exec ~/.local/bin/bar-status network",
+        "return-type": "json",
+        "restart-interval": 60,
+        "max-length": 28,
         "on-click": "swaync-client --toggle-panel --skip-wait"
     },
 

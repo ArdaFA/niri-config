@@ -29,8 +29,11 @@ DIR=$(xdg-user-dir VIDEOS 2>/dev/null || echo "$HOME/Videos")/Recordings
 # Yarı çözünürlük (1600x900; daha küçük dosya, ~%25 daha az işlemci): SIZE_FILTER="scale=iw/2:ih/2"
 SIZE_FILTER=""
 
-refresh_bar() {
-    pkill "-RTMIN+$SIGNAL" -x waybar 2>/dev/null || true
+refresh_bar() {  # Waybar'a SIGRTMIN+SIGNAL. FreeBSD'nin pkill'i "RTMIN+n" adını bilmez: 65+n.
+    case $(uname -s) in
+        FreeBSD) pkill "-$((65 + SIGNAL))" -x waybar ;;
+        *)       pkill "-RTMIN+$SIGNAL" -x waybar ;;
+    esac 2>/dev/null || true
 }
 
 notify() {  # notify <başlık> <metin>
@@ -41,8 +44,8 @@ field() {  # field <satır no>
     sed -n "${1}p" "$STATE" 2>/dev/null
 }
 
-alive() {  # alive <pid> : o pid hâlâ wf-recorder mı
-    [ -n "$1" ] && [ "$(cat "/proc/$1/comm" 2>/dev/null)" = wf-recorder ]
+alive() {  # alive <pid> : o pid hâlâ wf-recorder mı (ps: FreeBSD'de /proc yok)
+    [ -n "$1" ] && [ "$(ps -o comm= -p "$1" 2>/dev/null)" = wf-recorder ]
 }
 
 is_recording() {
@@ -102,12 +105,18 @@ start() {
         esac
         file=$DIR/$name.$ext
         # shellcheck disable=SC2086  # $extra bilerek bölünür
-        setsid wf-recorder "$@" -c "$codec" $extra -f "$file" -y > "$LOG" 2>&1 < /dev/null &
+        # setsid: Waybar/hızlı ayarlar kapansa da kayıt sürsün (FreeBSD'de setsid komutu yok;
+        # orada arka plan süreci zaten bu betikten bağımsız yaşar).
+        if command -v setsid >/dev/null 2>&1; then
+            setsid wf-recorder "$@" -c "$codec" $extra -f "$file" -y > "$LOG" 2>&1 < /dev/null &
+        else
+            wf-recorder "$@" -c "$codec" $extra -f "$file" -y > "$LOG" 2>&1 < /dev/null &
+        fi
         pid=$!
         # Kodlayıcı açılamazsa wf-recorder hemen çıkar: 1 sn ayakta kalırsa kayıt başlamıştır.
         # (Süreç adına bakılmaz: ilk anlarda henüz "setsid"tir, wf-recorder'a dönüşmemiştir.)
         for _ in 1 2 3 4 5 6 7 8 9 10; do
-            [ -e "/proc/$pid" ] || break
+            kill -0 "$pid" 2>/dev/null || break
             sleep 0.1
         done
         if alive "$pid"; then

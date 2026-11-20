@@ -21,8 +21,11 @@ is_on() {
     [ -n "${NIRI_SOCKET:-}" ] && [ "$(cat "$FLAG" 2>/dev/null)" = "$NIRI_SOCKET" ]
 }
 
-refresh_bar() {
-    pkill "-RTMIN+$SIGNAL" -x waybar 2>/dev/null || true
+refresh_bar() {  # Waybar'a SIGRTMIN+SIGNAL. FreeBSD'nin pkill'i "RTMIN+n" adını bilmez: 65+n.
+    case $(uname -s) in
+        FreeBSD) pkill "-$((65 + SIGNAL))" -x waybar ;;
+        *)       pkill "-RTMIN+$SIGNAL" -x waybar ;;
+    esac 2>/dev/null || true
 }
 
 turn_on() {

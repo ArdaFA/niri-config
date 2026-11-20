@@ -228,14 +228,30 @@ def daemon_alive(state):
     if not pid:
         return False
     try:
-        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
-    except OSError:
+        cmdline = proc_cmdline(pid)
+    except (OSError, ValueError):
         return False
     return b"layout-mode" in cmdline
 
 
+def proc_cmdline(pid):
+    """Sürecin komut satırı (bayt). Linux'ta /proc; FreeBSD'de /proc yok, ps sorulur.
+    Süreç yoksa OSError."""
+    try:
+        return Path(f"/proc/{pid}/cmdline").read_bytes()
+    except FileNotFoundError:
+        if os.path.isdir("/proc/self"):
+            raise
+    import subprocess
+    out = subprocess.run(["ps", "-o", "args=", "-p", str(int(pid))], capture_output=True)
+    if out.returncode or not out.stdout.strip():
+        raise ProcessLookupError(pid)
+    return out.stdout
+
+
 def notify_waybar():
-    subprocess.run(["pkill", f"-RTMIN+{WAYBAR_SIGNAL}", "-x", "waybar"],
+    # Sayıyla: FreeBSD'nin pkill'i "RTMIN+n" adını bilmez (SIGRTMIN orada 65, Linux'ta 34).
+    subprocess.run(["pkill", f"-{signal.SIGRTMIN + WAYBAR_SIGNAL}", "-x", "waybar"],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -566,7 +582,7 @@ def send(cmd):
         try:
             s.sendto(cmd.encode(), str(CMD_SOCKET))
         except OSError:
-            die("the layout service is not running (systemctl --user status layout-mode)")
+            die("the layout service is not running (~/.local/bin/session status)")
 
 
 def cmd_send(args):

@@ -4,6 +4,7 @@
 # böylece KDE'de bluedevil'in yanında ikinci bir Bluetooth applet'i açılmaz.
 Type=Application
 Name=Blueman Applet (niri)
+TryExec=blueman-applet
 Exec=blueman-applet
 Icon=blueman
 OnlyShowIn=niri;

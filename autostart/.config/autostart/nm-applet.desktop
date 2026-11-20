@@ -4,6 +4,7 @@
 # KDE ve GNOME'u etkilemez (orijinali de onlarda çalışmıyordu).
 Type=Application
 Name=NetworkManager Applet (niri)
+TryExec=nm-applet
 Exec=nm-applet --indicator
 Icon=nm-device-wireless
 OnlyShowIn=niri;

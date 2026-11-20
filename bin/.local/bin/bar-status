@@ -10,6 +10,9 @@ state changes; an empty text hides the module.
   bar-status vpn            VPN while traffic goes through a VPN
   bar-status power          ECO / PERF while the power profile is not "balanced"
   bar-status power reset    switch the power profile back to "balanced"
+  bar-status volume         VOL n% (FreeBSD: Waybar's wireplumber module needs PipeWire)
+  bar-status backlight      LCD n% (FreeBSD: Waybar's backlight module is Linux-only)
+  bar-status network        NET name (FreeBSD: Waybar's network module is Linux-only)
   bar-status selftest       check the detection rules against sample data
 """
 # Not: Ekranda görünen metinler İngilizce; yorumlar Türkçe.
@@ -25,6 +28,8 @@ import socket
 import subprocess
 import sys
 import time
+
+FREEBSD = sys.platform.startswith("freebsd")
 
 PRIVACY_INTERVAL = 2      # saniye
 VPN_INTERVAL = 5
@@ -93,8 +98,11 @@ def mic_users(outputs, sources):
 
 def camera_users():
     """/dev/video* aygıtlarından birini açık tutan süreçlerin adları (aynı kullanıcı)."""
-    if not any(n.startswith("video") for n in os.listdir("/dev")):
+    cams = [n for n in os.listdir("/dev") if n.startswith("video")]
+    if not cams:
         return []
+    if not os.path.isdir("/proc/self/fd"):
+        return camera_users_fstat(cams)
     users = []
     for pid in os.listdir("/proc"):
         if not pid.isdigit():
@@ -117,6 +125,18 @@ def camera_users():
                 if name not in users:
                     users.append(name)
                 break
+    return users
+
+
+def camera_users_fstat(cams):
+    """FreeBSD (/proc yok, webcamd'nin /dev/videoN'i): fstat aygıtı açan süreçleri listeler.
+    Çıktı: USER CMD PID FD … (ilk satır başlık)."""
+    out = run(["fstat", *(f"/dev/{c}" for c in cams)]) or ""
+    users = []
+    for line in out.splitlines()[1:]:
+        f = line.split()
+        if len(f) > 2 and f[1] not in users and f[1] != "webcamd":
+            users.append(f[1])
     return users
 
 
@@ -206,7 +226,12 @@ def die_with_parent():
     """Alt süreç, bu script ölünce (ör. Waybar çökünce) kendisi de kapansın."""
     import ctypes
     import signal
-    ctypes.CDLL(None).prctl(1, signal.SIGTERM)   # PR_SET_PDEATHSIG
+    libc = ctypes.CDLL(None, use_errno=True)
+    if hasattr(libc, "prctl"):                       # Linux
+        libc.prctl(1, signal.SIGTERM)                # PR_SET_PDEATHSIG
+    elif hasattr(libc, "procctl"):                   # FreeBSD: procctl(P_PID, 0, PROC_PDEATHSIG_CTL)
+        sig = ctypes.c_int(signal.SIGTERM)
+        libc.procctl(0, 0, 11, ctypes.byref(sig))
 
 
 def mic_state(wpctl_out):
@@ -219,6 +244,11 @@ def mic_state(wpctl_out):
 
 def cmd_mic():
     last = None
+    if FREEBSD and run(["pactl", "info"]) is None:
+        while True:                 # PulseAudio yok: FreeBSD mikseri
+            muted = mixer_value(run(["mixer", "mic.mute"]), "mic.mute") == "1"
+            last = emit(mic_state("Volume: 0 [MUTED]" if muted else None), last)
+            time.sleep(2)
     while True:
         last = emit(mic_state(run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SOURCE@"])), last)
         try:
@@ -309,7 +339,20 @@ class Sustained:
         return self.on
 
 
+def sysctl(*names):
+    """FreeBSD: sysctl değerleri (metin), bulunamayan None."""
+    values = {}
+    for name in names:
+        out = run(["sysctl", "-n", name])
+        values[name] = out.strip() if out else None
+    return values
+
+
 def cpu_times():
+    if FREEBSD:
+        # kern.cp_time: user nice sys intr idle
+        fields = [int(x) for x in sysctl("kern.cp_time")["kern.cp_time"].split()]
+        return sum(fields), fields[4]
     with open("/proc/stat") as f:
         fields = [int(x) for x in f.readline().split()[1:]]
     idle = fields[3] + fields[4]          # idle + iowait
@@ -317,12 +360,28 @@ def cpu_times():
 
 
 def mem_percent():
+    if FREEBSD:
+        v = sysctl("vm.stats.vm.v_page_count", "vm.stats.vm.v_free_count",
+                   "vm.stats.vm.v_inactive_count", "vm.stats.vm.v_cache_count")
+        total = int(v["vm.stats.vm.v_page_count"])
+        free = sum(int(v[k] or 0) for k in list(v)[1:])     # boş + pasif + önbellek ≈ MemAvailable
+        return 100 * (1 - free / total)
     info = {}
     with open("/proc/meminfo") as f:
         for line in f:
             key, value = line.split(":")
             info[key] = int(value.split()[0])
     return 100 * (1 - info["MemAvailable"] / info["MemTotal"])
+
+
+def freebsd_temp():
+    """İşlemci sıcaklığı: coretemp (kldload coretemp) ya da ACPI termal bölgesi; "45.0C"."""
+    for name in ("dev.cpu.0.temperature", "hw.acpi.thermal.tz0.temperature"):
+        value = sysctl(name)[name]
+        m = re.match(r"(-?[\d.]+)C", value or "")
+        if m:
+            return float(m.group(1))
+    return None
 
 
 def temp_sensor():
@@ -355,7 +414,7 @@ def system_state(values, active):
 
 def cmd_system():
     watch = {k: Sustained(v) for k, v in SYSTEM_LIMITS.items()}
-    sensor = temp_sensor()
+    sensor = None if FREEBSD else temp_sensor()
     last, prev = None, cpu_times()
     while True:
         time.sleep(SYSTEM_INTERVAL)
@@ -370,6 +429,8 @@ def cmd_system():
                     values["temp"] = int(f.read()) / 1000
             except (OSError, ValueError):
                 pass
+        elif FREEBSD:
+            values["temp"] = freebsd_temp()
         active = {k for k, w in watch.items() if values[k] is not None and w.add(values[k])}
         # Görünürken değer her ölçümde değişir; gizliyken yalnızca durum değişince yazılır.
         last = emit(system_state(values, active), last)
@@ -399,6 +460,9 @@ def vpn_state(route_dev, cisco_ifaces, nm_active):
 
 
 def route_dev():
+    if FREEBSD:
+        m = re.search(r"interface: (\S+)", run(["route", "-n", "get", "1.1.1.1"]) or "")
+        return m.group(1) if m else None
     routes = run_json(["ip", "-j", "route", "get", "1.1.1.1"]) or []
     return routes[0].get("dev") if routes else None
 
@@ -444,7 +508,16 @@ def gio():
     return Gio, GLib
 
 
+def sleep_forever():
+    """Bu sistemde karşılığı olmayan modül: gizli kalır, Waybar yeniden başlatmaz."""
+    print(json.dumps({"text": ""}), flush=True)
+    while True:
+        time.sleep(3600)
+
+
 def cmd_power(args):
+    if FREEBSD:
+        sleep_forever()             # power-profiles-daemon yok
     Gio, GLib = gio()
     if args[:1] == ["reset"]:
         bus = Gio.bus_get_sync(Gio.BusType.SYSTEM)
@@ -454,8 +527,11 @@ def cmd_power(args):
         return
 
     # Profil değişince D-Bus sinyaliyle haber gelir; yoklama yok.
-    proxy = Gio.DBusProxy.new_for_bus_sync(
-        Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None, PP_NAME, PP_PATH, PP_NAME, None)
+    try:
+        proxy = Gio.DBusProxy.new_for_bus_sync(
+            Gio.BusType.SYSTEM, Gio.DBusProxyFlags.NONE, None, PP_NAME, PP_PATH, PP_NAME, None)
+    except GLib.Error:
+        sleep_forever()             # sistem D-Bus'ı yok
     last = None
 
     def update(*_):
@@ -467,6 +543,87 @@ def cmd_power(args):
     proxy.connect("notify::g-name-owner", update)
     update()
     GLib.MainLoop().run()
+
+
+# ── FreeBSD: ses, parlaklık, ağ ───────────────────────────────────────────
+# Waybar'ın wireplumber (PipeWire gerekir), backlight (/sys) ve network (libnl) modüllerinin
+# FreeBSD karşılıkları. Görünüm onlarla aynı; birkaç saniyede bir yoklar (değişince yazar).
+
+LABEL = "<span alpha='55%'>{}</span> {}"
+
+
+def volume_state(backend, vol, muted, device=""):
+    if backend is None:
+        return {"text": ""}
+    text = LABEL.format("VOL", "--" if muted else f"{vol}%")
+    return {"text": text, "tooltip": f"{device or 'Sound'}: {vol}%" + (" (muted)" if muted else ""),
+            "class": "muted" if muted else ""}
+
+
+def mixer_value(out, control):
+    """`mixer vol.volume vol.mute` çıktısından değer: vol.volume=0.75:0.75 → "0.75"."""
+    m = re.search(rf"^{re.escape(control)}=([0-9.]+)", out or "", re.M)
+    return m.group(1) if m else None
+
+
+def read_volume():
+    """(arka uç, yüzde, sessiz mi, aygıt) · PipeWire varsa None: Waybar'ın kendi modülü gösterir."""
+    if run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"]) is not None:
+        return None, 0, False, ""
+    out = run(["pactl", "get-sink-volume", "@DEFAULT_SINK@"])
+    if out is not None:
+        m = re.search(r"(\d+)%", out)
+        mute = run(["pactl", "get-sink-mute", "@DEFAULT_SINK@"]) or ""
+        return "pactl", int(m.group(1)) if m else 0, "yes" in mute, "PulseAudio"
+    out = run(["mixer", "vol.volume", "vol.mute"])
+    vol = mixer_value(out, "vol.volume")
+    if vol is None:
+        return None, 0, False, ""
+    dev = run(["sysctl", "-n", "hw.snd.default_unit"])
+    return ("mixer", round(float(vol) * 100), mixer_value(out, "vol.mute") == "1",
+            f"pcm{dev.strip()}" if dev else "")
+
+
+def cmd_volume():
+    last = None
+    while True:
+        last = emit(volume_state(*read_volume()), last)
+        time.sleep(2)
+
+
+def backlight_state(pct):
+    return {"text": ""} if pct is None else {"text": LABEL.format("LCD", f"{pct}%")}
+
+
+def cmd_backlight():
+    last = None
+    while True:
+        out = run(["backlight", "-q"])
+        pct = int(out) if out and out.strip().isdigit() else None
+        last = emit(backlight_state(pct), last)
+        time.sleep(2)
+
+
+def network_state(iface, ifconfig):
+    """iface: varsayılan rotanın arayüzü (yoksa None) · ifconfig: `ifconfig <iface>` çıktısı."""
+    if not iface:
+        return {"text": LABEL.format("NET", "off"), "tooltip": "Disconnected"}
+    ip = re.search(r"\binet (\S+)", ifconfig or "")
+    ssid = re.search(r"\bssid (.+?) channel", ifconfig or "")
+    if ssid:
+        name = ssid.group(1).strip('"')
+        return {"text": LABEL.format("NET", name),
+                "tooltip": f"{name}\n{ip.group(1) if ip else ''}  {iface}"}
+    return {"text": LABEL.format("NET", "eth"), "tooltip": f"{ip.group(1) if ip else ''}  {iface}"}
+
+
+def cmd_network():
+    last = None
+    while True:
+        m = re.search(r"interface: (\S+)", run(["route", "-n", "get", "default"]) or "")
+        iface = m.group(1) if m else None
+        last = emit(network_state(iface, run(["ifconfig", iface]) if iface else None), last)
+        time.sleep(5)
 
 
 # ── Kendi kendini sınama (check.sh) ───────────────────────────────────────
@@ -517,6 +674,20 @@ def cmd_selftest():
         (power_state(None), {"text": ""}),
         (power_state("power-saver")["text"], "ECO"),
         (power_state("performance")["text"], "PERF"),
+        (mixer_value("vol.volume=0.75:0.75\nvol.mute=1\n", "vol.volume"), "0.75"),
+        (mixer_value("vol.volume=0.75:0.75\nvol.mute=1\n", "vol.mute"), "1"),
+        (mixer_value("", "vol.mute"), None),
+        (volume_state("mixer", 75, False, "pcm0")["text"], "<span alpha='55%'>VOL</span> 75%"),
+        (volume_state("mixer", 75, True)["text"], "<span alpha='55%'>VOL</span> --"),
+        (volume_state(None, 0, False), {"text": ""}),
+        (backlight_state(None), {"text": ""}),
+        (backlight_state(40)["text"], "<span alpha='55%'>LCD</span> 40%"),
+        (network_state(None, None)["text"], "<span alpha='55%'>NET</span> off"),
+        (network_state("wlan0", "wlan0: flags=8843<UP>\n\tinet 192.168.1.5 netmask 0xffffff00\n"
+                       "\tssid Home WiFi channel 6 (2437 MHz 11g) bssid 00:11:22:33:44:55\n")["text"],
+         "<span alpha='55%'>NET</span> Home WiFi"),
+        (network_state("em0", "em0: flags=8843<UP>\n\tinet 10.0.0.2 netmask 0xff000000\n")["tooltip"],
+         "10.0.0.2  em0"),
     ]
     failed = 0
     for i, (got, want) in enumerate(cases):
@@ -533,7 +704,9 @@ def main():
     commands = {"privacy": lambda: cmd_privacy(), "mic": lambda: cmd_mic(),
                 "failed": lambda: cmd_failed(), "system": lambda: cmd_system(),
                 "vpn": lambda: cmd_vpn(),
-                "power": lambda: cmd_power(args[1:]), "selftest": lambda: cmd_selftest()}
+                "power": lambda: cmd_power(args[1:]), "selftest": lambda: cmd_selftest(),
+                "volume": lambda: cmd_volume(), "backlight": lambda: cmd_backlight(),
+                "network": lambda: cmd_network()}
     if not args or args[0] not in commands:
         print(__doc__.strip(), file=sys.stderr)
         sys.exit(1)

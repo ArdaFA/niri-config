@@ -27,6 +27,12 @@ include "rules.kdl"
 include "animations.kdl"
 include optional=true "~/.local/state/theme/niri.kdl"
 
+// Panel, bildirimler, kilit, duvar kağıdı… Fedora'da bunları systemd --user başlatır
+// (niri-session → niri.service.wants); o zaman bu komut hiçbir şey yapmadan çıkar.
+// systemd yoksa (FreeBSD) ya da niri doğrudan `niri --session` ile açıldıysa servisleri
+// `session` kendisi başlatır ve yönetir (bkz. README → Oturum nasıl başlıyor).
+spawn-sh-at-startup "exec ~/.local/bin/session daemon"
+
 // Uygulamalardan kendi başlık çubuklarını çizmemelerini iste (sade görünüm).
 prefer-no-csd
 

@@ -18,13 +18,15 @@ binds {
     // (config: foot/ klasörü).
     Mod+Shift+Return hotkey-overlay-title="Terminal (foot)" { spawn "foot"; }
     // Arama: uygulama, pencere, dosya, ayar, hesap, emoji (bin/.local/bin/launcher).
-    // Arka planda bekleyen pencereye sinyal gönderir; servis çalışmıyorsa fuzzel açılır.
+    // Arka planda bekleyen pencereye (launcher daemon) sinyal gönderir; çalışmıyorsa fuzzel açılır.
+    // Önce systemctl (~6 ms), systemd yoksa (FreeBSD) pkill (~25 ms). pkill'in deseni "daemon" ile
+    // biter: kabuğun kendi komut satırına (… || exec fuzzel) uymaz.
     // repeat=false: basılı tutunca tekrar tekrar aç/kapa yapmasın.
     // Alt+Space: KDE'deki KRunner ile aynı tuş. Super+Space de aynı pencereyi açar (aşağıda).
-    Alt+Space repeat=false hotkey-overlay-title="Search: apps, windows, files, settings" { spawn-sh "systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null || exec fuzzel"; }
+    Alt+Space repeat=false hotkey-overlay-title="Search: apps, windows, files, settings" { spawn-sh "systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null || pkill -USR1 -f '/launcher daemon$' || exec fuzzel"; }
     // Pano geçmişi: aynı pencere, pano modunda (SIGUSR2). Super+V niri'nin "yüzen pencere" kısayolu.
-    Mod+Ctrl+V repeat=false hotkey-overlay-title="Clipboard history" { spawn-sh "systemctl --user kill --kill-whom=main --signal=USR2 launcher.service"; }
-    Mod+Space repeat=false { spawn-sh "systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null || exec fuzzel"; }
+    Mod+Ctrl+V repeat=false hotkey-overlay-title="Clipboard history" { spawn-sh "systemctl --user kill --kill-whom=main --signal=USR2 launcher.service 2>/dev/null || pkill -USR2 -f '/launcher daemon$'"; }
+    Mod+Space repeat=false { spawn-sh "systemctl --user kill --kill-whom=main --signal=USR1 launcher.service 2>/dev/null || pkill -USR1 -f '/launcher daemon$' || exec fuzzel"; }
     Mod+S hotkey-overlay-title="Settings" { spawn-sh "~/.local/bin/settings"; }
     Mod+Shift+T hotkey-overlay-title="Pick a color theme" { spawn-sh "~/.local/bin/theme pick"; }
     Mod+Alt+L hotkey-overlay-title="Lock screen" { spawn-sh "~/.local/bin/lock-screen"; }

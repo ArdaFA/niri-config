@@ -5,7 +5,11 @@
 #
 #   osd volume up|down|mute
 #   osd mic mute
+#   osd mic status          açıksa çıkış kodu 0 (gösterge yok)
 #   osd brightness up|down
+#
+# Ses: PipeWire (wpctl; Fedora) → PulseAudio (pactl) → FreeBSD'nin kendi mikseri (mixer).
+# Parlaklık: brightnessctl (Linux) ya da backlight (FreeBSD).
 
 set -eu
 
@@ -22,23 +26,114 @@ show() {
         --replace-id="$id" --print-id "$@" > "$ID_FILE"
 }
 
-percent() {  # wpctl çıktısındaki 0.45 → 45
-    awk '{ printf "%d", $2 * 100 + 0.5 }'
+percent() {  # 0.45 → 45 (wpctl'in ve mixer'ın ölçeği 0–1)
+    awk '{ printf "%d", $1 * 100 + 0.5 }'
+}
+
+audio_backend() {
+    if command -v wpctl >/dev/null 2>&1 && wpctl get-volume @DEFAULT_AUDIO_SINK@ >/dev/null 2>&1; then
+        echo wpctl
+    elif command -v pactl >/dev/null 2>&1 && pactl get-sink-volume @DEFAULT_SINK@ >/dev/null 2>&1; then
+        echo pactl
+    elif [ "$(uname -s)" = FreeBSD ]; then
+        echo mixer
+    else
+        echo none
+    fi
+}
+
+# mixer_get <aygıt.denetim> → "=" sonrası ilk değer (vol.volume=0.75:0.75 → 0.75)
+mixer_get() {
+    mixer "$1" 2>/dev/null | sed -n 's/.*=\([0-9.]*\).*/\1/p' | head -n 1
+}
+
+# volume_state → "yüzde muted|on"
+volume_state() {
+    case $AUDIO in
+        wpctl)
+            out=$(wpctl get-volume @DEFAULT_AUDIO_SINK@)
+            vol=$(printf '%s\n' "$out" | awk '{ print $2 }' | percent)
+            case "$out" in *MUTED*) echo "$vol muted" ;; *) echo "$vol on" ;; esac ;;
+        pactl)
+            vol=$(pactl get-sink-volume @DEFAULT_SINK@ | sed -n 's/[^0-9]*\([0-9]*\)%.*/\1/p' | head -n 1)
+            case "$(pactl get-sink-mute @DEFAULT_SINK@)" in
+                *yes*) echo "${vol:-0} muted" ;; *) echo "${vol:-0} on" ;; esac ;;
+        mixer)
+            vol=$(mixer_get vol.volume | percent)
+            if [ "$(mixer_get vol.mute)" = 1 ]; then echo "${vol:-0} muted"; else echo "${vol:-0} on"; fi ;;
+        *)  echo "0 none" ;;
+    esac
+}
+
+mic_muted() {
+    case $AUDIO in
+        wpctl) wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED ;;
+        pactl) pactl get-source-mute @DEFAULT_SOURCE@ | grep -q yes ;;
+        mixer) [ "$(mixer_get mic.mute)" = 1 ] ;;
+        *)     false ;;
+    esac
+}
+
+brightness() {  # şu anki parlaklık, yüzde
+    if command -v brightnessctl >/dev/null 2>&1; then
+        # brightnessctl -m: cihaz,sınıf,değer,yüzde%,max
+        brightnessctl --class=backlight -m | cut -d, -f4 | tr -d '%'
+    else
+        backlight -q
+    fi
 }
 
 case "${1:-} ${2:-}" in
+    "volume up"|"volume down"|"volume mute"|"mic mute"|"mic status") AUDIO=$(audio_backend) ;;
+esac
+
+# osd mic status: mikrofon açıksa (sessizde değilse) çıkış kodu 0; gösterge açmaz (hızlı ayarlar).
+if [ "${1:-} ${2:-}" = "mic status" ]; then
+    [ "$AUDIO" != none ] && ! mic_muted
+    exit
+fi
+
+case "${1:-} ${2:-}" in
     "volume up")
-        wpctl set-volume --limit 1.0 @DEFAULT_AUDIO_SINK@ "${STEP}%+" ;;
+        case $AUDIO in
+            wpctl) wpctl set-volume --limit 1.0 @DEFAULT_AUDIO_SINK@ "${STEP}%+" ;;
+            pactl) if [ "$(volume_state | cut -d' ' -f1)" -lt 100 ]; then     # en fazla %100
+                       pactl set-sink-volume @DEFAULT_SINK@ "+${STEP}%"
+                   fi ;;
+            mixer) mixer vol.volume=+${STEP}% >/dev/null ;;
+        esac ;;
     "volume down")
-        wpctl set-volume @DEFAULT_AUDIO_SINK@ "${STEP}%-" ;;
+        case $AUDIO in
+            wpctl) wpctl set-volume @DEFAULT_AUDIO_SINK@ "${STEP}%-" ;;
+            pactl) pactl set-sink-volume @DEFAULT_SINK@ "-${STEP}%" ;;
+            mixer) mixer vol.volume=-${STEP}% >/dev/null ;;
+        esac ;;
     "volume mute")
-        wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
+        case $AUDIO in
+            wpctl) wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
+            pactl) pactl set-sink-mute @DEFAULT_SINK@ toggle ;;
+            mixer) mixer vol.mute=toggle >/dev/null ;;
+        esac ;;
     "mic mute")
-        wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle ;;
+        case $AUDIO in
+            wpctl) wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle ;;
+            pactl) pactl set-source-mute @DEFAULT_SOURCE@ toggle ;;
+            mixer) mixer mic.mute=toggle >/dev/null ;;
+        esac ;;
     "brightness up")
-        brightnessctl --quiet --class=backlight set "${STEP}%+" ;;
+        if command -v brightnessctl >/dev/null 2>&1; then
+            brightnessctl --quiet --class=backlight set "${STEP}%+"
+        else
+            backlight incr "$STEP"
+        fi ;;
     "brightness down")
-        brightnessctl --quiet --class=backlight --min-value=1 set "${STEP}%-" ;;
+        if command -v brightnessctl >/dev/null 2>&1; then
+            brightnessctl --quiet --class=backlight --min-value=1 set "${STEP}%-"
+        elif [ "$(backlight -q)" -gt "$STEP" ]; then
+            backlight decr "$STEP"
+        else
+            backlight 1
+        fi ;;
     *)
         echo "Usage: osd volume up|down|mute · osd mic mute · osd brightness up|down" >&2
         exit 1 ;;
@@ -46,19 +141,15 @@ esac
 
 case "$1" in
     volume)
-        out=$(wpctl get-volume @DEFAULT_AUDIO_SINK@)
-        vol=$(printf '%s\n' "$out" | percent)
-        case "$out" in
-            *MUTED*) show "VOL  muted" 0 ;;
-            *)       show "VOL  $vol%" "$vol" ;;
+        set -- $(volume_state)
+        case $2 in
+            muted) show "VOL  muted" 0 ;;
+            none)  show "VOL  no sound device" ;;
+            *)     show "VOL  $1%" "$1" ;;
         esac ;;
     mic)
-        case "$(wpctl get-volume @DEFAULT_AUDIO_SOURCE@)" in
-            *MUTED*) show "MIC  muted" ;;
-            *)       show "MIC  on" ;;
-        esac ;;
+        if mic_muted; then show "MIC  muted"; else show "MIC  on"; fi ;;
     brightness)
-        # brightnessctl -m: cihaz,sınıf,değer,yüzde%,max
-        pct=$(brightnessctl --class=backlight -m | cut -d, -f4 | tr -d '%')
+        pct=$(brightness)
         show "LCD  $pct%" "$pct" ;;
 esac
