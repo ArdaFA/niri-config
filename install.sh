@@ -96,31 +96,61 @@ ask_root() {
     ask "$1" y
 }
 
-# as_root <kabuk satırı>: sudo, doas ya da su (root şifresi) ile çalıştırır.
-as_root() {
-    if [ "$(id -u)" = 0 ]; then
-        sh -c "$1"
-    elif command -v sudo >/dev/null 2>&1; then
-        sudo sh -c "$1"
-    elif command -v doas >/dev/null 2>&1; then
-        doas sh -c "$1"
+# Root için araç: kurulu olması yetmez, bu kullanıcıya gerçekten izin vermeli. sudo kurulu ama
+# kısıtlıysa "not allowed to execute '/bin/sh -c …'" der (ilk FreeBSD kurulumunda böyle oldu:
+# kullanıcı doas kullanıyordu, betik sudo'yu seçti).
+#   doas: "doas -C <ayar> sh" şifre sormadan izni söyler (permit / deny)
+#   sudo: "sudo -l sh" izin listesinde sh var mı (gerekirse önce şifre: sudo -v)
+#   su:   root şifresi (kullanıcı wheel grubunda olmalı)
+ROOT_TOOL=""
+pick_root_tool() {
+    [ -n "$ROOT_TOOL" ] && return 0
+    doas_unknown=0
+    if command -v doas >/dev/null 2>&1; then
+        for conf in /usr/local/etc/doas.conf /etc/doas.conf; do
+            if [ -r "$conf" ]; then
+                case $(doas -C "$conf" sh 2>/dev/null) in
+                    permit*) ROOT_TOOL=doas; return 0 ;;
+                esac
+            elif [ -e "$conf" ]; then
+                doas_unknown=1          # ayar okunamıyor: izin denemeden bilinmez
+            fi
+        done
+    fi
+    if command -v sudo >/dev/null 2>&1; then
+        if sudo -n -l sh >/dev/null 2>&1 || { sudo -v && sudo -n -l sh >/dev/null 2>&1; }; then
+            ROOT_TOOL=sudo; return 0
+        fi
+        info "sudo does not let this user run commands as root; trying another way."
+    fi
+    if [ "$doas_unknown" = 1 ]; then
+        ROOT_TOOL=doas
     else
-        info "${D}(no sudo or doas: asking for the root password with su)${R}"
-        # su komutu root'un giriş kabuğuyla çalıştırır (eski kurulumlarda csh olabilir):
-        # sh sözdizimi bozulmasın diye komut bir dosyadan /bin/sh ile okunur.
-        script=$(mktemp)
-        printf '%s\n' "$1" > "$script"
-        rc=0
-        su root -c "/bin/sh $script" || rc=$?
-        rm -f "$script"
-        return $rc
+        ROOT_TOOL=su
     fi
 }
 
-root_hint() {
-    if [ "$OS" = freebsd ] && ! command -v sudo >/dev/null 2>&1 && ! command -v doas >/dev/null 2>&1; then
-        info "To run commands as root you need to be in the 'wheel' group (for su), or set up sudo/doas."
+# as_root <kabuk satırı>: izni olan araçla (doas, sudo ya da su) root olarak çalıştırır.
+as_root() {
+    if [ "$(id -u)" = 0 ]; then
+        sh -c "$1"
+        return
     fi
+    pick_root_tool
+    case $ROOT_TOOL in
+        doas) doas sh -c "$1" ;;
+        sudo) sudo sh -c "$1" ;;
+        *)
+            info "${D}(asking for the root password with su; your user must be in the 'wheel' group)${R}"
+            # su komutu root'un giriş kabuğuyla çalıştırır (eski kurulumlarda csh olabilir):
+            # sh sözdizimi bozulmasın diye komut bir dosyadan /bin/sh ile okunur.
+            script=$(mktemp)
+            printf '%s\n' "$1" > "$script"
+            rc=0
+            su root -c "/bin/sh $script" || rc=$?
+            rm -f "$script"
+            return $rc ;;
+    esac
 }
 
 # ── Sistem seçimi ─────────────────────────────────────────────────────────
@@ -272,7 +302,6 @@ pkg install$yes \$py-pygobject \$py-pillow"
     info "Not installed yet:"
     echo "$missing" | fold -s -w 76 | sed 's/^/      /'
     if ask_root "Install them now (needs your password)?"; then
-        root_hint
         as_root "$cmd" || die "package installation failed (see above). Fix it and run ./install.sh again."
     else
         info "Skipped. Install them yourself, then run ./install.sh again. The command:"
@@ -471,7 +500,6 @@ $2"; }
     fi
     info "These need root:$todo"
     if ask_root "Do this now?"; then
-        root_hint
         as_root "set -e$cmds" || die "system setup failed (see above)."
         case $groups in *" video "*" operator "*|*" operator "*" video "*) ;; *)
             NEED_RELOGIN=1 ;; esac
@@ -781,6 +809,12 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+# Root olarak çalışırsa ayarlar root'un evine kurulur: kendi kullanıcınla çalıştır, root gereken
+# yerde betik kendisi sorar.
+if [ "$(id -u)" = 0 ]; then
+    die "run this as your normal user, without doas/sudo in front. It sets up your own home folder and asks for the password when it needs root."
+fi
 
 case $ACTION in
     install) do_install ;;

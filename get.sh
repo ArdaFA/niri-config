@@ -21,18 +21,32 @@ main() {
     say() { printf '==> %s\n' "$*"; }
     die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
-    as_root() {  # basit tek komutlar için (tırnaksız): sudo, doas ya da su
-        if [ "$(id -u)" = 0 ]; then
-            sh -c "$1"
-        elif command -v sudo >/dev/null 2>&1; then
-            sudo sh -c "$1"
-        elif command -v doas >/dev/null 2>&1; then
+    # Root için izni gerçekten olan araç (install.sh'deki gibi): doas -C, sudo -l, yoksa su.
+    doas_ok() {
+        command -v doas >/dev/null 2>&1 || return 1
+        for conf in /usr/local/etc/doas.conf /etc/doas.conf; do
+            [ -r "$conf" ] && doas -C "$conf" sh 2>/dev/null | grep -q '^permit' && return 0
+        done
+        return 1
+    }
+    sudo_ok() {
+        command -v sudo >/dev/null 2>&1 || return 1
+        sudo -n -l sh >/dev/null 2>&1 || { sudo -v && sudo -n -l sh >/dev/null 2>&1; }
+    }
+    as_root() {  # basit tek komutlar için (tırnaksız)
+        if doas_ok; then
             doas sh -c "$1"
+        elif sudo_ok; then
+            sudo sh -c "$1"
         else
-            echo "    (no sudo or doas: root password for su; your user must be in the 'wheel' group)"
+            echo "    (asking for the root password with su; your user must be in the 'wheel' group)"
             su root -c "$1"
         fi
     }
+
+    if [ "$(id -u)" = 0 ]; then
+        die "run this as your normal user, without doas/sudo in front. It sets up your own home folder and asks for the password when it needs root."
+    fi
 
     if [ -d "$dir/.git" ]; then
         say "Updating $dir"
