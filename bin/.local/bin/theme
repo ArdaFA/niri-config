@@ -245,10 +245,37 @@ def derived_colors(palette):
     return {"tray": palette["fg"] if light else "transparent"}
 
 
+SETTINGS_FILE = STATE.parent / "settings" / "settings.json"   # Ayarlar uygulamasının değerleri
+FOOT_OPACITY = 80               # %; Settings → Appearance → Terminal → Opacity değiştirir
+
+
+def foot_values():
+    """foot şablonu için: renk bölümünün adı ve zemin saydamlığı.
+
+    foot 1.26 [colors] bölümünün adını [colors-dark] yaptı, 1.28 eski adı kaldırdı (Fedora 43'te
+    1.25, FreeBSD'de 1.28): ad kurulu sürüme göre seçilir. Saydamlık da bu dosyada durur, çünkü
+    aynı bölümde olmalı; repo'daki foot.ini her iki sürümde geçerli kalsın diye o bölümü içermez."""
+    section = "colors-dark"
+    try:
+        out = subprocess.run(["foot", "--version"], capture_output=True, text=True,
+                             timeout=5).stdout
+        m = re.search(r"foot version: (\d+)\.(\d+)", out)
+        if m and (int(m.group(1)), int(m.group(2))) < (1, 26):
+            section = "colors"
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        opacity = json.loads(SETTINGS_FILE.read_text()).get("terminal_opacity", FOOT_OPACITY)
+        opacity = min(100, max(0, int(opacity)))
+    except (OSError, ValueError, TypeError, AttributeError):
+        opacity = FOOT_OPACITY
+    return {"foot_colors": section, "foot_alpha": f"{opacity / 100:.2f}".rstrip("0").rstrip(".")}
+
+
 def write_outputs(palette, outdir):
     """themes/templates/ içindeki her şablonu aynı adla outdir'e yazar."""
     outdir.mkdir(parents=True, exist_ok=True)
-    palette = {**palette, **derived_colors(palette)}
+    palette = {**palette, **derived_colors(palette), **foot_values()}
     for template in sorted(TEMPLATES.iterdir()):
         if template.is_file() and not template.name.startswith("."):
             write_atomic(outdir / template.name,

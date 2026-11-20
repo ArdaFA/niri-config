@@ -19,7 +19,7 @@ Every change applies at once; there is no Apply button.
 #   tema, duvar kağıdı     → `theme` komutu (~/.local/state/theme)
 #   monitörün yeri         → `displays` komutu (~/.local/state/displays)
 #   gece ışığı aç/kapa      → `night-light` komutu
-#   terminal saydamlığı    → foot.ini'deki `alpha=` satırı (repo'daki dosya)
+#   terminal saydamlığı    → settings.json; `theme` onu foot'un renk dosyasına yazar (alpha=)
 #   font                   → `font` komutu (repo dosyaları + ~/.local/state/font.json)
 #   touchpad, klavye, kilit süresi, gece ışığı → ~/.local/state/settings:
 #       niri.kdl       touchpad ve klavye blokları; config.kdl input.kdl ve local.kdl'den sonra okur, niri
@@ -72,14 +72,14 @@ CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME") or HOME / ".config")
 CACHE_HOME = Path(os.environ.get("XDG_CACHE_HOME") or HOME / ".cache")
 STATE = STATE_HOME / "settings"
 THEME_STATE = STATE_HOME / "theme"
-FOOT_INI = CONFIG_HOME / "foot" / "foot.ini"
 THUMBS = CACHE_HOME / "settings" / "thumbnails"
 
 PAGES = (("appearance", "Appearance"), ("displays", "Displays"), ("touchpad", "Touchpad"),
          ("keyboard", "Keyboard"), ("lock", "Screen lock"), ("apps", "Default apps"))
 DEFAULTS = {"tap": True, "natural_scroll": False, "pointer_speed": 0.0,
             "lock_after": 300, "night_temp": 4000, "night_auto": False,
-            "turkish_letters": False, "repeat_delay": 600, "repeat_rate": 25}
+            "turkish_letters": False, "repeat_delay": 600, "repeat_rate": 25,
+            "terminal_opacity": 80}
 TOUCHPAD_KEYS = ("tap", "natural_scroll", "pointer_speed")
 KEYBOARD_KEYS = ("turkish_letters", "repeat_delay", "repeat_rate")
 # Klavye düzeni sistemden gelir (systemd-localed; niri de xkb ayarı boşken onu kullanır).
@@ -168,6 +168,7 @@ def load_settings():
     s["night_temp"] = min(NIGHT_MAX, max(NIGHT_MIN, s["night_temp"]))
     s["repeat_delay"] = min(REPEAT_DELAY[1], max(REPEAT_DELAY[0], s["repeat_delay"]))
     s["repeat_rate"] = min(REPEAT_RATE[1], max(REPEAT_RATE[0], s["repeat_rate"]))
+    s["terminal_opacity"] = min(100, max(50, s["terminal_opacity"]))
     if s["lock_after"] not in dict(LOCK_CHOICES):
         s["lock_after"] = DEFAULTS["lock_after"]
     return s
@@ -250,22 +251,15 @@ def save_settings(s, xkb=None):
 ALPHA_RE = re.compile(r"^([ \t]*alpha[ \t]*=[ \t]*)([0-9.]+)[ \t]*$", re.M)
 
 
-def foot_alpha(text):
-    found = ALPHA_RE.findall(text)
-    try:
-        return min(1.0, max(0.0, float(found[-1][1]))) if found else 1.0
-    except ValueError:
-        return 1.0
-
-
 def with_foot_alpha(text, alpha):
-    """foot.ini metninde alpha değerini değiştirir (yorumlar ve geri kalan aynen kalır)."""
+    """foot.ini metninde alpha değerini değiştirir (yorumlar ve geri kalan aynen kalır).
+    Satır yoksa None: dosyayı `theme` baştan üretmeli (renk bölümünün adı foot sürümüne bağlı)."""
     value = f"{alpha:.2f}".rstrip("0").rstrip(".")
     matches = list(ALPHA_RE.finditer(text))
-    if matches:
-        m = matches[-1]
-        return text[:m.start(2)] + value + text[m.end(2):]
-    return text.rstrip("\n") + f"\n\n[colors]\nalpha={value}\n"
+    if not matches:
+        return None
+    m = matches[-1]
+    return text[:m.start(2)] + value + text[m.end(2):]
 
 
 # ── Tema, duvar kağıtları, monitörler (yalnızca okuma) ────────────────────
@@ -1136,10 +1130,7 @@ class Window(Gtk.ApplicationWindow):
         for box in (self.walls, self.colors, self.fonts):
             for tile in box.get_children():
                 tile.area.queue_draw()
-        try:
-            self.opacity.set(round(foot_alpha(FOOT_INI.read_text()) * 100))
-        except OSError:
-            self.opacity.set(100)
+        self.opacity.set(self.settings["terminal_opacity"])
 
     def run_theme(self, args):
         if self.theme_busy:                        # sırada en fazla bir istek: en sonuncusu
@@ -1229,11 +1220,21 @@ class Window(Gtk.ApplicationWindow):
             self.run_theme(["wallpaper", wallpaper, f"--{variant}"])
 
     def set_opacity(self, percent):
-        path = FOOT_INI.resolve()                  # symlink'in hedefi (repo); bağlantı bozulmasın
+        # Değer settings.json'da; `theme` her üretişte foot'un renk dosyasına yazar. Hemen
+        # geçerli olsun diye o dosyadaki satır da değişir (bütün temayı yeniden üretmeden:
+        # Waybar ve swaync dosyaları her kaydırmada yeniden yüklenmesin).
+        if not self.save("terminal_opacity", int(percent)):
+            return
+        path = THEME_STATE / "foot.ini"
         try:
-            write_atomic(path, with_foot_alpha(path.read_text(), percent / 100))
-        except OSError as e:
-            self.status(f"Could not change foot.ini: {e.strerror}", error=True)
+            text = path.read_text()
+            new = with_foot_alpha(text, percent / 100)
+            if new is not None and new != text:
+                write_atomic(path, new)
+        except OSError:
+            new = None
+        if new is None:
+            run([BIN / "theme", "apply", "--no-reload"], self.failed("Terminal opacity"))
 
     # ── Displays ──
 
@@ -1530,11 +1531,10 @@ def selftest():
         finally:
             STATE = original
 
-    foot = "[main]\ninclude=x\n# alpha=0.2 (yorum)\n[colors]\nalpha=0.8\n"
-    assert foot_alpha(foot) == 0.8 and foot_alpha("[main]\n") == 1.0
+    foot = "# alpha=0.2 (yorum)\n[colors-dark]\nalpha=0.8\nforeground=ffffff\n"
     assert with_foot_alpha(foot, 0.85) == foot.replace("alpha=0.8", "alpha=0.85")
-    assert with_foot_alpha(foot, 1.0).endswith("alpha=1\n")
-    assert with_foot_alpha("[main]\nfont=x\n", 0.5) == "[main]\nfont=x\n\n[colors]\nalpha=0.5\n"
+    assert with_foot_alpha(foot, 1.0) == foot.replace("alpha=0.8", "alpha=1")
+    assert with_foot_alpha("[colors]\nforeground=ffffff\n", 0.5) is None
     assert "alpha = 0.6  " in with_foot_alpha("alpha = 0.9  \n", 0.6)
     assert presets() and all(len(p) == 3 for p in presets())
 
