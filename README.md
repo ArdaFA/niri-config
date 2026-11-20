@@ -1,10 +1,12 @@
 # niri masaüstü — clean · retro · sakura
 
 Fedora 43'te KDE Plasma'nın **yanında**, giriş ekranından ayrı bir oturum olarak seçilen,
-sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü.
+sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü. **FreeBSD**'de de
+çalışır (bkz. [FreeBSD](#freebsd)).
 
-**Kendi bilgisayarına kurmak için:** [Kurulum](#kurulum-sıfırdan). Fedora 43'te KDE Plasma ya da
-GNOME, fark etmez; mevcut masaüstün olduğu gibi kalır. Lisans: [MIT](LICENSE).
+**Kendi bilgisayarına kurmak için:** [Kurulum](#kurulum-sıfırdan). `./install.sh` hangi sistemde
+olduğunu sorar (Fedora, FreeBSD ya da başka) ve gerisini adım adım yapar. Fedora'da KDE Plasma ya
+da GNOME, fark etmez; mevcut masaüstün olduğu gibi kalır. Lisans: [MIT](LICENSE).
 
 - Bütün ayarlar bu repoda. GNU stow ile `~/.config` (ve `~/.local/bin`) altına symlink olarak bağlanır.
 - KDE/GNOME ayarlarına, giriş ekranına ve varsayılan kabuğa dokunulmaz.
@@ -21,6 +23,7 @@ GNOME, fark etmez; mevcut masaüstün olduğu gibi kalır. Lisans: [MIT](LICENSE
 ## İçindekiler
 
 1. [Hızlı başlangıç](#hızlı-başlangıç)
+   - [Yenilikler (20 Kasım 2026)](#yenilikler-20-kasım-2026)
    - [Yenilikler (13 Kasım 2026)](#yenilikler-13-kasım-2026)
    - [Yenilikler (12 Kasım 2026)](#yenilikler-12-kasım-2026)
    - [Yenilikler (11 Kasım 2026)](#yenilikler-11-kasım-2026)
@@ -28,6 +31,7 @@ GNOME, fark etmez; mevcut masaüstün olduğu gibi kalır. Lisans: [MIT](LICENSE
 2. [Ayarlar uygulaması](#ayarlar-uygulaması)
 3. [Arama (Alt+Space)](#arama-altspace)
 4. [Kurulum (sıfırdan)](#kurulum-sıfırdan)
+   - [FreeBSD](#freebsd)
 5. [Hangi dosya neyi kontrol ediyor](#hangi-dosya-neyi-kontrol-ediyor)
 6. [Oturum nasıl başlıyor](#oturum-nasıl-başlıyor)
 7. [Renkler: `theme` komutu](#renkler-theme-komutu)
@@ -66,7 +70,15 @@ Eski masaüstüne dönmek için aynı menüden **Plasma**'yı (ya da **GNOME**'u
 | `Super+Shift+E` | oturumu kapat |
 
 **KDE içinde pencere olarak denemek:** Konsole'da `niri` yaz. Bu modda Mod tuşu **Alt**'tır.
-Waybar, swaync gibi servisler bu modda başlamaz, çünkü onlar oturumun systemd servisine bağlı.
+Waybar, swaync gibi servisler bu modda başlamaz: onları yalnızca gerçek oturum açar.
+
+### Yenilikler (20 Kasım 2026)
+
+| Ne | Nasıl kullanılır | Bölüm |
+|---|---|---|
+| **FreeBSD desteği** | `./install.sh` → **FreeBSD**: paketler (pkg), fontlar, sistem ayarları (seatd, D-Bus, grafik sürücüsü, gruplar; sorarak, root ile), bağlantılar ve tema. niri metin konsolundan `~/.local/bin/niri-start` ile açılır. systemd olmadığı için servisleri niri'nin başlattığı `session` yöneticisi açar. Ses, parlaklık ve ağ için panelde FreeBSD'ye özel modüller. | [FreeBSD](#freebsd), [Oturum nasıl başlıyor](#oturum-nasıl-başlıyor) |
+| **Etkileşimli kurulum** | `./install.sh` sistemi sorar (Fedora / FreeBSD / Other), eksik paketleri gösterip kurmayı önerir, fontları resmi sürümlerden indirip doğrular, wallust'u kurar. Elle adım gerekmiyor. | [Kurulum](#kurulum-sıfırdan) |
+| **Terminal saydamlığı yeni yerde** | foot 1.26 renk bölümünün adını değiştirdi (`[colors]` → `[colors-dark]`), 1.28 eski adı kaldırdı. Renkler ve saydamlık artık `theme`'in ürettiği dosyada, kurulu foot'a uygun adla. Değer Settings'te tutuluyor; repo'daki `foot.ini`'de `alpha=` satırı yok. | [Terminal saydamlığı](#terminal-saydamlığı) |
 
 ### Yenilikler (13 Kasım 2026)
 
@@ -137,7 +149,7 @@ değiştirilebiliyor:
 | Monitörün yeri | `displays` komutu (bkz. [Ekranlar](#ekranlar)) |
 | Gece ışığı aç/kapa | `night-light` komutu |
 | Font | `font` komutu: repodaki config'lerdeki font satırlarını yazar; kayıtlı seçim `~/.local/state/font.json` (bkz. [Font](#font)) |
-| Terminal saydamlığı | `foot/.config/foot/foot.ini` → `alpha=` satırı (repo'daki dosya; uygulama yalnızca bu satırı değiştirir). Alacritty, Ptyxis görünümüyle opak; istersen aynı ayarı `alacritty/.config/alacritty/alacritty.toml` → `opacity =` satırından elle ver (bkz. [Terminal saydamlığı](#terminal-saydamlığı)) |
+| Terminal saydamlığı | `~/.local/state/settings/settings.json` → `terminal_opacity`; `theme` onu foot'un renk dosyasına (`~/.local/state/theme/foot.ini`) `alpha=` olarak yazar, uygulama da kaydırınca o satırı hemen değiştirir. Alacritty, Ptyxis görünümüyle opak; istersen aynı ayarı `alacritty/.config/alacritty/alacritty.toml` → `opacity =` satırından elle ver (bkz. [Terminal saydamlığı](#terminal-saydamlığı)) |
 | Touchpad, klavye | `~/.local/state/settings/niri.kdl`. Klavye bloğu yalnızca varsayılandan farklıysa yazılır. Klavye düzeni sistemden gelir (`localectl status`); yalnızca *Turkish letters* açıksa `layout "de"` + `variant "tr"` yazılır (xkb'deki hazır *Turkish (Germany)* düzeni, sistemdeki ek seçenekler korunur). Yalnızca niri'de geçerli; KDE ve giriş ekranı kendi ayarında kalır. `config.kdl` bunu `input.kdl` ve `local.kdl`'den sonra okur; niri touchpad bloklarını birleştirmediği için uygulamada bir kez touchpad ayarı değiştirince `input.kdl`'deki touchpad bloğu yerine bu geçerli olur. |
 | Kilit süresi, gece ışığının sıcaklığı ve otomatiği | `~/.local/state/settings/services.env`. `swayidle.service` ve `night-light.service` okur; dosya yoksa servis dosyalarındaki varsayılanlar geçerli (5 dk, 4000 K). |
 | Varsayılan uygulamalar | `~/.config/niri-mimeapps.list`. XDG kuralı: `XDG_CURRENT_DESKTOP=niri` olan oturum bu dosyayı `mimeapps.list`'ten önce okur, KDE hiç okumaz. Yani KDE'deki seçimlerin değişmez; niri'de seçmediğin türler KDE'deki gibi kalır. Bir kategori seçilince o uygulamanın desteklediği bütün türleri yazılır (ör. Images → png, jpeg, webp…). Elle de düzenlenebilir; örneğin varsayılan terminal `x-scheme-handler/terminal=Alacritty.desktop;` satırı elle eklendi; silersen niri yine KDE'nin seçimlerine döner. |
@@ -196,7 +208,9 @@ gruplar hâlinde gelir; en uygun olan seçili durur, `Enter` açar.
   `h`; birimsiz sayı dakikadır (`timer 5 pasta`), en fazla 24 saat. Her zamanlayıcı systemd'nin
   kullanıcı zamanlayıcısıdır (`launcher-timer-*.timer`): arama penceresi kapansa ya da yeniden
   başlasa da çalışır, oturumu kapatınca silinir. Komut satırından:
-  `systemctl --user list-timers 'launcher-timer-*'`.
+  `systemctl --user list-timers 'launcher-timer-*'`. systemd olmayan sistemde (FreeBSD) her
+  zamanlayıcı niri'nin başlattığı, saniyede bir saate bakan küçük bir kabuktur; iptal etmek
+  `$XDG_RUNTIME_DIR/launcher-timers/` altındaki dosyasını silmektir (aramadaki Cancel bunu yapar).
   Çalışan zamanlayıcının geri sayımı panelde görünür (`TMR 4:32`).
 - **Web araması:** Brave Search. Değiştirmek için `bin/.local/bin/launcher` → `SEARCH_URL`.
 - **Hafif ve hızlı:** pencere arka planda hazır bekler (`launcher.service`), `Alt+Space` ona yalnızca
@@ -228,16 +242,62 @@ seçmek de aynı şeyi yapar. (`Super+V` niri'nin "pencereyi yüzdür" kısayolu
 
 ## Kurulum (sıfırdan)
 
-Fedora 43 için. KDE Plasma ya da GNOME kurulu olması fark etmez; niri giriş ekranına ayrı bir
-oturum olarak eklenir, mevcut masaüstün olduğu gibi kalır. **niri'ye ilk kez girmeden önce**
-kurmak en kolayı (niri ilk açılışta kendi varsayılan ayar dosyasını yazar; o zaman 4. adımda
-`--backup` gerekir).
+**Fedora** (43; KDE Plasma ya da GNOME fark etmez) ve **FreeBSD** (15.1) için. Başka bir
+sistemde de ayarlar bağlanır, ama programları kendin kurarsın. niri'ye **ilk kez girmeden önce**
+kurmak en kolayı: niri ilk açılışta kendi varsayılan ayar dosyasını yazar, o zaman kurulum onu
+yedeğe taşımayı sorar.
 
-```bash
-# 0) Repoyu indir (git yoksa: sudo dnf install git)
+```sh
 git clone https://github.com/ArdaFA/niri-config.git ~/dotfiles
 cd ~/dotfiles
+./install.sh
+```
 
+(git yoksa: Fedora `sudo dnf install git`, FreeBSD `pkg install git`.)
+
+Kurulum sırayla şunları yapar ve her adımda ne yaptığını yazar:
+
+1. **Sistem:** Fedora / FreeBSD / Other diye sorar. Bilgisayara bakıp tahmin eder; `Enter` yeter.
+2. **Paketler:** Eksik olanları listeler ve kurmayı önerir. Şifreyi `sudo` sorar (yoksa `doas`,
+   o da yoksa `su` ile root şifresi). Hayır dersen kurulum komutunu yazar, kendin çalıştırırsın.
+3. **Fontlar:** Departure Mono, Cozette Vector, Monocraft ve Monaspace Neon'dan eksik olanları
+   resmi sürümlerden `~/.local/share/fonts`'a indirir ve SHA-256 özetlerini doğrular.
+4. **wallust** (duvar kağıdından renk): Fedora'da `cargo` ile derlemeyi önerir (birkaç dakika),
+   FreeBSD'de paketten gelir.
+5. **Yalnızca FreeBSD, sistem ayarları:** seatd, D-Bus, grafik sürücüsü, `video` ve `operator`
+   grupları. Root gerekir: önce ne yapacağını listeler ve sorar (bkz. [FreeBSD](#freebsd)).
+6. **Bağlantılar:** Repo'daki ayar dosyalarını GNU stow ile `~/.config` ve `~/.local/bin` altına
+   bağlar. Aynı adda dosyaların varsa (ör. kendi `foot.ini`'n ya da niri'nin varsayılan
+   config'i) listeler ve `~/.local/state/dotfiles-backup/<tarih>/` altına taşımayı sorar.
+7. **`local.kdl`:** Bu bilgisayara özel ayarlar (bkz. [aşağıda](#bu-bilgisayara-özel-ayarlar-localkdl)).
+   Sistemin klavye düzeni okunamıyorsa (FreeBSD) düzeni sorar: `us`, `de`, `tr`, `tr f` …
+8. **Servisler:** systemd'li sistemde `niri.service.wants/` altına kaydeder. systemd yoksa
+   (FreeBSD) bir şey gerekmez: niri açılınca kendisi başlatır.
+9. **Tema** dosyalarını üretir (varsayılan: sakura).
+
+Sonra:
+
+- **Fedora:** oturumu kapat ve giriş ekranında **Niri**'yi seç (bkz. [Hızlı başlangıç](#hızlı-başlangıç)).
+- **FreeBSD:** metin konsolunda giriş yap ve `~/.local/bin/niri-start` yaz (bkz. [FreeBSD](#freebsd)).
+
+İlk iş `Super+?` ile kısayol listesine, `Super+S` ile ayarlara bak. `./check.sh` bütün
+config'leri programları çalıştırmadan doğrular.
+
+| Komut | Ne yapar |
+|---|---|
+| `./install.sh --backup` | Aynı adda dosyaları sormadan yedeğe taşır |
+| `./install.sh --os fedora` (`freebsd`, `other`) | Sistemi sormaz |
+| `./install.sh --yes` | Her soruya varsayılan cevabı verir (paket kurulumu ve root işleri dahil) |
+| `./install.sh --skip-packages`, `--skip-fonts` | O adımı atlar |
+| `./install.sh uninstall` | Bağlantıları ve servis kayıtlarını kaldırır (bkz. [Her şeyi tamamen kaldırmak](#her-şeyi-tamamen-kaldırmak)) |
+
+`install.sh` tekrar tekrar çalıştırılabilir; kurulu olanları atlar. Repo'ya yeni dosya
+eklediğinde de yeniden çalıştır.
+
+<details>
+<summary>Fedora'da kurulumun yaptıkları, elle yapmak istersen</summary>
+
+```bash
 # 1) Paketler — hepsi resmi Fedora reposundan (sudo gerekir)
 sudo dnf install --setopt=install_weak_deps=False \
     niri xwayland-satellite foot alacritty stow brightnessctl playerctl \
@@ -246,7 +306,7 @@ sudo dnf install --setopt=install_weak_deps=False \
     network-manager-applet pavucontrol blueman cargo wlsunset \
     swappy wf-recorder slurp qalculate \
     xdg-desktop-portal-gnome xdg-desktop-portal-gtk nautilus \
-    python3-gobject python3-pillow gtk-layer-shell
+    python3-gobject python3-pillow gtk-layer-shell jq
 
 # 1b) Yalnızca KDE Plasma kurulu DEĞİLSE (ör. Fedora Workstation/GNOME):
 #     yönetici şifresi soran pencere için bir polkit ajanı
@@ -291,20 +351,10 @@ install -D -m 644 -t ~/.local/share/fonts/MonaspaceNeon \
 fc-cache -f
 #     Lisanslar: Cozette MIT (klasörde), Monocraft OFL, Monaspace OFL.
 
-# 4) Bağla, bu bilgisayarın local.kdl'sini oluştur, servisleri kaydet, temayı üret (sudo yok)
+# 4) Bağla, local.kdl'yi oluştur, servisleri kaydet, temayı üret (paket ve font adımlarını atlar)
 cd ~/dotfiles
-./install.sh
-#    Aynı adda dosyaların varsa (ör. kendi ~/.config/foot/foot.ini'n ya da niri'nin
-#    varsayılan config'i) hiçbir şeyi değiştirmeden durur ve listeler. Onları
-#    ~/.local/state/dotfiles-backup/<tarih>/ altına taşıyıp devam etmek için:
-#    ./install.sh --backup
-
-# 5) Kontrol
-./check.sh
+./install.sh --skip-packages --skip-fonts
 ```
-
-Sonra oturumu kapat ve giriş ekranında **Niri**'yi seç (bkz. [Hızlı başlangıç](#hızlı-başlangıç)).
-İlk iş `Super+?` ile kısayol listesine, `Super+S` ile ayarlara bak.
 
 `--setopt=install_weak_deps=False` Waybar'ın önerdiği fontawesome'un kendiliğinden kurulmasını
 engeller (niri'nin önerdiği alacritty artık bilerek yukarıdaki listede duruyor). mako, SwayNotificationCenter kaldırılırsa devreye giren
@@ -317,7 +367,73 @@ Fedora'da zaten gelenler: wireplumber, wl-clipboard, libnotify, python3, ibus, p
 Polkit ajanı: KDE Plasma varsa onunki kullanılır, yoksa 1b'deki mate-polkit
 (`niri-polkit.service` kurulu olan ilkini seçer).
 
-`install.sh` tekrar tekrar çalıştırılabilir. Repo'ya yeni dosya eklediğinde de yeniden çalıştır.
+</details>
+
+### FreeBSD
+
+FreeBSD 15.1'e göre yazıldı (ilk hedef: ThinkPad T480, Intel UHD 620). Kurulum ve oturum
+servisleri bir FreeBSD 15.1 sanal makinesinde sınandı; niri'nin kendisi gerçek bir ekran kartı
+ister. Bir şey ters giderse GitHub'da issue aç.
+
+**Paketler** hepsi resmi pkg deposundan: niri, xwayland-satellite, waybar, fuzzel, swaync,
+swaylock, swayidle, swaybg, foot, alacritty, Python GTK (`py3xx-pygobject`), fontlar (JetBrains
+Mono, IBM Plex Mono, Hack, Departure Mono, Monaspace), wallust, seatd, drm-kmod… Tam liste:
+`install.sh` → `FREEBSD_PACKAGES`. Cozette'in vektör sürümü ve Monocraft pakette yok; kurulum
+onları indirir.
+
+**Sistem ayarları.** Kurulum bunları sorar ve root ile yapar; kendin yapmak istersen (root olarak):
+
+```sh
+sysrc seatd_enable=YES && service seatd start     # niri'nin ekrana ve klavyeye erişimi
+sysrc dbus_enable=YES && service dbus start       # pil, diskler, bildirimler
+sysrc kld_list+=i915kms && kldload i915kms        # Intel grafik (AMD: amdgpu)
+pw groupmod video -m KULLANICI_ADIN               # seatd için
+pw groupmod operator -m KULLANICI_ADIN            # masaüstünden kapat / yeniden başlat / uyku
+```
+
+Yeni gruplar bir sonraki girişte geçerli olur: kurulumdan sonra bir kez çıkış yapıp tekrar gir.
+
+**niri'yi başlatmak.** Metin konsolunda (ttyv0) giriş yap ve:
+
+```sh
+~/.local/bin/niri-start
+```
+
+Önce sık takılınan şeylere bakar (grafik sürücüsü, seatd, `video` grubu, D-Bus); eksik varsa ne
+yapacağını kopyalanabilir komutlarla yazar. Sonra niri'yi bir ConsoleKit oturumu ve kendi
+D-Bus'ıyla açar (yönetici şifresi soran pencere ConsoleKit oturumu ister). niri'nin çıktısı
+`~/.local/state/niri-session/niri.log` dosyasına gider; niri hatayla kapanırsa son satırları
+ekrana basar. Girişte kendiliğinden açılsın istersen `~/.profile`'ın sonuna (sh):
+
+```sh
+[ "$(tty)" = /dev/ttyv0 ] && ~/.local/bin/niri-start
+```
+
+Giriş ekranı (SDDM, LightDM…) kullanıyorsan oturum listesinde **Niri** de görünür (niri paketi
+ekler). İlk denemede yine de `niri-start` daha çok şey söyler.
+
+**Fedora'dan farkları:**
+
+| Ne | FreeBSD'de |
+|---|---|
+| Servisler | systemd yok: niri açılınca `session daemon` başlatır (bkz. [Oturum nasıl başlıyor](#oturum-nasıl-başlıyor)) |
+| Ses | `mixer(8)`; PulseAudio kuruluysa o. Paneldeki `VOL` ve ses tuşları ikisiyle de çalışır |
+| Parlaklık | `backlight(8)`: paneldeki `LCD` ve parlaklık tuşları |
+| Ağ | Paneldeki `NET` (`route` + `ifconfig`, Wi-Fi'de ağın adı). Hızlı ayarlardaki Wi-Fi ve Bluetooth düğmeleri NetworkManager ve BlueZ ister; FreeBSD'de "not available" bildirimi verir |
+| Güç profili (`ECO`/`PERF`) | Yok (power-profiles-daemon yok) |
+| Kapat, yeniden başlat, uyku | `shutdown -p now`, `shutdown -r now`, `acpiconf -s 3` (uykudan önce ekran kilitlenir); `operator` grubu gerekir |
+| Uykuda kilit | swayidle FreeBSD'de logind'siz: başka yoldan uyuyunca (kapak, güç tuşu) kendiliğinden kilitlemez. Menüdeki **Suspend** önce kilitler; boşta kalınca kilit her zamanki gibi |
+| Güncellemeler (`UPD`) | `pkg upgrade -n` ile sayar; tıklayınca terminalde `pkg upgrade` |
+| Panelde `FAIL` | Yalnızca systemd'de; FreeBSD'de `~/.local/bin/session status` |
+| Zamanlayıcılar | systemd-run yerine arka planda bekleyen küçük bir kabuk; panelde `TMR` aynı |
+
+### Başka bir sistem (Other)
+
+`./install.sh --os other` paket kurmaz: gereken programların listesini yazar (adlar dağıtıma
+göre değişir). Gerisini (fontlar, bağlantılar, `local.kdl`, servisler, tema) aynen yapar.
+systemd varsa servisleri systemd --user başlatır; paketi servis dosyası getirmeyen waybar, swaync
+ya da mako için basit bir servis yazar (`uninstall` onu da siler). systemd yoksa FreeBSD'deki
+gibi `session daemon`.
 
 ### Bu bilgisayara özel ayarlar (`local.kdl`)
 
@@ -344,7 +460,7 @@ O zamana kadar arka plan temanın düz rengi.
 
 ### Güncellemek
 
-```bash
+```sh
 cd ~/dotfiles && git pull && ./install.sh
 ```
 
@@ -384,7 +500,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `swaync/.config/swaync/style.css` | Bildirimlerin ve panelin görünümü |
 | `mako/.config/mako/config` | Yedek bildirim programı (yalnızca swaync kaldırılırsa çalışır) |
 | `alacritty/.config/alacritty/alacritty.toml` | Ana terminal (varsayılan, GPU ile çizer): Ptyxis'teki görünüm — Hack italik 11 punt, Ayu Mirage paleti, ince yanıp sönen imleç, opak zemin (`opacity`); renkler dosyanın içinde, temadan bağımsız |
-| `foot/.config/foot/foot.ini` | İkinci terminal (Super+Shift+Enter): font, iç boşluk, imleç, geçmiş, saydamlık (`alpha`) |
+| `foot/.config/foot/foot.ini` | İkinci terminal (Super+Shift+Enter): font, iç boşluk, imleç, geçmiş. Renkler ve saydamlık temanın ürettiği dosyada (bkz. [Terminal saydamlığı](#terminal-saydamlığı)) |
 | `swappy/.config/swappy/config` | Ekran görüntüsü düzenleyici: kayıt klasörü, kaydet/kopyala sonrası kapanma, varsayılan araç |
 
 ### Renk sistemi
@@ -438,9 +554,11 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
 | `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)). Yalnızca KWallet kullanılıyorsa kopyalanır. |
 | `wallpapers/` | Duvar kağıtların. İçindekiler git'e girmez (bkz. [Duvar kağıdı](#duvar-kağıdı)). |
-| `install.sh` | Bağlar, `local.kdl`'yi (yoksa) oluşturur, servisleri kaydeder, temayı üretir. `--backup`: aynı adda dosyaları önce yedeğe taşır. `uninstall` ile geri alır. |
+| `install.sh` | Etkileşimli kurulum (Fedora / FreeBSD / Other): paketler, fontlar, FreeBSD sistem ayarları, bağlantılar, `local.kdl`, servisler, tema. POSIX sh (FreeBSD'de bash gerekmez). `uninstall` ile geri alır. Bkz. [Kurulum](#kurulum-sıfırdan) |
+| `bin/.local/bin/session` | Oturum servisleri: systemd yoksa (FreeBSD) niri'nin başlattığı küçük servis yöneticisi (`session daemon`); `session status`, `start`/`stop`/`restart`/`is-active`/`log <servis>` systemd'de de çalışır (ona iletir). Kilit, uyku, kapat, yeniden başlat da buradan |
+| `bin/.local/bin/niri-start` | niri'yi metin konsolundan başlatır; önce grafik sürücüsü, seatd, gruplar ve D-Bus'a bakar (bkz. [FreeBSD](#freebsd)) |
 | `examples/niri-local.kdl` | `~/.config/niri/local.kdl`'nin şablonu (install.sh yalnızca dosya yoksa kullanır) |
-| `check.sh` | Bütün config'leri programları çalıştırmadan doğrular |
+| `check.sh` | Bütün config'leri programları çalıştırmadan doğrular (Fedora ve FreeBSD; olmayan aracın kontrolünü atlar) |
 | `LICENSE` | MIT lisansı |
 
 ### Repo dışında kalanlar (üretilen ya da kopyalanan)
@@ -451,15 +569,16 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `~/.local/state/dotfiles-backup/` | `install.sh --backup`'ın taşıdığı eski dosyalar (tarihli klasörler) |
 | `~/.local/state/theme/` | `theme` komutunun ürettiği renk dosyaları, kayıtlı seçim, duvar kağıdı bağlantısı |
 | `~/.local/state/displays/` | `displays` komutunun hatırladığı monitör yerleri (`state.json`) ve niri'nin okuduğu `niri.kdl` |
-| `~/.local/state/settings/` | Ayarlar uygulamasının yazdıkları: touchpad ve klavye (`niri.kdl`), kilit süresi ve gece ışığı (`services.env`) |
+| `~/.local/state/settings/` | Ayarlar uygulamasının yazdıkları: touchpad ve klavye (`niri.kdl`), kilit süresi ve gece ışığı (`services.env`), terminal saydamlığı ve diğer değerler (`settings.json`) |
 | `~/.cache/settings/` | Duvar kağıtlarının küçük resimleri (silinebilir, yeniden üretilir) |
 | `~/.config/niri-mimeapps.list` | Ayarlar → Default apps'in yazdığı, yalnızca niri oturumunun okuduğu varsayılan uygulamalar |
 | `~/.local/state/launcher/` | Arama penceresinin hatırladığı sık kullanılan uygulamalar, emojiler ve `>` komutları |
 | `$XDG_RUNTIME_DIR/clipboard/` | Pano geçmişi (RAM'de, oturum kapanınca silinir) |
-| `~/.config/systemd/user/niri.service.wants/` | `install.sh`'nin oluşturduğu servis bağlantıları |
+| `~/.config/systemd/user/niri.service.wants/` | `install.sh`'nin oluşturduğu servis bağlantıları (systemd'li sistemlerde) |
+| `~/.local/state/niri-session/` | systemd'siz oturumda (FreeBSD) servislerin günlükleri ve `niri-start`'ın niri günlüğü |
 | `~/.local/share/fonts/DepartureMono/` `CozetteVector/`, `Monocraft/`, `MonaspaceNeon/` | Fontlar (adım 3 ve 3b) |
 | `~/.local/state/font.json` | Font seçimi; `font` komutu yazar |
-| `~/.cargo/bin/wallust` | wallust |
+| `~/.cargo/bin/wallust` | wallust (Fedora; FreeBSD'de paket) |
 | `~/.var/app/com.brave.Browser/config/brave-flags.conf` | Brave flags'in kopyası (Flatpak sandbox'ı symlink'i göremez) |
 
 ---
@@ -480,6 +599,27 @@ Bu servislerin hiçbiri KDE oturumunda başlamaz. Durumlarını görmek için:
 
 ```bash
 systemctl --user status niri-polkit theme-apply waybar swaync swaybg swayidle layout-mode
+```
+
+**systemd olmayan sistemde (FreeBSD)** aynı servisleri niri'nin kendisi başlatır:
+
+```
+niri-start → ck-launch-session → dbus-run-session → niri --session
+        └─ config.kdl: spawn-sh-at-startup "session daemon"
+             tema → niri-polkit · waybar · swaync · swaybg · swayidle · layout-mode
+                    · launcher · clipboard-history · device-notify (+ gece ışığı, açıksa)
+             XDG autostart (niri msg action spawn-sh ile)
+```
+
+`session daemon` çöken servisi 1 saniye sonra yeniden başlatır (10 saniyede 5 kez çökerse
+bırakır ve `failed` gösterir), 07:00 ve 19:00'da otomatik tema ve gece ışığı işlerini yapar,
+niri kapanınca hepsini kapatır. systemd'nin niri.service'i çalışıyorsa (Fedora) ya da niri
+pencere içinde çalışıyorsa hiçbir şey yapmaz. Komutlar her iki sistemde de aynı:
+
+```sh
+~/.local/bin/session status            # servisler ve durumları
+~/.local/bin/session restart waybar    # yeniden başlat (start, stop, is-active da var)
+~/.local/bin/session log waybar        # günlük (FreeBSD: ~/.local/state/niri-session/waybar.log)
 ```
 
 ---
@@ -1225,9 +1365,13 @@ Başka bir fonta geçersen:
 
 Terminalin zemini yarı saydamdır. Arkada duvar kağıdı bulanık görünür, yazı opak kalır.
 
-- **Ne kadar saydam:** Settings → Appearance → Terminal → Opacity, ya da elle
-  `foot/.config/foot/foot.ini` → `[colors]` → `alpha=0.8`. 1.0 opak, daha küçük sayı daha
-  saydam (0.8 belirgin, 0.95 hafif). Değişiklik yeni açılan terminallerde geçerli olur.
+- **Ne kadar saydam:** Settings → Appearance → Terminal → Opacity (50–100 %, varsayılan 80).
+  Değer `~/.local/state/settings/settings.json`'da (`terminal_opacity`) durur; `theme` onu
+  foot'un renk dosyasına `alpha=0.8` gibi yazar. 1 opak, daha küçük sayı daha saydam (0.8
+  belirgin, 0.95 hafif). Değişiklik yeni açılan terminallerde geçerli olur.
+  Repo'daki `foot.ini`'de renk bölümü yok, çünkü adı foot sürümüne bağlı: 1.26'dan önce
+  `[colors]`, sonra `[colors-dark]` (1.28 eski adı tanımıyor). `theme` kurulu foot'a bakıp
+  doğrusunu yazar.
   Alacritty'nin karşılığı: `alacritty/.config/alacritty/alacritty.toml` → `[window]` →
   `opacity` (Ptyxis görünümüyle 1.0, opak); config canlı yenilendiği için
   değişiklik açık pencerelere de uygulanır.
@@ -1239,8 +1383,8 @@ Terminalin zemini yarı saydamdır. Arkada duvar kağıdı bulanık görünür, 
   - Bulanıklığın gücü: `niri/.config/niri/config.kdl`'e, en üst düzeye (`layout {}` içine değil)
     `blur { passes 3; offset 3 }` ekle; bunlar varsayılan değerler.
     `offset` büyüdükçe daha yumuşak ve ek maliyetsiz; bozulma görülürse `passes`'i artır.
-- **Tamamen opak:** `alpha=1.0` (Alacritty zaten opak).
-- `theme` renkleri değiştirirken saydamlığa dokunmaz; açık terminaller de saydamlıklarını korur
+- **Tamamen opak:** Opacity'yi 100 % yap (Alacritty zaten opak).
+- `theme` renkleri değiştirirken saydamlığı değiştirmez; açık terminaller de saydamlıklarını korur
   (Alacritty temayı hiç izlemez; renkleri kendi config'indedir).
 
 ---
@@ -1338,8 +1482,17 @@ systemctl --user status waybar swaync swaybg swayidle theme-apply niri-polkit la
 systemctl --user restart waybar       # panel kaybolduysa
 ```
 
+**FreeBSD'de** (systemd yok) aynısı:
+
+```sh
+~/.local/bin/session status                  # hangi servis çalışıyor, hangisi failed
+~/.local/bin/session log waybar              # bir servisin günlüğü
+~/.local/bin/session restart waybar          # panel kaybolduysa
+tail -n 50 ~/.local/state/niri-session/niri.log   # niri'nin kendisi
+```
+
 **`Alt+Space` arama yerine fuzzel'i açıyorsa** arama servisi çalışmıyor demektir:
-`systemctl --user restart launcher`, olmazsa yukarıdaki günlüğe bak.
+`~/.local/bin/session restart launcher`, olmazsa yukarıdaki günlüğe bak.
 
 **Arama penceresi açılıp hemen kapanıyorsa** neden kapandığını günlüğe yazdır:
 `systemctl --user set-environment LAUNCHER_DEBUG=1 && systemctl --user restart launcher`, sorunu
@@ -1369,8 +1522,10 @@ git revert <commit>             # bir commit'i geri alan yeni commit
 Aşamalar ayrı commit'ler hâlinde duruyor. Örneğin `git log --oneline` ile Aşama 3'ün
 commit'ini bulup o andaki dosyayı görebilirsin: `git show <commit>:niri/.config/niri/binds.kdl`.
 
-**6. niri oturumu hiç açılmıyor:** Giriş ekranında **Plasma**'yı (ya da **GNOME**'u) seçip eski
-masaüstüne gir; o bundan etkilenmez. Sonra terminalde `~/dotfiles/check.sh` ve `journalctl --user -b -1 -u niri` (bir önceki açılışın
+**6. niri oturumu hiç açılmıyor:** FreeBSD'de metin konsolunda `~/.local/bin/niri-start`
+çalıştır: eksik olanı söyler, niri hatayla kapanırsa günlüğün son satırlarını basar.
+Fedora'da giriş ekranında **Plasma**'yı (ya da **GNOME**'u) seçip eski masaüstüne gir; o
+bundan etkilenmez. Sonra terminalde `~/dotfiles/check.sh` ve `journalctl --user -b -1 -u niri` (bir önceki açılışın
 günlüğü). Grafik arayüz hiç gelmezse `Ctrl+Alt+F3` ile metin konsoluna geçebilirsin.
 
 **7. Brave'de oturumlar kapanmış:** `~/.var/app/com.brave.Browser/config/brave-flags.conf`
@@ -1384,7 +1539,7 @@ dosyasında `--password-store=kwallet6` olmalı. `./install.sh` bu dosyayı yeni
 
 ## Her şeyi tamamen kaldırmak
 
-Plasma oturumundayken yap.
+Plasma oturumundayken (FreeBSD'de metin konsolunda) yap.
 
 ```bash
 # 1) Bağlantılar, niri servis kayıtları, autostart girdileri, üretilmiş tema dosyaları,
@@ -1395,7 +1550,7 @@ Plasma oturumundayken yap.
 rm -f ~/.config/niri/local.kdl
 ls ~/.local/state/dotfiles-backup/     # eski dosyaların; geri koymak istersen buradan
 
-# 2) wallust ve önbelleği
+# 2) wallust ve önbelleği (FreeBSD'de paket: 4. adımda)
 cargo uninstall wallust
 rm -rf ~/.cache/wallust
 
@@ -1409,6 +1564,9 @@ sudo dnf remove niri xwayland-satellite foot alacritty stow brightnessctl player
     jetbrains-mono-fonts ibm-plex-mono-fonts source-foundry-hack-fonts \
     network-manager-applet pavucontrol blueman qalculate
 #    (1b'de kurduysan: mate-polkit; portal ve python paketlerini başka programlar da kullanır)
+#    FreeBSD (root olarak): pkg delete niri xwayland-satellite waybar fuzzel swaync mako \
+#        swaylock swayidle swaybg foot alacritty wallust departure-mono monaspace && pkg autoremove
+#    seatd/dbus/grafik sürücüsü ayarlarını başka masaüstleri de kullanır; istersen: sysrc -x seatd_enable
 
 # 5) Repo
 rm -rf ~/dotfiles
