@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Repo'daki config'leri programları çalıştırmadan doğrular.
+# Repo'daki config'leri programları çalıştırmadan doğrular. Fedora'da ve FreeBSD'de çalışır;
+# o sistemde olmayan bir aracın kontrolü "skip" yazıp atlanır.
 # Kullanım: ./check.sh      (sorun yoksa çıkış kodu 0)
 
 set -uo pipefail
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FAILED=0
+ESC=$(printf '\033')      # BSD sed "\x1b" bilmez
 
 check() {
     local name=$1; shift
@@ -14,8 +16,18 @@ check() {
         printf '  ok    %s\n' "$name"
     else
         printf '  FAIL  %s\n' "$name"
-        printf '%s\n' "$out" | sed 's/\x1b\[[0-9;]*m//g; s/^/        /'
+        printf '%s\n' "$out" | sed "s/${ESC}\[[0-9;]*m//g; s/^/        /"
         FAILED=1
+    fi
+}
+
+# check_if <program> <ad> <komut…>: program bu sistemde yoksa atlar.
+check_if() {
+    local prog=$1; shift
+    if command -v "$prog" >/dev/null 2>&1; then
+        check "$@"
+    else
+        printf '  skip  %s (%s is not installed)\n' "$1" "$prog"
     fi
 }
 
@@ -85,15 +97,19 @@ EOF
 }
 
 # swaync config'i paketle gelen JSON şemasına göre (python3-jsonschema).
+# Şema: Fedora /etc/xdg/swaync, FreeBSD /usr/local/etc/xdg/swaync.
 swaync_conf() {
-    python3 -I - "$1" /etc/xdg/swaync/configSchema.json <<'EOF'
-import json, sys
+    local schema=/etc/xdg/swaync/configSchema.json
+    [[ -f $schema ]] || schema=/usr/local/etc/xdg/swaync/configSchema.json
+    python3 -I - "$1" "$schema" <<'EOF'
+import json, os, sys
 config = json.load(open(sys.argv[1], encoding="utf-8"))
 try:
     import jsonschema
 except ImportError:
     sys.exit(0)  # python3-jsonschema yoksa yalnızca JSON sözdizimine bakılır
-jsonschema.validate(config, json.load(open(sys.argv[2], encoding="utf-8")))
+if os.path.exists(sys.argv[2]):
+    jsonschema.validate(config, json.load(open(sys.argv[2], encoding="utf-8")))
 EOF
 }
 
@@ -163,6 +179,8 @@ presets() {
 
 scripts() {
     local f rc=0
+    # install.sh FreeBSD'nin /bin/sh'ı için: bash'e özgü bir şey içermemeli.
+    sh -n "$DOTFILES/install.sh" || rc=1
     for f in "$DOTFILES"/bin/.local/bin/*; do
         [[ -f "$f" ]] || continue
         case "$(head -1 "$f")" in
@@ -197,8 +215,9 @@ check "shortcuts list"    python3 -I "$DOTFILES/bin/.local/bin/shortcuts" selfte
 check "launcher search"   python3 -I "$DOTFILES/bin/.local/bin/launcher" selftest
 check "clipboard history" python3 -I "$DOTFILES/bin/.local/bin/clipboard" selftest
 check "device notify"     python3 -I "$DOTFILES/bin/.local/bin/device-notify" selftest
-check "desktop entries"   desktop-file-validate "$DOTFILES"/bin/.local/share/applications/*.desktop
+check "session services"  python3 -I "$DOTFILES/bin/.local/bin/session" selftest
+check_if desktop-file-validate "desktop entries" desktop-file-validate "$DOTFILES"/bin/.local/share/applications/*.desktop
 check "presets"           presets
-check "systemd units"     units
+check_if systemd-analyze "systemd units" units
 
 exit $FAILED
