@@ -4,8 +4,14 @@ Fedora 43'te KDE Plasma'nın **yanında**, giriş ekranından ayrı bir oturum o
 sıfırdan yazılmış bir [niri](https://github.com/niri-wm/niri) masaüstü. **FreeBSD**'de de
 çalışır (bkz. [FreeBSD](#freebsd)).
 
-**Kendi bilgisayarına kurmak için:** [Kurulum](#kurulum-sıfırdan). `./install.sh` hangi sistemde
-olduğunu sorar (Fedora, FreeBSD ya da başka) ve gerisini adım adım yapar. Fedora'da KDE Plasma ya
+**Kendi bilgisayarına kurmak için** tek komut (bkz. [Kurulum](#kurulum-sıfırdan)); hangi sistemde
+olduğunu sorar (Fedora, FreeBSD ya da başka) ve gerisini adım adım yapar:
+
+```sh
+fetch -qo - https://raw.githubusercontent.com/ArdaFA/niri-config/main/get.sh | sh     # FreeBSD
+curl -fsSL https://raw.githubusercontent.com/ArdaFA/niri-config/main/get.sh | sh     # Fedora
+```
+ Fedora'da KDE Plasma ya
 da GNOME, fark etmez; mevcut masaüstün olduğu gibi kalır. Lisans: [MIT](LICENSE).
 
 - Bütün ayarlar bu repoda. GNU stow ile `~/.config` (ve `~/.local/bin`) altına symlink olarak bağlanır.
@@ -248,12 +254,18 @@ kurmak en kolayı: niri ilk açılışta kendi varsayılan ayar dosyasını yaza
 yedeğe taşımayı sorar.
 
 ```sh
+fetch -qo - https://raw.githubusercontent.com/ArdaFA/niri-config/main/get.sh | sh     # FreeBSD
+curl -fsSL https://raw.githubusercontent.com/ArdaFA/niri-config/main/get.sh | sh     # Fedora
+```
+
+[`get.sh`](get.sh) git yoksa önce onu kurar (yönetici şifreni sorar), repoyu `~/dotfiles`'a
+indirir (zaten varsa günceller) ve `./install.sh`'yi başlatır. Elle yapmak istersen aynısı:
+
+```sh
 git clone https://github.com/ArdaFA/niri-config.git ~/dotfiles
 cd ~/dotfiles
 ./install.sh
 ```
-
-(git yoksa: Fedora `sudo dnf install git`, FreeBSD `pkg install git`.)
 
 Kurulum sırayla şunları yapar ve her adımda ne yaptığını yazar:
 
@@ -285,7 +297,7 @@ config'leri programları çalıştırmadan doğrular.
 
 | Komut | Ne yapar |
 |---|---|
-| `./install.sh --backup` | Aynı adda dosyaları sormadan yedeğe taşır |
+| `./install.sh --backup` | Aynı adda dosyaları sormadan yedeğe taşır (tek komutla: `… \| sh -s -- --backup`) |
 | `./install.sh --os fedora` (`freebsd`, `other`) | Sistemi sormaz |
 | `./install.sh --yes` | Her soruya varsayılan cevabı verir (paket kurulumu ve root işleri dahil) |
 | `./install.sh --skip-packages`, `--skip-fonts` | O adımı atlar |
@@ -464,6 +476,8 @@ O zamana kadar arka plan temanın düz rengi.
 cd ~/dotfiles && git pull && ./install.sh
 ```
 
+Tek komut da aynısını yapar: `~/dotfiles` zaten varsa `git pull` ile günceller.
+
 Değişiklik yapmak istersen bilgisayarına özel olanları `local.kdl`'ye yaz; ona `git pull`
 dokunmaz. Repodaki dosyaları değiştirirsen `git pull` çakışabilir. O zaman GitHub'da reponun
 bir kopyasını (**Fork**) alıp kendi kopyanda çalışmak daha rahat.
@@ -554,6 +568,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
 | `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)). Yalnızca KWallet kullanılıyorsa kopyalanır. |
 | `wallpapers/` | Duvar kağıtların. İçindekiler git'e girmez (bkz. [Duvar kağıdı](#duvar-kağıdı)). |
+| `get.sh` | Tek komutla kurulum: git'i (yoksa) kurar, repoyu `~/dotfiles`'a indirir ya da günceller, `install.sh`'yi başlatır |
 | `install.sh` | Etkileşimli kurulum (Fedora / FreeBSD / Other): paketler, fontlar, FreeBSD sistem ayarları, bağlantılar, `local.kdl`, servisler, tema. POSIX sh (FreeBSD'de bash gerekmez). `uninstall` ile geri alır. Bkz. [Kurulum](#kurulum-sıfırdan) |
 | `bin/.local/bin/session` | Oturum servisleri: systemd yoksa (FreeBSD) niri'nin başlattığı küçük servis yöneticisi (`session daemon`); `session status`, `start`/`stop`/`restart`/`is-active`/`log <servis>` systemd'de de çalışır (ona iletir). Kilit, uyku, kapat, yeniden başlat da buradan |
 | `bin/.local/bin/niri-start` | niri'yi metin konsolundan başlatır; önce grafik sürücüsü, seatd, gruplar ve D-Bus'a bakar (bkz. [FreeBSD](#freebsd)) |

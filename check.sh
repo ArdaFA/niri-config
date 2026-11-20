@@ -179,8 +179,9 @@ presets() {
 
 scripts() {
     local f rc=0
-    # install.sh FreeBSD'nin /bin/sh'ı için: bash'e özgü bir şey içermemeli.
+    # install.sh ve get.sh FreeBSD'nin /bin/sh'ı için: bash'e özgü bir şey içermemeli.
     sh -n "$DOTFILES/install.sh" || rc=1
+    sh -n "$DOTFILES/get.sh" || rc=1
     for f in "$DOTFILES"/bin/.local/bin/*; do
         [[ -f "$f" ]] || continue
         case "$(head -1 "$f")" in
