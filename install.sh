@@ -719,7 +719,9 @@ finish() {
         freebsd)
             [ "${NEED_RELOGIN:-0}" = 1 ] && info "${B}Log out and back in first${R} (new group memberships)."
             info "Start niri from the text console: ${B}~/.local/bin/niri-start${R}"
-            info "It checks seatd, the graphics driver and your groups, and tells you what is missing." ;;
+            info "It checks seatd, the graphics driver and your groups, and tells you what is missing."
+            info "Don't pick 'Niri' on a login screen (SDDM) yet: it starts niri without these steps"
+            info "and can leave you at a black screen. Use niri-start from a text console (Ctrl+Alt+F2)." ;;
         *)
             info "Start niri with your display manager (Niri session) or from a text console:"
             info "~/.local/bin/niri-start" ;;

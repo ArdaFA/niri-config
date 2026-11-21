@@ -422,8 +422,12 @@ ekrana basar. Girişte kendiliğinden açılsın istersen `~/.profile`'ın sonun
 [ "$(tty)" = /dev/ttyv0 ] && ~/.local/bin/niri-start
 ```
 
-Giriş ekranı (SDDM, LightDM…) kullanıyorsan oturum listesinde **Niri** de görünür (niri paketi
-ekler). İlk denemede yine de `niri-start` daha çok şey söyler.
+**Giriş ekranındaki (SDDM) "Niri" girişini şimdilik seçme.** niri paketi giriş ekranına bir
+**Niri** girişi ekliyor, ama o niri'yi tek başına (`niri --session`) açıyor: `niri-start`'ın
+yaptığı hazırlıklar ve kontroller olmadan. İlk gerçek kurulumda siyah ekranda kaldı; düzeltme
+sürüyor. Seçtiysen ve ekran siyahsa: güç düğmesine kısa bas (FreeBSD düzgünce kapanır), sonra
+giriş ekranının oturum menüsünden (sol alt) eski masaüstünü seç. niri'yi metin konsolundan
+(`Ctrl+Alt+F2`) `niri-start` ile aç.
 
 **Fedora'dan farkları:**
 
