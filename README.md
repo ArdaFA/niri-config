@@ -285,7 +285,8 @@ Kurulum sırayla şunları yapar ve her adımda ne yaptığını yazar:
    Sistemin klavye düzeni okunamıyorsa (FreeBSD) düzeni sorar: `us`, `de`, `tr`, `tr f` …
 8. **Servisler:** systemd'li sistemde `niri.service.wants/` altına kaydeder. systemd yoksa
    (FreeBSD) bir şey gerekmez: niri açılınca kendisi başlatır.
-9. **Tema** dosyalarını üretir (varsayılan: sakura).
+9. **Tema** dosyalarını üretir. İlk kurulumda varsayılan duvar kağıdı (`wallpapers/corner.jpg`)
+   seçilir ve renkler ondan üretilir; wallust yoksa aynı fotoğraf sakura renkleriyle.
 
 Sonra:
 
@@ -467,8 +468,9 @@ Sütun genişliği `Super+-` / `Super++` (ABD'de `+` yerine `=`; Türkçe Q'da `
 olmadığı için genişletmek için `Super+R` ya da `Super` + sağ tıkla sürükle). Geri kalanlar harf,
 rakam ve ok tuşları; her düzende aynı.
 
-**Duvar kağıdı** repoda yok: `Super+S` → Appearance → **Add…** ile kendi resmini ekle.
-O zamana kadar arka plan temanın düz rengi.
+**Duvar kağıdı:** İlk kurulumda varsayılan duvar kağıdı `wallpapers/corner.jpg` seçilir ve
+renkler ondan üretilir (wallust yoksa aynı fotoğraf sakura renkleriyle). Kendi resmini
+`Super+S` → Appearance → **Add…** ile ekle.
 
 ### Güncellemek
 
@@ -567,7 +569,7 @@ niri config'i **canlı yenilenir**: kaydettiğin an uygulanır.
 | `systemd/.config/systemd/user/night-light-auto.timer`, `night-light-auto.service` | Otomatik gece ışığı: 19:00'da açar, 07:00'de kapatır, oturum açılışında saate göre ayarlar. Otomatik kapalıyken hiçbir şey yapmaz. |
 | `systemd/.config/systemd/user/layout-mode.service` | `layout-mode`'u niri oturumunda arka planda çalıştırır |
 | `flatpak/brave-flags.conf` | Brave'in niri'de de KWallet kullanması (bkz. [Notlar](#notlar)). Yalnızca KWallet kullanılıyorsa kopyalanır. |
-| `wallpapers/` | Duvar kağıtların. İçindekiler git'e girmez (bkz. [Duvar kağıdı](#duvar-kağıdı)). |
+| `wallpapers/` | Duvar kağıtların. Varsayılan `corner.jpg` dışında içindekiler git'e girmez (bkz. [Duvar kağıdı](#duvar-kağıdı)). |
 | `get.sh` | Tek komutla kurulum: git'i (yoksa) kurar, repoyu `~/dotfiles`'a indirir ya da günceller, `install.sh`'yi başlatır |
 | `install.sh` | Etkileşimli kurulum (Fedora / FreeBSD / Other): paketler, fontlar, FreeBSD sistem ayarları, bağlantılar, `local.kdl`, servisler, tema. POSIX sh (FreeBSD'de bash gerekmez). `uninstall` ile geri alır. Bkz. [Kurulum](#kurulum-sıfırdan) |
 | `bin/.local/bin/session` | Oturum servisleri: systemd yoksa (FreeBSD) niri'nin başlattığı küçük servis yöneticisi (`session daemon`); `session status`, `start`/`stop`/`restart`/`is-active`/`log <servis>` systemd'de de çalışır (ona iletir). Kilit, uyku, kapat, yeniden başlat da buradan |
@@ -765,9 +767,13 @@ aynı adla `~/.local/state/theme/` altına üretir. Programın config'inden o do
 | Görseli kaldır (temanın düz arka plan rengi) | `theme wallpaper none` |
 | Preset'e geç (görsel kalır) | `theme preset rose-pine` |
 
-**Görseller git'e girmez.** `.gitignore` bu klasörde yalnızca boş `.gitkeep` dosyasını izler;
-klasör yeni bir klonda da hazır olur ama içi boş gelir. Bu yüzden görsellerin dotfiles'la birlikte
-yedeklenmez: başka bir bilgisayara geçerken `wallpapers/` klasörünü ayrıca kopyala. Kayıtlı tema
+**Varsayılan duvar kağıdı** `corner.jpg`: repo sahibinin (ArdaFA) kendi çektiği fotoğraf,
+repo'nun geri kalanıyla aynı lisansla ([MIT](LICENSE)). Repo'daki kopya 3840×2880'e küçültüldü,
+kamera ve konum bilgileri (EXIF) silindi.
+
+**Eklediğin görseller git'e girmez.** `.gitignore` bu klasörde yalnızca `corner.jpg`'yi ve boş
+`.gitkeep` dosyasını izler; yeni bir klonda klasörde yalnızca varsayılan duvar kağıdı gelir. Bu
+yüzden kendi görsellerin dotfiles'la birlikte yedeklenmez: başka bir bilgisayara geçerken `wallpapers/` klasörünü ayrıca kopyala. Kayıtlı tema
 görselin tam yolunu tutar. Görsel silinir ya da taşınırsa bir sonraki girişte arka plan düz renge
 döner; ondan üretilmiş renkler kalır.
 

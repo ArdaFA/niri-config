@@ -1,7 +1,8 @@
 __pycache__/
 *.pyc
 
-# Duvar kağıtları git'e girmez (bkz. README → Duvar kağıdı).
-# Boş klasör yeni bir klonda da hazır olsun diye yalnızca .gitkeep izlenir.
+# Duvar kağıtları git'e girmez (bkz. README → Duvar kağıdı). Yalnızca varsayılan duvar kağıdı
+# (corner.jpg, repo sahibinin fotoğrafı) ve klasörün kendisi (.gitkeep) izlenir.
 /wallpapers/*
 !/wallpapers/.gitkeep
+!/wallpapers/corner.jpg

@@ -44,6 +44,9 @@ UNIT_MARK="# niri-config: written by install.sh"
 NIRI_LOCAL="$HOME/.config/niri/local.kdl"
 NIRI_LOCAL_TEMPLATE="$DOTFILES/examples/niri-local.kdl"
 
+# İlk kurulumun duvar kağıdı (repo sahibinin fotoğrafı, meta verisi silinmiş).
+DEFAULT_WALLPAPER="$DOTFILES/wallpapers/corner.jpg"
+
 # Brave (Flatpak) şifre/çerez anahtarını niri'de de KDE'deki gibi KWallet'te arasın.
 # Flatpak sandbox'ı ~/dotfiles'ı göremez; bu yüzden symlink değil kopya.
 BRAVE_FLAGS_SRC="$DOTFILES/flatpak/brave-flags.conf"
@@ -738,8 +741,18 @@ do_install() {
     setup_services
     install_brave_flags
     step "Generating theme files"
-    # Kayıtlı seçim yoksa varsayılan: sakura.
-    "$HOME/.local/bin/theme" apply
+    theme="$HOME/.local/bin/theme"
+    if [ ! -e "$STATE_HOME/theme/state.json" ] && [ -f "$DEFAULT_WALLPAPER" ]; then
+        # İlk kurulum: varsayılan duvar kağıdı, renkler ondan (wallust; koyu). wallust yoksa
+        # aynı fotoğraf sakura renkleriyle. Sonraki kurulumlar kayıtlı seçime dokunmaz.
+        if command -v wallust >/dev/null 2>&1 || [ -x "$HOME/.cargo/bin/wallust" ]; then
+            "$theme" wallpaper "$DEFAULT_WALLPAPER" --dark || "$theme" apply
+        else
+            "$theme" apply && "$theme" wallpaper "$DEFAULT_WALLPAPER" --keep-colors
+        fi
+    else
+        "$theme" apply
+    fi
     finish
 }
 
