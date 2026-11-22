@@ -140,20 +140,60 @@ def camera_users_fstat(cams):
     return users
 
 
-def niri_casts():
-    """niri'nin şu an yaptığı ekran yayınları (portal üzerinden ekran paylaşımı)."""
-    path = os.environ.get("NIRI_SOCKET")
-    if not path:
-        return []
-    try:
-        with socket.socket(socket.AF_UNIX) as s:
-            s.settimeout(2)
-            s.connect(path)
-            s.sendall(b'"Casts"\n')
-            reply = json.loads(s.makefile().readline())
-    except (OSError, ValueError):
-        return []
-    return reply.get("Ok", {}).get("Casts", []) or []
+class NiriCasts:
+    """niri'nin şu an yaptığı ekran yayınları (portal üzerinden ekran paylaşımı).
+
+    Tek bağlantı açık tutulur ve her soruda yeniden kullanılır (niri bir bağlantıda art arda
+    istek kabul eder). Eskiden her 2 saniyede yeni bağlantı açılıp kapanıyordu: FreeBSD'de
+    niri 26.04'ün kullandığı calloop 0.14.4'te kapanan her bağlantı kqueue'da bir fd numarası
+    "kirletiyor" ve niri sonunda `AlreadyExists` ile çöküyordu (calloop 0.14.5'te düzeldi).
+    Bağlantı kurulamazsa giderek seyrekleşen aralıklarla (en çok 60 s) yeniden denenir."""
+
+    def __init__(self):
+        self.sock = None
+        self.reader = None
+        self.retry_at = 0.0
+        self.backoff = 5.0
+
+    def close(self):
+        if self.sock is not None:
+            try:
+                self.sock.close()
+            except OSError:
+                pass
+        self.sock = self.reader = None
+
+    def fail(self):
+        self.close()
+        self.retry_at = time.monotonic() + self.backoff
+        self.backoff = min(self.backoff * 2, 60.0)
+
+    def get(self):
+        path = os.environ.get("NIRI_SOCKET")
+        if not path:
+            return []
+        if self.sock is None:
+            if time.monotonic() < self.retry_at:
+                return []
+            try:
+                self.sock = socket.socket(socket.AF_UNIX)
+                self.sock.settimeout(2)
+                self.sock.connect(path)
+                self.reader = self.sock.makefile("rb")
+            except OSError:
+                self.fail()
+                return []
+        try:
+            self.sock.sendall(b'"Casts"\n')
+            line = self.reader.readline()
+            if not line:
+                raise OSError("niri closed the connection")
+            reply = json.loads(line)
+        except (OSError, ValueError):
+            self.fail()
+            return []
+        self.backoff = 5.0
+        return reply.get("Ok", {}).get("Casts", []) or []
 
 
 def cast_target(cast):
@@ -208,10 +248,11 @@ def cmd_privacy():
     last = None
     sharing = False
     set_inhibitor("remove")      # önceki çalışmadan kalmış olabilir (Waybar modülü yeniden başlattı)
+    niri = NiriCasts()
     while True:
         outputs = run_json(["pactl", "-f", "json", "list", "source-outputs"]) or []
         sources = run_json(["pactl", "-f", "json", "list", "sources", "short"]) or []
-        casts = niri_casts()
+        casts = niri.get()
         set_inhibitor(inhibit_change(sharing, bool(casts)))
         sharing = bool(casts)
         last = emit(privacy_state(mic_users(outputs, sources), camera_users(), casts), last)
@@ -246,7 +287,7 @@ def cmd_mic():
     last = None
     if FREEBSD and run(["pactl", "info"]) is None:
         while True:                 # PulseAudio yok: FreeBSD mikseri
-            muted = mixer_value(run(["mixer", "mic.mute"]), "mic.mute") == "1"
+            muted = mixer_muted(run(["mixer", "mic.mute"]), "mic")
             last = emit(mic_state("Volume: 0 [MUTED]" if muted else None), last)
             time.sleep(2)
     while True:
@@ -566,6 +607,12 @@ def mixer_value(out, control):
     return m.group(1) if m else None
 
 
+def mixer_muted(out, device):
+    """mixer(8): FreeBSD 15'te "vol.mute=on|off", eskiden "vol.mute=1|0"."""
+    m = re.search(rf"^{re.escape(device)}\.mute=(\S+)", out or "", re.M)
+    return bool(m) and m.group(1) in ("on", "1")
+
+
 def read_volume():
     """(arka uç, yüzde, sessiz mi, aygıt) · PipeWire varsa None: Waybar'ın kendi modülü gösterir."""
     if run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"]) is not None:
@@ -580,15 +627,51 @@ def read_volume():
     if vol is None:
         return None, 0, False, ""
     dev = run(["sysctl", "-n", "hw.snd.default_unit"])
-    return ("mixer", round(float(vol) * 100), mixer_value(out, "vol.mute") == "1",
+    return ("mixer", round(float(vol) * 100), mixer_muted(out, "vol"),
             f"pcm{dev.strip()}" if dev else "")
 
 
+def sink_changed(line):
+    """`pactl subscribe` satırı: çıkış aygıtı ya da varsayılan aygıt değişti mi?
+    "Event 'change' on sink #0" · "Event 'change' on server" (sink-input = tek uygulama, sayılmaz)."""
+    return " on sink " in line or " on server" in line
+
+
 def cmd_volume():
+    """PulseAudio varsa `pactl subscribe` ile değişince hemen yazar (ses tuşu → bar anında);
+    yoksa ya da abonelik koparsa birkaç saniyede bir yoklar."""
+    import selectors
     last = None
+    sub = None
     while True:
-        last = emit(volume_state(*read_volume()), last)
-        time.sleep(2)
+        state = read_volume()
+        last = emit(volume_state(*state), last)
+        if state[0] != "pactl":
+            time.sleep(2)
+            continue
+        if sub is None or sub.poll() is not None:
+            try:
+                sub = subprocess.Popen(["pactl", "subscribe"], stdout=subprocess.PIPE,
+                                       stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except OSError:
+                sub = None
+                time.sleep(2)
+                continue
+        sel = selectors.DefaultSelector()
+        sel.register(sub.stdout, selectors.EVENT_READ)
+        deadline = time.monotonic() + 10           # bir şey kaçarsa yine de yokla
+        while time.monotonic() < deadline:
+            if not sel.select(max(0.0, deadline - time.monotonic())):
+                break
+            line = sub.stdout.readline().decode(errors="replace")
+            if not line:                            # PulseAudio kapandı
+                sub = None
+                time.sleep(1)
+                break
+            if sink_changed(line):
+                time.sleep(0.05)                    # art arda gelen olayları birleştir
+                break
+        sel.close()
 
 
 def backlight_state(pct):
@@ -644,6 +727,13 @@ def cmd_selftest():
         (mic_users([stream(78, **{"application.name": "OBS"})], sources), []),
         (mic_users([stream(79, **{"application.process.binary": "pavucontrol",
                                   "application.name": "PulseAudio Volume Control"})], sources), []),
+        (sink_changed("Event 'change' on sink #0"), True),
+        (sink_changed("Event 'change' on server"), True),
+        (sink_changed("Event 'change' on sink-input #12"), False),
+        (sink_changed("Event 'new' on client #140"), False),
+        (mixer_muted("vol.volume=0.50:0.50\nvol.mute=on\n", "vol"), True),
+        (mixer_muted("vol.mute=off", "vol"), False),
+        (mixer_muted("vol.mute=1", "vol"), True),
         (privacy_state([], [], []), {"text": ""}),
         (privacy_state(["Firefox"], ["brave"], [{}])["text"], "MIC CAM SCR"),
         ([inhibit_change(a, b) for a, b in ((False, True), (True, True), (True, False), (False, False))],

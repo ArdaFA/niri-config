@@ -4,7 +4,9 @@
   session daemon                 start the services; niri runs this at startup. Does nothing when
                                  systemd --user already runs them (niri started by niri-session)
   session status                 the services and their state
-  session start|stop|restart|try-restart NAME
+  session start|stop|restart|try-restart|replace NAME
+                                 replace: start a new copy first, stop the old one a second later
+                                 (swaybg: the new wallpaper appears without a black gap)
   session is-active NAME         exit code 0 while the service runs
   session log NAME               the service's recent output
   session idle                   swayidle with the screen lock settings (the swayidle service)
@@ -162,6 +164,8 @@ def cmd_unit(op, name):
         if shutil.which("journalctl"):
             os.execvp("journalctl", ["journalctl", "--user", "-u", unit, "-n", "100", "--no-pager"])
         die("no log: the niri session services are not running")
+    if op == "replace":
+        op = "restart"          # systemd: bir birimin tek kopyası olur
     if op in ("restart", "start"):
         systemctl_user("reset-failed", unit, quiet=True)     # art arda yeniden başlatma sınırı
     rc = systemctl_user("--quiet", op, unit) if op == "is-active" else systemctl_user(op, unit)
@@ -189,6 +193,9 @@ def cmd_status():
 class Service:
     RESTART_DELAY = 1.0
     BURST = (5, 10.0)          # 10 saniyede 5 başlatma: systemd'nin varsayılan sınırı gibi
+    # Sınıra takılan servis tamamen bırakılmaz, bu kadar bekleyip yeniden denenir: FreeBSD'de
+    # niri'nin IPC'si bozulunca Waybar art arda çöküyor; IPC düzelince bar kendiliğinden döner.
+    BACKOFF = 30.0
 
     def __init__(self, name, argv, autostart=True):
         self.name, self.argv, self.autostart = name, [str(a) for a in argv], autostart
@@ -197,6 +204,7 @@ class Service:
         self.starts = []
         self.restart_at = None
         self.stopping = False
+        self.retiring = []                # (süreç, kapatılacağı an): replace'te eski kopyalar
 
     @property
     def log_path(self):
@@ -224,7 +232,38 @@ class Service:
             return
         self.state = "active"
 
+    def replace(self):
+        """Yeni kopyayı başlatır; eskisi bir saniye sonra kapatılır (yenisi o arada çizer)."""
+        old = self.proc
+        self.proc = None
+        self.start(manual=True)
+        if old is not None:
+            self.retiring.append((old, time.monotonic() + 1.0))
+
+    def reap(self, now, force=False):
+        keep = []
+        for proc, when in self.retiring:
+            if proc.poll() is not None:
+                continue
+            if force or now >= when:
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except OSError:
+                    pass
+                try:
+                    proc.wait(2.0)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                    proc.wait()
+                continue
+            keep.append((proc, when))
+        self.retiring = keep
+
     def stop(self, wait=3.0):
+        self.reap(time.monotonic(), force=True)
         self.restart_at = None
         if self.proc is None:
             if self.state != "failed":
@@ -247,6 +286,8 @@ class Service:
         self.state = "inactive"
 
     def poll(self, now):
+        if self.retiring:
+            self.reap(now)
         if self.proc is not None:
             rc = self.proc.poll()
             if rc is None:
@@ -256,11 +297,12 @@ class Service:
                 self.state = "inactive"
                 return
             self.note(f"exited with status {rc}")
-            if len(self.starts) >= self.BURST[0]:
-                self.note("restarted too often; giving up (session restart " + self.name + ")")
-                self.state = "failed"
-                return
             self.state = "failed"
+            if len(self.starts) >= self.BURST[0]:
+                self.note(f"restarted too often; trying again in {self.BACKOFF:.0f} s")
+                self.starts = []
+                self.restart_at = now + self.BACKOFF
+                return
             self.restart_at = now + self.RESTART_DELAY
         elif self.restart_at is not None and now >= self.restart_at:
             self.start()
@@ -321,6 +363,35 @@ def niri_request(request):
         return None
 
 
+def niri_pid():
+    """niri'nin PID'i: soketin adında (niri.wayland-1.3800.sock); bilinmiyorsa None."""
+    m = re.search(r"\.(\d+)\.sock$", os.environ.get("NIRI_SOCKET", ""))
+    return int(m.group(1)) if m else None
+
+
+def niri_alive(pid):
+    """niri hâlâ çalışıyor mu? IPC'ye istek gönderilmez: FreeBSD'de niri'nin IPC'si zaman zaman
+    bağlantıları hemen kapatıyor ("error making IPC stream async: AlreadyExists"); eskiden olay
+    akışının kapanması "niri kapandı" sayılıyordu ve bütün servisler (duvar kağıdı, Waybar…)
+    oturumun ortasında kapanıyordu."""
+    if pid is not None:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            pass
+        return True
+    # PID bilinmiyorsa: sokete bağlanılabiliyorsa niri orada (bağlantı hemen kapatılır).
+    try:
+        with socket.socket(socket.AF_UNIX) as s:
+            s.settimeout(2)
+            s.connect(os.environ["NIRI_SOCKET"])
+        return True
+    except (OSError, KeyError):
+        return False
+
+
 def systemd_runs_session():
     """niri, systemd --user'ın niri.service'i olarak mı çalışıyor (niri-session)?"""
     if not shutil.which("systemctl"):
@@ -363,6 +434,36 @@ def ensure_session_bus(services):
             break
         time.sleep(0.1)
     os.environ["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path={RUNTIME / 'bus'}"
+
+
+# niri'nin kendi çıktısı (çökme sebebi burada yazar): giriş ekranı (SDDM) her girişte bu dosyanın
+# üstüne yazar, niri-start ise kendi dosyasına.
+NIRI_LOGS = (HOME / ".local/share/sddm/wayland-session.log", LOG_DIR / "niri.log")
+CRASH_KEEP = 5
+
+
+def save_crash_log(started):
+    """niri kapandı (çökme ya da çıkış): çıktısının sonunu niri-exit-<zaman>.log olarak saklar
+    (sonraki giriş üzerine yazmadan). Son CRASH_KEEP kayıt tutulur."""
+    for src in NIRI_LOGS:
+        try:
+            if src.stat().st_mtime < started:
+                continue            # bu oturumun dosyası değil
+            lines = src.read_text(errors="replace").splitlines()
+        except OSError:
+            continue
+        dest = LOG_DIR / f"niri-exit-{time.strftime('%Y%m%d-%H%M%S')}.log"
+        try:
+            # renk kodları (tracing'in ANSI kaçışları) okunaklılık için atılır
+            text = re.sub(r"\x1b\[[0-9;]*m", "", "\n".join(lines[-400:]))
+            dest.write_text(f"# from {src}\n{text}\n")
+        except OSError:
+            return None
+        old = sorted(LOG_DIR.glob("niri-exit-*.log"))[:-CRASH_KEEP]
+        for f in old:
+            f.unlink(missing_ok=True)
+        return dest
+    return None
 
 
 def run_oneshot(argv, timeout=60):
@@ -447,9 +548,18 @@ def run_autostart():
         return
     for path in entries:
         cmd = autostart_command(path, desktop)
-        if cmd:
-            # niri üzerinden: bu yöneticinin alt süreci olmasınlar.
-            run(["niri", "msg", "action", "spawn-sh", "--", cmd])
+        if not cmd:
+            continue
+        # niri üzerinden: bu yöneticinin alt süreci olmasınlar. niri'nin IPC'si cevap
+        # vermezse (FreeBSD) kendimiz, ayrı bir oturumda başlatırız.
+        out = run(["niri", "msg", "action", "spawn-sh", "--", cmd])
+        if out is None or out.returncode != 0:
+            try:
+                subprocess.Popen(["sh", "-c", cmd], env=service_env(), cwd=HOME,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+            except OSError:
+                pass
 
 
 class Daemon:
@@ -476,6 +586,8 @@ class Daemon:
             svc.start(manual=True)
         elif op == "stop":
             svc.stop()
+        elif op == "replace":
+            svc.replace()
         elif op == "restart" or (op == "try-restart" and svc.state == "active"):
             svc.stop()
             svc.start(manual=True)
@@ -518,11 +630,10 @@ class Daemon:
         server.listen(8)
         server.setblocking(False)
 
-        # niri kapanınca olay akışı biter: o zaman her şey kapatılır.
-        niri = socket.socket(socket.AF_UNIX)
-        niri.connect(os.environ["NIRI_SOCKET"])
-        niri.sendall(b'"EventStream"\n')
-        niri.setblocking(False)
+        # niri kapanınca her şey kapatılır. Bu, niri sürecine bakılarak anlaşılır (niri_alive).
+        pid = niri_pid()
+        started = time.time() - 120     # niri bu daemon'dan biraz önce başladı
+        niri_gone = False
 
         for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
             signal.signal(sig, lambda *_: setattr(self, "running", False))
@@ -538,7 +649,7 @@ class Daemon:
         run_autostart()
 
         self.sel.register(server, selectors.EVENT_READ, "client")
-        self.sel.register(niri, selectors.EVENT_READ, "niri")
+        alive_check = 0.0
         daily = next_daily(time.time())
         try:
             while self.running:
@@ -548,16 +659,13 @@ class Daemon:
                             self.on_client(server)
                         except OSError:
                             pass
-                    elif key.data == "niri":
-                        try:
-                            data = niri.recv(65536)
-                        except BlockingIOError:
-                            continue
-                        except OSError:
-                            data = b""
-                        if not data:
-                            self.running = False
                 now = time.monotonic()
+                if now >= alive_check:
+                    alive_check = now + 1.0
+                    if not niri_alive(pid):
+                        niri_gone = True
+                        self.running = False
+                        break
                 for svc in self.services:
                     svc.poll(now)
                 if time.time() >= daily:
@@ -565,6 +673,10 @@ class Daemon:
                     run_oneshot([BIN / "night-light", "auto"])
                     daily = next_daily(time.time() + 1)
         finally:
+            if niri_gone:
+                # Çıkışta (Super+Shift+E) da buraya gelinir; zararsız, yalnızca bir kayıt fazla.
+                time.sleep(0.5)             # niri'nin son satırları diske insin
+                save_crash_log(started)
             for svc in reversed(self.services):
                 svc.stop(wait=2.0)
             try:
@@ -688,6 +800,19 @@ def cmd_selftest():
         (without[4].endswith("unless " + shlex.quote(str(BIN / "lock-screen"))), True),
         ("before-sleep" in without or "lock" in without, False),
     ]
+    cases += [
+        (niri_alive(os.getpid()), True),
+        (niri_alive(2 ** 22 + 12345), False),      # böyle bir süreç yok
+    ]
+    saved = os.environ.get("NIRI_SOCKET")
+    os.environ["NIRI_SOCKET"] = "/run/user/1000/niri.wayland-1.3800.sock"
+    cases.append((niri_pid(), 3800))
+    os.environ["NIRI_SOCKET"] = "/tmp/elsewhere.sock"
+    cases.append((niri_pid(), None))
+    if saved is None:
+        del os.environ["NIRI_SOCKET"]
+    else:
+        os.environ["NIRI_SOCKET"] = saved
     names = [s.name for s in make_services()]
     cases.append((names[:2], ["niri-polkit", "waybar"]))
     cases.append(("night-light" in names and "launcher" in names, True))
@@ -709,7 +834,7 @@ def main():
         cmd_daemon()
     elif cmd == "status":
         cmd_status()
-    elif cmd in ("start", "stop", "restart", "try-restart", "is-active", "log") and len(args) == 2:
+    elif cmd in ("start", "stop", "restart", "try-restart", "replace", "is-active", "log") and len(args) == 2:
         cmd_unit(cmd, args[1])
     elif cmd == "idle":
         cmd_idle()
