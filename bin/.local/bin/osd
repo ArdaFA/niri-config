@@ -47,6 +47,14 @@ mixer_get() {
     mixer "$1" 2>/dev/null | sed -n 's/.*=\([0-9.]*\).*/\1/p' | head -n 1
 }
 
+# mixer_muted <aygıt> : sessizdeyse 0. mixer(8) FreeBSD 15'te "vol.mute=on|off", eskiden 1|0.
+mixer_muted() {
+    case $(mixer "$1.mute" 2>/dev/null | sed -n 's/.*=//p' | head -n 1) in
+        on|1) return 0 ;;
+        *)    return 1 ;;
+    esac
+}
+
 # volume_state → "yüzde muted|on"
 volume_state() {
     case $AUDIO in
@@ -55,21 +63,38 @@ volume_state() {
             vol=$(printf '%s\n' "$out" | awk '{ print $2 }' | percent)
             case "$out" in *MUTED*) echo "$vol muted" ;; *) echo "$vol on" ;; esac ;;
         pactl)
-            vol=$(pactl get-sink-volume @DEFAULT_SINK@ | sed -n 's/[^0-9]*\([0-9]*\)%.*/\1/p' | head -n 1)
+            # "Volume: front-left: 36044 /  55% / -15.5 dB, …" → 55 (ilk yüzde)
+            vol=$(pactl get-sink-volume @DEFAULT_SINK@ | grep -o '[0-9]*%' | head -n 1 | tr -d '%')
             case "$(pactl get-sink-mute @DEFAULT_SINK@)" in
                 *yes*) echo "${vol:-0} muted" ;; *) echo "${vol:-0} on" ;; esac ;;
         mixer)
             vol=$(mixer_get vol.volume | percent)
-            if [ "$(mixer_get vol.mute)" = 1 ]; then echo "${vol:-0} muted"; else echo "${vol:-0} on"; fi ;;
+            if mixer_muted vol; then echo "${vol:-0} muted"; else echo "${vol:-0} on"; fi ;;
         *)  echo "0 none" ;;
     esac
+}
+
+# pactl_step up|down : STEP'in katlarına (53 → 55 → 60; en fazla %100) mutlak değerle.
+# Göreli "+5%" FreeBSD'nin OSS mikserinde aşağı yuvarlanıyordu (+4 / -6). Ham değer yukarı
+# yuvarlanır (65536 = %100), böylece mikser tam hedefi gösterir.
+pactl_step() {
+    cur=$(volume_state | cut -d' ' -f1)
+    case $cur in ''|*[!0-9]*) cur=0 ;; esac
+    if [ "$1" = up ]; then
+        target=$(( (cur / STEP + 1) * STEP ))
+        [ "$target" -gt 100 ] && target=100
+    else
+        target=$(( ((cur + STEP - 1) / STEP - 1) * STEP ))
+        [ "$target" -lt 0 ] && target=0
+    fi
+    pactl set-sink-volume @DEFAULT_SINK@ $(( (target * 65536 + 99) / 100 ))
 }
 
 mic_muted() {
     case $AUDIO in
         wpctl) wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED ;;
         pactl) pactl get-source-mute @DEFAULT_SOURCE@ | grep -q yes ;;
-        mixer) [ "$(mixer_get mic.mute)" = 1 ] ;;
+        mixer) mixer_muted mic ;;
         *)     false ;;
     esac
 }
@@ -97,15 +122,13 @@ case "${1:-} ${2:-}" in
     "volume up")
         case $AUDIO in
             wpctl) wpctl set-volume --limit 1.0 @DEFAULT_AUDIO_SINK@ "${STEP}%+" ;;
-            pactl) if [ "$(volume_state | cut -d' ' -f1)" -lt 100 ]; then     # en fazla %100
-                       pactl set-sink-volume @DEFAULT_SINK@ "+${STEP}%"
-                   fi ;;
+            pactl) pactl_step up ;;
             mixer) mixer vol.volume=+${STEP}% >/dev/null ;;
         esac ;;
     "volume down")
         case $AUDIO in
             wpctl) wpctl set-volume @DEFAULT_AUDIO_SINK@ "${STEP}%-" ;;
-            pactl) pactl set-sink-volume @DEFAULT_SINK@ "-${STEP}%" ;;
+            pactl) pactl_step down ;;
             mixer) mixer vol.volume=-${STEP}% >/dev/null ;;
         esac ;;
     "volume mute")

@@ -381,7 +381,8 @@ def reload_components(palette):
         except OSError:
             running = ""
         if not swaybg_active or running != json.dumps(swaybg_args(palette)):
-            session("restart", "swaybg")
+            # replace: yeni swaybg önce açılır, eskisi bir saniye sonra kapanır (siyah ekran yok).
+            session("replace" if swaybg_active else "restart", "swaybg")
     update_foot(palette)
 
 

@@ -38,11 +38,17 @@ is_on() {
     "$SESSION" is-active night-light 2>/dev/null
 }
 
-refresh_bar() {  # Waybar'a SIGRTMIN+SIGNAL. FreeBSD'nin pkill'i "RTMIN+n" adını bilmez: 65+n.
+refresh_bar() {  # Waybar'a SIGRTMIN+SIGNAL (FreeBSD'de SIGRTMIN 65, Linux'ta 34).
+    # Yalnızca 3 saniyeden eski Waybar'lara: yeni açılan, yakalayıcısını kurmadan gelen
+    # sinyalle ölür (oturum açılışında night-light auto ile Waybar aynı anda başlıyor).
     case $(uname -s) in
-        FreeBSD) pkill "-$((65 + SIGNAL))" -x waybar ;;
-        *)       pkill "-RTMIN+$SIGNAL" -x waybar ;;
-    esac 2>/dev/null || true
+        FreeBSD) sig=$((65 + SIGNAL)) ;;
+        *)       sig=$((34 + SIGNAL)) ;;   # glibc
+    esac
+    ps -ax -o pid= -o etimes= -o comm= 2>/dev/null |
+        awk '$3 == "waybar" && $2 >= 3 { print $1 }' |
+        while read -r pid; do kill "-$sig" "$pid" 2>/dev/null; done
+    return 0
 }
 
 turn_on() {
